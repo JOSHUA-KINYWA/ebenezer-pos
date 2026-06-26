@@ -1,9 +1,9 @@
 'use client'
 
 import { createContext, useCallback, useContext, useState } from 'react'
-import { CheckCircle, AlertCircle, Info, X } from 'lucide-react'
+import { CheckCircle, AlertCircle, Info, X, AlertTriangle } from 'lucide-react'
 
-type ToastType = 'success' | 'error' | 'info'
+type ToastType = 'success' | 'error' | 'info' | 'warning'
 
 interface Toast {
   id: number
@@ -15,6 +15,7 @@ interface ToastContextValue {
   success: (message: string) => void
   error: (message: string) => void
   info: (message: string) => void
+  warning: (message: string) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -38,18 +39,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: message => show('success', message),
     error: message => show('error', message),
     info: message => show('info', message),
+    warning: message => show('warning', message),
   }
 
   const icons = {
     success: CheckCircle,
     error: AlertCircle,
     info: Info,
+    warning: AlertTriangle,
   }
 
   const styles = {
     success: 'bg-emerald-50 border-emerald-200 text-emerald-800',
     error: 'bg-red-50 border-red-200 text-red-800',
     info: 'bg-blue-50 border-blue-200 text-blue-800',
+    warning: 'bg-amber-50 border-amber-200 text-amber-800',
   }
 
   return (

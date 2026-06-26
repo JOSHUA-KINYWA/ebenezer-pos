@@ -91,12 +91,16 @@ export function validateProductForm(data: {
     result.addError('unit', 'Unit is required')
   }
 
-  const stock = parseInt(data.stock_qty || '0')
-  if (isNaN(stock) || !isNonNegativeNumber(stock)) {
-    result.addError('stock_qty', 'Stock quantity must be a valid number')
+  if (isEmpty(data.stock_qty || '')) {
+    result.addError('stock_qty', 'Stock quantity is required')
+  } else {
+    const stock = parseFloat(data.stock_qty!.trim())
+    if (isNaN(stock) || !isNonNegativeNumber(stock)) {
+      result.addError('stock_qty', 'Stock quantity must begin with a valid number')
+    }
   }
 
-  const alert = parseInt(data.stock_alert || '10')
+  const alert = parseInt(data.stock_alert || '10', 10)
   if (isNaN(alert) || !isNonNegativeNumber(alert)) {
     result.addError('stock_alert', 'Stock alert must be a valid number')
   }

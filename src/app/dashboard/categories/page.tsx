@@ -1,0 +1,236 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
+import { getSession } from '@/lib/auth'
+import { PageHeader } from '@/components/PageHeader'
+import { Modal } from '@/components/Modal'
+import { RoleGuard } from '@/components/RoleGuard'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { useToast } from '@/context/ToastContext'
+import { Category } from '@/types'
+import { validateCategoryForm } from '@/lib/validators'
+import { Plus, Edit3, Trash2, Save } from 'lucide-react'
+
+interface CategoryForm {
+  name: string
+  description: string
+}
+
+const initialForm: CategoryForm = {
+  name: '',
+  description: '',
+}
+
+export default function CategoriesPage() {
+  const router = useRouter()
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const [form, setForm] = useState<CategoryForm>(initialForm)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const toast = useToast()
+  const supabase = createClient()
+
+  useEffect(() => {
+    const session = getSession()
+    if (!session) {
+      router.push('/login')
+      return
+    }
+    fetchCategories()
+  }, [])
+
+  async function fetchCategories() {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase.from('categories').select('*').order('name')
+      if (error) throw error
+      setCategories(data || [])
+      setError(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to load categories'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function openNewCategory() {
+    setEditingCategory(null)
+    setForm(initialForm)
+    setErrors({})
+    setModalOpen(true)
+  }
+
+  function openEditCategory(category: Category) {
+    setEditingCategory(category)
+    setForm({
+      name: category.name,
+      description: category.description || '',
+    })
+    setErrors({})
+    setModalOpen(true)
+  }
+
+  async function handleSaveCategory() {
+    const validation = validateCategoryForm(form)
+    if (!validation.isValid) {
+      const nextErrors = Object.fromEntries(validation.errors.map(error => [error.field, error.message]))
+      setErrors(nextErrors)
+      return
+    }
+
+    const payload = {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+    }
+
+    try {
+      if (editingCategory) {
+        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id).single()
+        if (error) throw error
+        toast.success('Category updated successfully')
+      } else {
+        const { error } = await supabase.from('categories').insert([payload])
+        if (error) throw error
+        toast.success('Category created successfully')
+      }
+      setModalOpen(false)
+      fetchCategories()
+    } catch (error) {
+      toast.error('Unable to save category')
+      console.error(error)
+    }
+  }
+
+  async function handleToggleActive(category: Category) {
+    try {
+      const { error } = await supabase.from('categories').update({ is_active: !category.is_active }).eq('id', category.id).single()
+      if (error) throw error
+      toast.success(`${category.is_active ? 'Deactivated' : 'Activated'} category`)
+      fetchCategories()
+    } catch (error) {
+      toast.error('Unable to update category')
+      console.error(error)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <LoadingSpinner label="Loading categories..." />
+      </div>
+    )
+  }
+
+  return (
+    <RoleGuard allowed={['owner']}>
+      <div className="space-y-6">
+        <PageHeader
+          title="Categories"
+          description="Manage product categories used in your catalog"
+          action={
+            <button onClick={openNewCategory} className="btn-primary inline-flex items-center gap-2">
+              <Plus className="w-4 h-4" /> Add Category
+            </button>
+          }
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="card p-4">
+            <p className="text-xs text-slate-500">Total categories</p>
+            <p className="text-2xl font-bold text-slate-900">{categories.length}</p>
+          </div>
+          <div className="card p-4">
+            <p className="text-xs text-slate-500">Active categories</p>
+            <p className="text-2xl font-bold text-emerald-600">{categories.filter(c => c.is_active).length}</p>
+          </div>
+          <div className="card p-4">
+            <p className="text-xs text-slate-500">Inactive categories</p>
+            <p className="text-2xl font-bold text-slate-900">{categories.filter(c => !c.is_active).length}</p>
+          </div>
+        </div>
+
+        <div className="card overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {categories.map(category => (
+                <tr key={category.id}>
+                  <td className="px-4 py-4 text-sm font-medium text-slate-900">{category.name}</td>
+                  <td className="px-4 py-4 text-sm text-slate-600">{category.description || '—'}</td>
+                  <td className="px-4 py-4 text-sm">
+                    <span className={category.is_active ? 'inline-flex rounded-full bg-emerald-100 px-2 py-1 text-emerald-700 text-xs font-semibold' : 'inline-flex rounded-full bg-slate-100 px-2 py-1 text-slate-500 text-xs font-semibold'}>
+                      {category.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-right text-sm font-medium space-x-2">
+                    <button onClick={() => openEditCategory(category)} className="text-slate-600 hover:text-brand-600" title="Edit category">
+                      <Edit3 className="inline w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleToggleActive(category)} className="text-slate-600 hover:text-red-600" title={category.is_active ? 'Deactivate' : 'Activate'}>
+                      <Trash2 className="inline w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {categories.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">No categories available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <Modal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          title={editingCategory ? 'Edit Category' : 'Add Category'}
+          description="Create or update a category used by products."
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>
+              <button onClick={handleSaveCategory} className="btn-primary inline-flex items-center gap-2">
+                <Save className="w-4 h-4" /> {editingCategory ? 'Update' : 'Save'}
+              </button>
+            </div>
+          }
+          size="md"
+        >
+          <div className="grid gap-4">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Category name</span>
+              <input
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                className="input w-full"
+              />
+              {errors.name && <p className="text-xs text-red-600">{errors.name}</p>}
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Description</span>
+              <textarea
+                value={form.description}
+                onChange={e => setForm({ ...form, description: e.target.value })}
+                className="input h-28 w-full resize-none"
+              />
+            </label>
+          </div>
+        </Modal>
+      </div>
+    </RoleGuard>
+  )
+}

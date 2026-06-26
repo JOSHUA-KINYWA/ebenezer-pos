@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   ShoppingBag, ShoppingCart, BarChart2, Package,
-  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign
+  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag
 } from 'lucide-react'
 import { SessionUser } from '@/types'
 import { clearSession, getSession, refreshSession } from '@/lib/auth'
@@ -16,14 +16,15 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { formatMoney } from '@/lib/format'
 
 const nav = [
-  { href: '/dashboard',  icon: ShoppingBag, label: 'Dashboard', roles: ['owner', 'cashier'] },
-  { href: '/sell',       icon: ShoppingCart, label: 'Sell',     roles: ['owner', 'cashier'] },
-  { href: '/reports',    icon: BarChart2,    label: 'Reports',  roles: ['owner', 'cashier'] },
-  { href: '/stock',      icon: Package,      label: 'Stock',    roles: ['owner', 'cashier'] },
-  { href: '/drawer',     icon: Wallet,       label: 'Drawer',   roles: ['owner', 'cashier'] },
-  { href: '/expenses',   icon: Package,      label: 'Expenses', roles: ['owner'] },
-  { href: '/staff',      icon: Users,        label: 'Staff',    roles: ['owner'] },
-  { href: '/settings',   icon: Settings,     label: 'Settings', roles: ['owner'] },
+  { href: '/dashboard', icon: ShoppingBag, label: 'Dashboard', roles: ['owner', 'cashier'] },
+  { href: '/dashboard/sell', icon: ShoppingCart, label: 'Sell', roles: ['owner', 'cashier'] },
+  { href: '/dashboard/reports', icon: BarChart2, label: 'Reports', roles: ['owner', 'cashier'] },
+  { href: '/dashboard/products', icon: Box, label: 'Products', roles: ['owner'] },
+  { href: '/dashboard/stock', icon: Package, label: 'Stock', roles: ['owner', 'cashier'] },
+  { href: '/dashboard/drawer', icon: Wallet, label: 'Drawer', roles: ['owner', 'cashier'] },
+  { href: '/dashboard/expenses', icon: Package, label: 'Expenses', roles: ['owner'] },
+  { href: '/dashboard/staff', icon: Users, label: 'Staff', roles: ['owner'] },
+  { href: '/dashboard/settings', icon: Settings, label: 'Settings', roles: ['owner'] },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -65,7 +66,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       if (!canAccessRoute(pathname, data.role)) {
         setChecking(false)
-        router.replace('/sell')
+        router.replace('/dashboard/sell')
         return
       }
 
@@ -83,14 +84,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   async function fetchDrawer() {
     const today = new Date().toISOString().split('T')[0]
-    const { data } = await supabase.rpc('get_drawer_balance', {
-      p_date: today,
-      p_shift_id: null,
-    })
-    if (data && data.length > 0) {
-      setDrawerCash(data[0].cash || 0)
-      setDrawerCoin(data[0].coin || 0)
-      setDrawerTill(data[0].till || 0)
+    const { data } = await supabase
+      .from('drawer_balances')
+      .select('cash, coin, till')
+      .eq('date', today)
+      .eq('shift_id', null)
+      .maybeSingle()
+    if (data) {
+      setDrawerCash(data.cash || 0)
+      setDrawerCoin(data.coin || 0)
+      setDrawerTill(data.till || 0)
     }
     setDrawerLoaded(true)
   }

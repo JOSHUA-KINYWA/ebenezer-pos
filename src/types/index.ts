@@ -12,6 +12,7 @@ export interface User {
   role: Role
   pin?: string
   is_active: boolean
+  last_login?: string
   created_at: string
 }
 
@@ -27,6 +28,8 @@ export interface SessionUser {
 export interface Category {
   id: string
   name: string
+  description?: string
+  is_active?: boolean
   created_at: string
 }
 
@@ -34,6 +37,7 @@ export interface Product {
   id: string
   category_id?: string
   parent_product_id?: string
+  barcode?: string
   name: string
   variety?: string
   description?: string

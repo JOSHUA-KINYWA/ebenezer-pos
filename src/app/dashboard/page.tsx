@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { SessionUser, Sale, DailySalesSummary, User, Expense } from '@/types'
 import { getSession } from '@/lib/auth'
@@ -13,7 +14,8 @@ import { EmptyState } from '@/components/EmptyState'
 import {
   TrendingUp, ShoppingCart, Package, Users, DollarSign, Activity,
   AlertTriangle, RefreshCw, Wallet, Plus, ArrowUpRight, ArrowDownRight,
-  Coins, BarChart2, Receipt, FileText, CreditCard, TrendingDown
+  Coins, BarChart2, Receipt, FileText, CreditCard, TrendingDown,
+  Settings, Zap, ClipboardList, Briefcase
 } from 'lucide-react'
 
 type DashboardRange = 'today' | '7d' | '30d'
@@ -37,6 +39,7 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -106,10 +109,12 @@ export default function DashboardPage() {
         .order('sale_date', { ascending: false })
         .limit(dailyLimit)
 
-      const { data: drawerData } = await supabase.rpc('get_drawer_balance', {
-        p_date: today,
-        p_shift_id: null,
-      })
+      const { data: drawerData } = await supabase
+      .from('drawer_balances')
+      .select('cash, coin, till')
+      .eq('date', today)
+      .eq('shift_id', null)
+      .maybeSingle()
 
       const { data: expenseData } = await supabase
         .from('expenses')
@@ -139,9 +144,9 @@ export default function DashboardPage() {
         activeShifts: openShifts?.length || 0,
         totalStaff: staffData?.length || 0,
         dailyData: dailyData || [],
-        drawerCash: drawerData?.[0]?.cash || 0,
-        drawerCoin: drawerData?.[0]?.coin || 0,
-        drawerTill: drawerData?.[0]?.till || 0,
+        drawerCash: drawerData?.cash || 0,
+        drawerCoin: drawerData?.coin || 0,
+        drawerTill: drawerData?.till || 0,
         topProducts,
         totalExpenses,
         avgOrderValue,
@@ -171,6 +176,16 @@ export default function DashboardPage() {
 
   const rangeLabels: Record<DashboardRange, string> = { today: 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days' }
 
+  const quickActions = [
+    { label: 'New Sale', icon: ShoppingCart, href: '/dashboard/sell', color: 'bg-emerald-500' },
+    { label: 'Stock', icon: Package, href: '/dashboard/stock', color: 'bg-blue-500' },
+    { label: 'Expenses', icon: TrendingDown, href: '/dashboard/expenses', color: 'bg-red-500' },
+    { label: 'Reports', icon: BarChart2, href: '/dashboard/reports', color: 'bg-amber-500' },
+    { label: 'Drawer', icon: Wallet, href: '/dashboard/drawer', color: 'bg-violet-500' },
+    { label: 'Staff', icon: Users, href: '/dashboard/staff', color: 'bg-indigo-500' },
+    { label: 'Settings', icon: Settings, href: '/dashboard/settings', color: 'bg-slate-600' },
+  ]
+
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading dashboard..." /></div>
 
   const hasData = stats && (stats.transactions > 0 || stats.dailyData.length > 0)
@@ -196,6 +211,21 @@ export default function DashboardPage() {
 
       {hasData && (
         <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            {quickActions.map(({ label, icon: Icon, href, color }) => (
+              <button
+                key={label}
+                onClick={() => router.push(href)}
+                className="card p-3 text-center hover:shadow-md hover:scale-105 transition-all group"
+              >
+                <div className={`w-10 h-10 ${color} rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform`}>
+                  <Icon className="w-5 h-5 text-white" />
+                </div>
+                <p className="text-xs font-semibold text-slate-900">{label}</p>
+              </button>
+            ))}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {kpiCards.map(({ label, value, icon: Icon, color, change }) => (
               <div key={label} className="card p-5 hover:shadow-md transition-shadow">
@@ -210,6 +240,34 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+
+          {stats && stats.topProducts && stats.topProducts.length > 0 && (
+            <div className="card p-6">
+              <h3 className="text-base font-bold text-slate-900 mb-4">Top Selling Products</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-500">
+                      <th className="py-2 text-left">Product</th>
+                      <th className="py-2 text-right">Qty Sold</th>
+                      <th className="py-2 text-right">Revenue</th>
+                      <th className="py-2 text-right">% of Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.topProducts.slice(0, 8).map((product, idx) => (
+                      <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50">
+                        <td className="py-2 font-medium text-slate-900 truncate">{product.name}</td>
+                        <td className="py-2 text-right text-slate-600">{product.qty.toFixed(1)}</td>
+                        <td className="py-2 text-right font-semibold text-slate-900">{formatMoney(product.revenue, settings.currency)}</td>
+                        <td className="py-2 text-right text-slate-500">{stats.revenue > 0 ? ((product.revenue / stats.revenue) * 100).toFixed(1) : 0}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {stats && Object.keys(stats.paymentBreakdown).length > 0 && (
             <div className="card p-6">

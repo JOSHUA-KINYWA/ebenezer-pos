@@ -1,6 +1,10 @@
 import { Role } from '@/types'
 
-export const OWNER_ONLY_ROUTES = ['/staff', '/settings']
+export const OWNER_ONLY_ROUTES = [
+  '/dashboard/expenses',
+  '/dashboard/staff',
+  '/dashboard/settings',
+]
 
 export function isOwner(role?: Role) {
   return role === 'owner'
