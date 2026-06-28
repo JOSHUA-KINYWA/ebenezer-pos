@@ -78,13 +78,17 @@ export default function CategoriesPage() {
     setModalOpen(true)
   }
 
-  async function handleSaveCategory() {
-    const validation = validateCategoryForm(form)
-    if (!validation.isValid) {
-      const nextErrors = Object.fromEntries(validation.errors.map(error => [error.field, error.message]))
-      setErrors(nextErrors)
-      return
+  function getSupabaseErrorMessage(error: unknown): string {
+    if (error && typeof error === 'object' && 'message' in error) {
+      return String((error as { message?: unknown }).message)
     }
+    if (error instanceof Error) {
+      return error.message
+    }
+    return 'Unexpected error'
+  }
+
+  async function handleSaveCategory() {
 
     const trimmedName = form.name.trim()
     const duplicate = categories.find(c => c.name.toLowerCase() === trimmedName.toLowerCase() && c.id !== editingCategory?.id)
@@ -111,7 +115,7 @@ export default function CategoriesPage() {
       setModalOpen(false)
       fetchCategories()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save category'
+      const message = getSupabaseErrorMessage(error)
       toast.error(`❌ ${message}`)
       console.error(error)
     }
@@ -124,7 +128,7 @@ export default function CategoriesPage() {
       toast.success(`${category.is_active ? 'Deactivated' : 'Activated'} category`)
       fetchCategories()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to update category'
+      const message = getSupabaseErrorMessage(error)
       toast.error(`❌ ${message}`)
       console.error(error)
     }
@@ -138,7 +142,7 @@ export default function CategoriesPage() {
       setDeleteConfirm(null)
       fetchCategories()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete category'
+      const message = getSupabaseErrorMessage(error)
       toast.error(`❌ ${message}`)
       console.error(error)
     }

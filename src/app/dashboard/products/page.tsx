@@ -180,6 +180,16 @@ export default function ProductsPage() {
     setVariantsDraft(prev => prev.filter((_, i) => i !== index))
   }
 
+  function getSupabaseErrorMessage(error: unknown): string {
+    if (error && typeof error === 'object' && 'message' in error) {
+      return String((error as { message?: unknown }).message)
+    }
+    if (error instanceof Error) {
+      return error.message
+    }
+    return 'Unexpected error'
+  }
+
   async function handleSaveProduct() {
     const validation = validateProductForm(form)
     if (!validation.isValid) {
@@ -253,7 +263,8 @@ export default function ProductsPage() {
       setVariantsDraft([])
       fetchProducts()
     } catch (error) {
-      toast.error('Unable to save product')
+      const message = getSupabaseErrorMessage(error)
+      toast.error(`❌ ${message}`)
       console.error(error)
     }
   }
@@ -269,7 +280,7 @@ export default function ProductsPage() {
       toast.success('Product deactivated successfully')
       fetchProducts()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to deactivate product'
+      const message = getSupabaseErrorMessage(error)
       toast.error(`❌ ${message}`)
       console.error(error)
     }
@@ -291,7 +302,8 @@ export default function ProductsPage() {
       setSelectedProduct(current => (current?.id === product.id ? null : current))
       fetchProducts()
     } catch (error) {
-      toast.error('Unable to delete product')
+      const message = getSupabaseErrorMessage(error)
+      toast.error(`❌ ${message}`)
       console.error(error)
     }
   }
