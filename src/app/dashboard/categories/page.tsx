@@ -111,7 +111,7 @@ export default function CategoriesPage() {
         if (error) throw error
         toast.success('Category updated successfully')
       } else {
-        const { error } = await supabase.from('categories').insert([payload])
+        const { error } = await supabase.from('categories').insert([{ ...payload, is_active: true }])
         if (error) throw error
         toast.success('Category created successfully')
       }
