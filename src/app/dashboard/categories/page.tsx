@@ -97,9 +97,12 @@ export default function CategoriesPage() {
       return
     }
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: trimmedName,
-      description: form.description.trim() || null,
+    }
+    const description = form.description.trim()
+    if (description) {
+      payload.description = description
     }
 
     try {
