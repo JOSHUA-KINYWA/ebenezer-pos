@@ -115,7 +115,7 @@ export default function ExpensesPage() {
         .from('drawer_balances')
         .select('cash, coin, till')
         .eq('date', expense.expense_date)
-        .eq('shift_id', null)
+        .is('shift_id', null)
         .maybeSingle()
 
       const current = existing || { cash: 0, coin: 0, till: 0 }
@@ -197,7 +197,7 @@ export default function ExpensesPage() {
       .from('drawer_balances')
       .select('cash, coin, till')
       .eq('date', todayString)
-      .eq('shift_id', null)
+      .is('shift_id', null)
       .maybeSingle()
 
     const current = existing || { cash: 0, coin: 0, till: 0 }

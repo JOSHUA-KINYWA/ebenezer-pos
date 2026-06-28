@@ -131,7 +131,12 @@ export default function ReportsPage() {
         )
       }
 
-      const { data: existing } = await supabase.from('drawer_balances').select('cash, coin, till').eq('date', today).eq('shift_id', sale.shift_id || null).maybeSingle()
+      const { data: existing } = await supabase
+        .from('drawer_balances')
+        .select('cash, coin, till')
+        .eq('date', today)
+        .or(sale.shift_id ? `shift_id.eq.${sale.shift_id}` : 'shift_id.is.null')
+        .maybeSingle()
       const curr = existing || { cash: 0, coin: 0, till: 0 }
       const updated: any = { date: today, shift_id: sale.shift_id || null }
       if (sale.payment_method === 'cash') updated.cash = curr.cash - sale.total_amount

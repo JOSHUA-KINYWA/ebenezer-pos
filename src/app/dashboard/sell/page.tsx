@@ -381,7 +381,7 @@ export default function SellPage() {
           .from('drawer_balances')
           .select('cash, coin, till')
           .eq('date', today)
-          .eq('shift_id', null)
+          .is('shift_id', null)
           .maybeSingle()
 
         const balance = existing ?? { cash: 0, coin: 0, till: 0 }

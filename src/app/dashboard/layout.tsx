@@ -89,7 +89,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .from('drawer_balances')
       .select('cash, coin, till')
       .eq('date', today)
-      .eq('shift_id', null)
+      .is('shift_id', null)
       .maybeSingle()
     if (data) {
       setDrawerCash(data.cash || 0)
