@@ -12,7 +12,7 @@ import { useToast } from '@/context/ToastContext'
 import { getSession } from '@/lib/auth'
 import { formatDate, formatMoney } from '@/lib/format'
 import { Expense, SessionUser } from '@/types'
-import { Search, Filter, Plus, ArrowDownRight, ArrowUpRight } from 'lucide-react'
+import { Search, Filter, Plus, ArrowDownRight, ArrowUpRight, Trash2 } from 'lucide-react'
 
 type PaymentMethod = 'cash' | 'coin' | 'till'
 
@@ -24,6 +24,7 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [search, setSearch] = useState('')
   const [filterPayment, setFilterPayment] = useState('all')
+  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null)
   const [form, setForm] = useState({
     item_name: '',
     amount: '',
@@ -103,6 +104,44 @@ export default function ExpensesPage() {
     }),
     [expenses, search, filterPayment]
   )
+
+  async function handleDeleteExpense(expense: Expense) {
+    const confirmed = window.confirm(`Delete expense "${expense.item_name}"? This will also adjust the drawer balance for ${expense.expense_date}.`)
+    if (!confirmed) return
+
+    setDeletingExpenseId(expense.id)
+    try {
+      const { data: existing } = await supabase
+        .from('drawer_balances')
+        .select('cash, coin, till')
+        .eq('date', expense.expense_date)
+        .eq('shift_id', null)
+        .maybeSingle()
+
+      const current = existing || { cash: 0, coin: 0, till: 0 }
+      const nextBalance: any = { date: expense.expense_date, shift_id: null, cash: current.cash, coin: current.coin, till: current.till }
+
+      if (expense.payment_method === 'cash') {
+        nextBalance.cash = Number(current.cash || 0) + Number(expense.amount)
+      } else if (expense.payment_method === 'coin') {
+        nextBalance.coin = Number(current.coin || 0) + Number(expense.amount)
+      } else {
+        nextBalance.till = Number(current.till || 0) + Number(expense.amount)
+      }
+
+      await supabase.from('drawer_balances').upsert(nextBalance)
+      const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
+      if (error) throw error
+
+      toast.success('Expense removed and drawer balance updated')
+      await fetchExpenses()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete expense'
+      toast.error(`❌ ${message}`)
+    } finally {
+      setDeletingExpenseId(null)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -327,6 +366,7 @@ export default function ExpensesPage() {
                   <th className="table-head">Category</th>
                   <th className="table-head">Method</th>
                   <th className="table-head text-right">Amount</th>
+                  <th className="table-head text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -338,6 +378,15 @@ export default function ExpensesPage() {
                     <td className="table-cell text-slate-500">{expense.category || '—'}</td>
                     <td className="table-cell capitalize">{expense.payment_method}</td>
                     <td className="table-cell text-right font-semibold text-red-600">-{formatMoney(Number(expense.amount), settings.currency)}</td>
+                    <td className="table-cell text-right">
+                      <button
+                        onClick={() => handleDeleteExpense(expense)}
+                        disabled={deletingExpenseId === expense.id}
+                        className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-4 h-4" /> {deletingExpenseId === expense.id ? 'Removing...' : 'Delete'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

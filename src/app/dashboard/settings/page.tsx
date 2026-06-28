@@ -150,13 +150,11 @@ export default function SettingsPage() {
   }
 
   async function resetFactoryData() {
-    if (!confirm('Factory reset will delete sales, expenses, stock logs, products, and categories. This cannot be undone.')) return
-    if (!confirm('This will remove your catalog and business history. Continue?')) return
-
-    const dummyId = '00000000-0000-0000-0000-000000000000'
+    if (!confirm('Factory reset will remove sales, inventory, expenses, customers, and catalog data. This cannot be undone.')) return
+    if (!confirm('This will remove your business history and inventory records. Continue?')) return
 
     try {
-      const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balances', 'stock_log', 'products', 'categories']
+      const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balances', 'stock_log', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
 
       for (const tableName of tablesToClear) {
         await clearTable(tableName)
@@ -164,6 +162,7 @@ export default function SettingsPage() {
 
       setProducts([])
       setCategories([])
+      setSelectedProduct(null)
       toast.success('Factory reset complete')
       refresh()
     } catch (err) {
@@ -348,6 +347,12 @@ export default function SettingsPage() {
 
   const productOptions = ['all', ...Array.from(new Set(products.map(product => ((product.category as { name?: string })?.name || 'Uncategorized'))))]
 
+  const inventorySummary = useMemo(() => ({
+    total: products.length,
+    active: products.filter(product => product.is_active).length,
+    lowStock: products.filter(product => product.is_active && product.stock_qty <= product.stock_alert).length,
+  }), [products])
+
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase()
     return products.filter(product => {
@@ -398,6 +403,21 @@ export default function SettingsPage() {
                 <div className="md:col-span-2"><label className="label">Receipt Footer</label><textarea className="input" rows={3} value={form.receipt_footer} onChange={e => setForm({ ...form, receipt_footer: e.target.value })} /></div>
               </div>
               <button onClick={handleSave} disabled={saving} className="btn-primary mt-4">{saving ? 'Saving...' : 'Save Settings'}</button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3 mb-6">
+              <div className="card p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Products</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{inventorySummary.total}</p>
+              </div>
+              <div className="card p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Active</p>
+                <p className="mt-2 text-2xl font-bold text-emerald-600">{inventorySummary.active}</p>
+              </div>
+              <div className="card p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Low stock</p>
+                <p className="mt-2 text-2xl font-bold text-amber-600">{inventorySummary.lowStock}</p>
+              </div>
             </div>
 
             <div className="card p-6 border-red-100 bg-red-50/40">

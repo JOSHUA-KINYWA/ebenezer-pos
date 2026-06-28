@@ -16,6 +16,7 @@ import { Search, Plus, Edit3, Trash2, Save } from 'lucide-react'
 
 interface ProductForm {
   name: string
+  barcode: string
   variety: string
   description: string
   category_id: string
@@ -29,6 +30,7 @@ interface ProductForm {
 
 const initialForm: ProductForm = {
   name: '',
+  barcode: '',
   variety: '',
   description: '',
   category_id: '',
@@ -134,6 +136,7 @@ export default function ProductsPage() {
     setEditingProduct(product)
     setForm({
       name: product.name || '',
+      barcode: product.barcode || '',
       variety: product.variety || '',
       description: product.description || '',
       category_id: product.category_id || categories[0]?.id || '',
@@ -155,6 +158,7 @@ export default function ProductsPage() {
       ...prev,
       {
         name: `${form.name} variant`,
+        barcode: form.barcode,
         variety: '',
         description: '',
         category_id: form.category_id,
@@ -186,6 +190,7 @@ export default function ProductsPage() {
 
     const payload = {
       name: form.name.trim(),
+      barcode: form.barcode.trim() || null,
       variety: form.variety.trim() || null,
       description: form.description.trim() || null,
       category_id: form.category_id || null,
@@ -205,6 +210,7 @@ export default function ProductsPage() {
           const variantParentId = form.parent_product_id || editingProduct.id
           const variantPayloads = variantsDraft.map(v => ({
             name: v.name.trim(),
+            barcode: v.barcode.trim() || null,
             variety: v.variety.trim() || null,
             description: v.description.trim() || null,
             category_id: v.category_id || null,
@@ -227,6 +233,7 @@ export default function ProductsPage() {
         if (variantsDraft.length > 0) {
           const variantPayloads = variantsDraft.map(v => ({
             name: v.name.trim(),
+            barcode: v.barcode.trim() || null,
             variety: v.variety.trim() || null,
             description: v.description.trim() || null,
             category_id: v.category_id || null,
@@ -267,6 +274,27 @@ export default function ProductsPage() {
     }
   }
 
+  async function handleDeleteProduct(product: Product) {
+    if (product.is_active) {
+      toast.info('Deactivate the product first before deleting it.')
+      return
+    }
+
+    const confirmed = window.confirm(`Delete "${product.name}"? This will remove the product and any attached variants.`)
+    if (!confirmed) return
+
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', product.id)
+      if (error) throw error
+      toast.success('Product deleted successfully')
+      setSelectedProduct(current => (current?.id === product.id ? null : current))
+      fetchProducts()
+    } catch (error) {
+      toast.error('Unable to delete product')
+      console.error(error)
+    }
+  }
+
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase()
     return products.filter(product => {
@@ -276,6 +304,7 @@ export default function ProductsPage() {
       const matchesSearch =
         !query ||
         product.name.toLowerCase().includes(query) ||
+        (product.barcode || '').toLowerCase().includes(query) ||
         (product.variety || '').toLowerCase().includes(query) ||
         (product.description || '').toLowerCase().includes(query) ||
         ((product.category as { name?: string })?.name || '').toLowerCase().includes(query)
@@ -439,7 +468,18 @@ export default function ProductsPage() {
                           <span>Variant</span>
                         </button>
                         <button onClick={e => { e.stopPropagation(); openEditProduct(product) }} className="text-slate-600 hover:text-brand-600" title="Edit product"><Edit3 className="inline w-4 h-4" /></button>
-                        <button onClick={e => { e.stopPropagation(); handleDeactivateProduct(product) }} className="text-slate-600 hover:text-red-600" title="Deactivate">
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            if (product.is_active) {
+                              handleDeactivateProduct(product)
+                            } else {
+                              handleDeleteProduct(product)
+                            }
+                          }}
+                          className={product.is_active ? 'text-slate-600 hover:text-red-600' : 'text-red-600 hover:text-red-700'}
+                          title={product.is_active ? 'Deactivate' : 'Delete'}
+                        >
                           <Trash2 className="inline w-4 h-4" />
                         </button>
                       </td>

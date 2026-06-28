@@ -96,6 +96,10 @@ CREATE POLICY "pos_public_expenses" ON expenses FOR ALL USING (true) WITH CHECK 
 -- Product variant support
 ALTER TABLE products ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode text;
+
+-- Staff account support
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pin text;
 
 -- Support decimal quantities for items sold by weight/volume
 ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);

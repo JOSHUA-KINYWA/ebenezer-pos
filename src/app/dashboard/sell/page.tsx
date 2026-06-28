@@ -30,6 +30,7 @@ export default function SellPage() {
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('cash')
   const [isReviewingPayment, setIsReviewingPayment] = useState(false)
   const [customer, setCustomer] = useState('')
+  const [customerId, setCustomerId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [completedSale, setCompletedSale] = useState<{ id: string; total: number; items: CartItem[]; customer: string } | null>(null)
   const [cartHighlight, setCartHighlight] = useState(false)
@@ -93,10 +94,10 @@ export default function SellPage() {
       const next = existing
         ? prev.map(item =>
             item.product.id === product.id
-              ? { ...item, quantity: item.quantity + 1, subtotal: item.subtotal + product.price }
+              ? { ...item, quantity: item.quantity + 1, subtotal: item.subtotal + product.price, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount' }
               : item
           )
-        : [...prev, { product, quantity: 1, subtotal: product.price }]
+        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'quantity' as const }]
 
       if (existing) {
         toast.info(`Added another ${formatProductName(product)}`)
@@ -144,12 +145,14 @@ export default function SellPage() {
     if (!cartItem) return
 
     const isDecimal = isDecimalUnit(cartItem.product.unit)
-    const validQty = Math.max(1, isNaN(qty) ? 1 : qty)
+    const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
     const finalQty = isDecimal ? Math.round(validQty * 100) / 100 : Math.round(validQty)
 
     setCart(prev =>
       prev.map(item =>
-        item.product.id === productId ? { ...item, quantity: finalQty, subtotal: finalQty * item.product.price } : item
+        item.product.id === productId
+          ? { ...item, quantity: finalQty, subtotal: Math.round(finalQty * item.product.price * 100) / 100, saleMode: 'quantity' }
+          : item
       )
     )
   }
@@ -164,7 +167,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price }
+          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
           : item
       )
     )
@@ -175,14 +178,41 @@ export default function SellPage() {
     if (!cartItem) return
 
     const step = getIncrementStep(cartItem.product.unit)
-    const newQty = Math.max(1, cartItem.quantity - step)
+    const newQty = Math.max(0.01, cartItem.quantity - step)
 
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price }
+          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
           : item
       )
+    )
+  }
+
+  function setCartItemMode(productId: string, saleMode: 'quantity' | 'amount') {
+    setCart(prev =>
+      prev.map(item => {
+        if (item.product.id !== productId) return item
+
+        if (saleMode === 'quantity') {
+          const quantity = Math.max(0.01, item.quantity || 1)
+          return {
+            ...item,
+            saleMode,
+            quantity,
+            subtotal: Math.round(quantity * item.product.price * 100) / 100,
+          }
+        }
+
+        const amount = Math.max(0.01, item.subtotal || item.product.price)
+        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
+        return {
+          ...item,
+          saleMode,
+          quantity,
+          subtotal: Math.round(amount * 100) / 100,
+        }
+      })
     )
   }
 
@@ -199,10 +229,39 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, subtotal: amount }
+          ? {
+              ...item,
+              subtotal: Math.round(amount * 100) / 100,
+              quantity: item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0,
+              saleMode: 'amount',
+            }
           : item
       )
     )
+  }
+
+  async function rollbackSale(saleId: string, items: CartItem[], userId?: string) {
+    try {
+      await supabase.from('sales').delete().eq('id', saleId)
+      await Promise.all(
+        items.map(async item => {
+          const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product.id).single()
+          if (productError || !product) return
+
+          const nextStock = Number(product.stock_qty) + Number(item.quantity)
+          await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product.id)
+          await supabase.from('stock_log').insert({
+            product_id: item.product.id,
+            user_id: userId ?? null,
+            change_qty: Number(item.quantity),
+            reason: 'adjustment',
+            note: `Rollback sale ${saleId.slice(0, 8).toUpperCase()}`,
+          })
+        })
+      )
+    } catch (error) {
+      console.error('Failed to rollback sale:', error)
+    }
   }
 
   async function completeSale() {
@@ -246,85 +305,89 @@ export default function SellPage() {
       return
     }
 
-    const { data: sale, error: saleErr } = await supabase
-      .from('sales')
-      .insert({
-        user_id: user.id,
-        shift_id: null,
-        customer_id: null,
-        subtotal: totalAmount,
-        tax_amount: 0,
-        total_amount: totalAmount,
-        payment_type: 'cash',
-        payment_method: paymentMethod,
-        discount: 0,
-        mpesa_ref: null,
-        card_ref: null,
-        amount_tendered: totalAmount,
-        change_amount: 0,
-        note: customer ? `Customer: ${customer}` : null,
-      })
-      .select('id')
-      .single()
+    try {
+      const { data: sale, error: saleErr } = await supabase
+        .from('sales')
+        .insert({
+          user_id: user.id,
+          shift_id: null,
+          customer_id: customerId || null,
+          subtotal: totalAmount,
+          tax_amount: 0,
+          total_amount: totalAmount,
+          payment_type: 'cash',
+          payment_method: paymentMethod,
+          discount: 0,
+          mpesa_ref: null,
+          card_ref: null,
+          amount_tendered: totalAmount,
+          change_amount: 0,
+          note: customer ? `Customer: ${customer}` : null,
+        })
+        .select('id')
+        .single()
 
-    if (saleErr || !sale) {
-      toast.error(`❌ Failed to record sale: ${saleErr?.message ?? 'Unknown error'}`)
-      setSubmitting(false)
-      return
-    }
-
-    const saleItems = cart.map(item => ({
-      sale_id: sale.id,
-      product_id: item.product.id,
-      product_name: formatProductName(item.product),
-      quantity: item.quantity,
-      unit_price: item.product.price,
-      subtotal: item.subtotal,
-    }))
-
-    const { error: itemsErr } = await supabase.from('sale_items').insert(saleItems)
-    if (itemsErr) {
-      await supabase.from('sales').delete().eq('id', sale.id)
-      toast.error(`❌ Failed to record items. Transaction rolled back.`)
-      setSubmitting(false)
-      return
-    }
-
-    if (paymentType === 'cash') {
-      const today = new Date().toISOString().split('T')[0]
-      const { data: existing } = await supabase
-        .from('drawer_balances')
-        .select('cash, coin, till')
-        .eq('date', today)
-        .eq('shift_id', null)
-        .maybeSingle()
-
-      const balance = existing ?? { cash: 0, coin: 0, till: 0 }
-      const updatedBalance: any = {
-        date: today,
-        shift_id: null,
-        cash: balance.cash,
-        coin: balance.coin,
-        till: balance.till,
+      if (saleErr || !sale) {
+        throw new Error(saleErr?.message ?? 'Failed to record sale')
       }
 
-      if (paymentMethod === 'cash') updatedBalance.cash += totalAmount
-      if (paymentMethod === 'coin') updatedBalance.coin += totalAmount
-      if (paymentMethod === 'till') updatedBalance.till += totalAmount
+      const saleItems = cart.map(item => ({
+        sale_id: sale.id,
+        product_id: item.product.id,
+        product_name: formatProductName(item.product),
+        quantity: item.quantity,
+        unit_price: item.product.price,
+        subtotal: item.subtotal,
+      }))
 
-      await supabase.from('drawer_balances').upsert(updatedBalance)
+      const { error: itemsErr } = await supabase.from('sale_items').insert(saleItems)
+      if (itemsErr) {
+        throw new Error(itemsErr.message)
+      }
+
+      if (paymentType === 'cash') {
+        const today = new Date().toISOString().split('T')[0]
+        const { data: existing } = await supabase
+          .from('drawer_balances')
+          .select('cash, coin, till')
+          .eq('date', today)
+          .eq('shift_id', null)
+          .maybeSingle()
+
+        const balance = existing ?? { cash: 0, coin: 0, till: 0 }
+        const updatedBalance: any = {
+          date: today,
+          shift_id: null,
+          cash: balance.cash,
+          coin: balance.coin,
+          till: balance.till,
+        }
+
+        if (paymentMethod === 'cash') updatedBalance.cash += totalAmount
+        if (paymentMethod === 'coin') updatedBalance.coin += totalAmount
+        if (paymentMethod === 'till') updatedBalance.till += totalAmount
+
+        const { error: drawerError } = await supabase.from('drawer_balances').upsert(updatedBalance)
+        if (drawerError) {
+          throw new Error(drawerError.message)
+        }
+      }
+
+      await fetchProducts()
+
+      setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer })
+      setCart([])
+      setCustomer('')
+      setPaymentType('cash')
+      setPaymentMethod('cash')
+      setIsReviewingPayment(false)
+      setSubmitting(false)
+      toast.success(`✓ Sale completed! Receipt #${sale.id.slice(0, 8).toUpperCase()} for ${formatMoney(totalAmount, settings.currency)}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to complete sale'
+      toast.error(`❌ ${message}`)
+      setSubmitting(false)
     }
-
-    await fetchProducts()
-
-    setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer })
-    setCart([])
-    setCustomer('')
-    setPaymentType('cash')
-    setPaymentMethod('cash')
-    setIsReviewingPayment(false)
-    setSubmitting(false)
-    toast.success(`✓ Sale completed! Receipt #${sale.id.slice(0, 8).toUpperCase()} for ${formatMoney(totalAmount, settings.currency)}`)
   }
 
   function startNewSale() {
@@ -390,6 +453,23 @@ export default function SellPage() {
                     <span>Customer</span>
                     <span>{customer || 'Walk-in'}</span>
                   </div>
+                  <label className="space-y-2 text-sm text-slate-600">
+                    <span className="font-medium text-slate-700">Select customer</span>
+                    <select
+                      value={customerId}
+                      onChange={e => {
+                        const selected = customers.find(item => item.id === e.target.value)
+                        setCustomerId(e.target.value)
+                        setCustomer(selected?.name || '')
+                      }}
+                      className="input w-full"
+                    >
+                      <option value="">Walk-in</option>
+                      {customers.map(item => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </select>
+                  </label>
                   <div className="flex justify-between text-sm text-slate-600">
                     <span>Payment type</span>
                     <span className="capitalize">{paymentType}</span>
@@ -423,40 +503,62 @@ export default function SellPage() {
                         </button>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <div className="flex items-center gap-1 border border-slate-200 rounded p-0.5">
-                          <button
-                            type="button"
-                            onClick={() => decreaseQty(item.product.id)}
-                            disabled={item.quantity <= 1}
-                            className="p-1 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed rounded"
-                          >
-                            <Minus className="w-3 h-3 text-slate-600" />
-                          </button>
-                          <input
-                            type="number"
-                            min="1"
-                            step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
-                            value={formatQtyDisplay(item.quantity, item.product.unit)}
-                            onChange={e => updateQty(item.product.id, Number(e.target.value) || 1)}
-                            className="input w-10 text-center border-0 p-0.5 text-xs"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => increaseQty(item.product.id)}
-                            className="p-1 hover:bg-slate-100 rounded"
-                          >
-                            <Plus className="w-3 h-3 text-slate-600" />
-                          </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center rounded-full border border-slate-200 bg-slate-50 p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setCartItemMode(item.product.id, 'quantity')}
+                              className={`rounded-full px-2 py-1 text-[11px] font-medium ${item.saleMode !== 'amount' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                            >
+                              Qty
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCartItemMode(item.product.id, 'amount')}
+                              className={`rounded-full px-2 py-1 text-[11px] font-medium ${item.saleMode === 'amount' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                            >
+                              Amount
+                            </button>
+                          </div>
+
+                          {item.saleMode !== 'amount' ? (
+                            <div className="flex items-center gap-1 border border-slate-200 rounded p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => decreaseQty(item.product.id)}
+                                disabled={item.quantity <= 0.01}
+                                className="p-1 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed rounded"
+                              >
+                                <Minus className="w-3 h-3 text-slate-600" />
+                              </button>
+                              <input
+                                type="number"
+                                min="0.01"
+                                step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
+                                value={formatQtyDisplay(item.quantity, item.product.unit)}
+                                onChange={e => updateQty(item.product.id, Number(e.target.value) || 0.01)}
+                                className="input w-12 text-center border-0 p-0.5 text-xs"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => increaseQty(item.product.id)}
+                                className="p-1 hover:bg-slate-100 rounded"
+                              >
+                                <Plus className="w-3 h-3 text-slate-600" />
+                              </button>
+                            </div>
+                          ) : (
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={item.subtotal.toFixed(2)}
+                              onChange={e => updateAmount(item.product.id, Math.max(0.01, Number(e.target.value) || 0))}
+                              className="input w-24 text-right p-1 text-xs"
+                              placeholder="0.00"
+                            />
+                          )}
                         </div>
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={item.subtotal.toFixed(2)}
-                          onChange={e => updateAmount(item.product.id, Math.max(0.01, Number(e.target.value) || 0))}
-                          className="input flex-1 text-right p-1 text-xs"
-                          placeholder="0.00"
-                        />
                         <span className="font-semibold text-slate-900 min-w-fit">{formatMoney(item.subtotal, settings.currency)}</span>
                       </div>
                     </div>

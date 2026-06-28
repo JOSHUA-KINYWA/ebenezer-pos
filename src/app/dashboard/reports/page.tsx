@@ -99,38 +99,59 @@ export default function ReportsPage() {
 
   async function voidSale(sale: Sale) {
     if (!canVoidSales(user?.role)) return
+    if (sale.is_voided) {
+      toast.info('This sale is already voided.')
+      return
+    }
     if (!confirm(`Void receipt ${sale.receipt_no}? Stock will be restored.`)) return
 
-    const today = new Date().toISOString().split('T')[0]
-    if (sale.sale_items) {
-      const restores = (sale.sale_items || [])
-        .filter((item): item is NonNullable<Sale['sale_items']>[0] & { product_id: string } => !!item.product_id)
-        .map(async (item) => {
-          const { data: product } = await supabase.from('products').select('stock_qty').eq('id', item.product_id).single()
-          if (product) {
-            await Promise.all([
-              supabase.from('products').update({ stock_qty: product.stock_qty + item.quantity }).eq('id', item.product_id),
-              supabase.from('stock_log').insert({ product_id: item.product_id, user_id: user?.id, change_qty: item.quantity, reason: 'adjustment', note: `Void sale ${sale.receipt_no}` }),
-            ])
-          }
-        })
-      await Promise.all(restores)
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      if (sale.sale_items) {
+        await Promise.all(
+          (sale.sale_items || [])
+            .filter((item): item is NonNullable<Sale['sale_items']>[0] & { product_id: string } => !!item.product_id)
+            .map(async item => {
+              const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product_id).single()
+              if (productError || !product) throw new Error(`Unable to restore stock for ${item.product_name || item.product_id}`)
+
+              const nextStock = Number(product.stock_qty) + Number(item.quantity)
+              const { error: updateError } = await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product_id)
+              if (updateError) throw updateError
+
+              const { error: logError } = await supabase.from('stock_log').insert({
+                product_id: item.product_id,
+                user_id: user?.id ?? null,
+                change_qty: Number(item.quantity),
+                reason: 'adjustment',
+                note: `Void sale ${sale.receipt_no}`,
+              })
+              if (logError) throw logError
+            })
+        )
+      }
+
+      const { data: existing } = await supabase.from('drawer_balances').select('cash, coin, till').eq('date', today).eq('shift_id', sale.shift_id || null).maybeSingle()
+      const curr = existing || { cash: 0, coin: 0, till: 0 }
+      const updated: any = { date: today, shift_id: sale.shift_id || null }
+      if (sale.payment_method === 'cash') updated.cash = curr.cash - sale.total_amount
+      else if (sale.payment_method === 'coin') updated.coin = curr.coin - sale.total_amount
+      else updated.till = curr.till - sale.total_amount
+      updated.cash = updated.cash ?? curr.cash
+      updated.coin = updated.coin ?? curr.coin
+      updated.till = updated.till ?? curr.till
+      const { error: drawerError } = await supabase.from('drawer_balances').upsert(updated)
+      if (drawerError) throw drawerError
+
+      const { error: saleError } = await supabase.from('sales').update({ is_voided: true, voided_by: user?.id, voided_at: new Date().toISOString() }).eq('id', sale.id)
+      if (saleError) throw saleError
+
+      toast.success('Sale voided')
+      fetchAll()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to void sale'
+      toast.error(message)
     }
-
-    const { data: existing } = await supabase.from('drawer_balances').select('cash, coin, till').eq('date', today).eq('shift_id', sale.shift_id || null).maybeSingle()
-    const curr = existing || { cash: 0, coin: 0, till: 0 }
-    const updated: any = { date: today, shift_id: sale.shift_id || null }
-    if (sale.payment_method === 'cash') updated.cash = curr.cash - sale.total_amount
-    else if (sale.payment_method === 'coin') updated.coin = curr.coin - sale.total_amount
-    else updated.till = curr.till - sale.total_amount
-    updated.cash = updated.cash ?? curr.cash
-    updated.coin = updated.coin ?? curr.coin
-    updated.till = updated.till ?? curr.till
-    await supabase.from('drawer_balances').upsert(updated)
-
-    await supabase.from('sales').update({ is_voided: true, voided_by: user?.id, voided_at: new Date().toISOString() }).eq('id', sale.id)
-    toast.success('Sale voided')
-    fetchAll()
   }
 
   function exportDaily() {

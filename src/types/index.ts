@@ -118,6 +118,7 @@ export interface CartItem {
   product: Product
   quantity: number
   subtotal: number
+  saleMode?: 'quantity' | 'amount'
 }
 
 export interface DailySalesSummary {

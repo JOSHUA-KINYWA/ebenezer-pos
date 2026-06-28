@@ -1,16 +1,16 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
   "/api/sales-by-payment/route": "app/api/sales-by-payment/route.js",
-  "/page": "app/page.js",
   "/login/page": "app/login/page.js",
-  "/dashboard/expenses/page": "app/dashboard/expenses/page.js",
-  "/dashboard/page": "app/dashboard/page.js",
-  "/dashboard/reports/page": "app/dashboard/reports/page.js",
-  "/dashboard/drawer/page": "app/dashboard/drawer/page.js",
+  "/page": "app/page.js",
   "/dashboard/products/page": "app/dashboard/products/page.js",
+  "/dashboard/sell/page": "app/dashboard/sell/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
   "/dashboard/categories/page": "app/dashboard/categories/page.js",
+  "/dashboard/reports/page": "app/dashboard/reports/page.js",
   "/dashboard/stock/page": "app/dashboard/stock/page.js",
+  "/dashboard/drawer/page": "app/dashboard/drawer/page.js",
+  "/dashboard/expenses/page": "app/dashboard/expenses/page.js",
   "/dashboard/staff/page": "app/dashboard/staff/page.js",
-  "/dashboard/settings/page": "app/dashboard/settings/page.js",
-  "/dashboard/sell/page": "app/dashboard/sell/page.js"
+  "/dashboard/settings/page": "app/dashboard/settings/page.js"
 }
