@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   title: 'Ebenezar POS',
   description: 'Professional point of sale system for retail shops',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 }
 
 export const viewport: Viewport = {
