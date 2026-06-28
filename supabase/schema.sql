@@ -292,3 +292,19 @@ CREATE POLICY "pos_public_payment_reconciliation" ON payment_reconciliation FOR 
 INSERT INTO shop_settings (shop_name, shop_address, currency, receipt_footer)
 SELECT 'Ebenezar Shop', 'Nairobi, Kenya', 'KSh', 'Thank you for shopping with us!'
 WHERE NOT EXISTS (SELECT 1 FROM shop_settings);
+
+-- Drawer balances (cash reconciliation)
+CREATE TABLE IF NOT EXISTS drawer_balances (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  date date NOT NULL DEFAULT CURRENT_DATE,
+  shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
+  cash numeric(12,2) NOT NULL DEFAULT 0,
+  coin numeric(12,2) NOT NULL DEFAULT 0,
+  till numeric(12,2) NOT NULL DEFAULT 0,
+  note text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_drawer_balances_date ON drawer_balances(date);
+CREATE INDEX IF NOT EXISTS idx_drawer_balances_shift_id ON drawer_balances(shift_id);
