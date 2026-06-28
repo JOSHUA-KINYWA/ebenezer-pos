@@ -36,7 +36,7 @@ export default function SettingsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  type SettingsTab = 'general' | 'products' | 'categories'
+  type SettingsTab = 'general' | 'categories'
 
   const [productForm, setProductForm] = useState({
     name: '',
@@ -110,15 +110,16 @@ export default function SettingsPage() {
     setSaving(false)
   }
 
+  async function clearTable(tableName: string) {
+    const { error } = await supabase.from(tableName).delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (error) throw error
+  }
+
   async function resetSales() {
-    if (!confirm('Delete all sales records and daily summaries? This cannot be undone.')) return
-    if (!confirm('This will remove all transaction history. Are you sure?')) return
+    if (!confirm('Delete all sales records and transaction history? This cannot be undone.')) return
+    if (!confirm('This will remove all sales data. Are you sure?')) return
     try {
-      await Promise.all([
-        supabase.from('sale_items').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('sales').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('daily_sales_summary').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      ])
+      await Promise.all([clearTable('sale_items'), clearTable('sales')])
       toast.success('All sales and transactions reset')
       refresh()
     } catch (err) {
@@ -129,7 +130,7 @@ export default function SettingsPage() {
   async function resetExpenses() {
     if (!confirm('Delete all expense records? This cannot be undone.')) return
     try {
-      await supabase.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await clearTable('expenses')
       toast.success('All expenses reset')
       refresh()
     } catch (err) {
@@ -140,7 +141,7 @@ export default function SettingsPage() {
   async function resetDrawer() {
     if (!confirm('Delete all drawer balance records? This cannot be undone.')) return
     try {
-      await supabase.from('drawer_balances').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await clearTable('drawer_balances')
       toast.success('All drawer balances reset')
       refresh()
     } catch (err) {
@@ -148,21 +149,26 @@ export default function SettingsPage() {
     }
   }
 
-  async function resetAllMetrics() {
-    if (!confirm('Reset ALL metrics? This will delete sales, expenses, and drawer records. Products and stock will NOT be affected.')) return
-    if (!confirm('This cannot be undone. Are you absolutely sure?')) return
+  async function resetFactoryData() {
+    if (!confirm('Factory reset will delete sales, expenses, stock logs, products, and categories. This cannot be undone.')) return
+    if (!confirm('This will remove your catalog and business history. Continue?')) return
+
+    const dummyId = '00000000-0000-0000-0000-000000000000'
+
     try {
-      await Promise.all([
-        supabase.from('sale_items').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('sales').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('daily_sales_summary').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('drawer_balances').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      ])
-      toast.success('All metrics reset - products and stock preserved')
+      const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balances', 'stock_log', 'products', 'categories']
+
+      for (const tableName of tablesToClear) {
+        await clearTable(tableName)
+      }
+
+      setProducts([])
+      setCategories([])
+      toast.success('Factory reset complete')
       refresh()
     } catch (err) {
-      toast.error('Failed to reset metrics')
+      const message = err instanceof Error ? err.message : 'Failed to reset factory data'
+      toast.error(message)
     }
   }
 
@@ -322,14 +328,20 @@ export default function SettingsPage() {
     }
   }
 
-  async function toggleCategoryStatus(category: Category) {
+  async function deleteCategory(category: Category) {
+    if (!confirm(`Delete category "${category.name}"? Products in this category will be uncategorized.`)) return
+
     try {
-      const { error } = await supabase.from('categories').update({ is_active: !category.is_active }).eq('id', category.id).single()
+      const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', category.id)
+      if (productError) throw productError
+
+      const { error } = await supabase.from('categories').delete().eq('id', category.id)
       if (error) throw error
-      toast.success(`${category.is_active ? 'Deactivated' : 'Activated'} category`)
-      fetchCategories()
+
+      toast.success('Category deleted successfully')
+      await Promise.all([fetchCategories(), fetchProducts()])
     } catch (error) {
-      toast.error('Unable to update category')
+      toast.error('Unable to delete category')
       console.error(error)
     }
   }
@@ -360,7 +372,6 @@ export default function SettingsPage() {
         <div className="flex flex-wrap gap-2 rounded-2xl bg-white p-2 shadow-sm border border-slate-200">
           {[
             { id: 'general', label: 'Shop' },
-            { id: 'products', label: 'Products' },
             { id: 'categories', label: 'Categories' },
           ].map(tab => (
             <button
@@ -407,8 +418,8 @@ export default function SettingsPage() {
                 <button onClick={resetDrawer} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50 inline-flex items-center justify-center gap-2">
                   <RefreshCw className="w-4 h-4" /> Reset Drawer
                 </button>
-                <button onClick={resetAllMetrics} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50 inline-flex items-center justify-center gap-2 font-semibold">
-                  <RefreshCw className="w-4 h-4" /> Reset All Metrics
+                <button onClick={resetFactoryData} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50 inline-flex items-center justify-center gap-2 font-semibold">
+                  <RefreshCw className="w-4 h-4" /> Factory Reset
                 </button>
               </div>
             </div>
@@ -451,7 +462,7 @@ export default function SettingsPage() {
                         </td>
                         <td className="table-cell text-right space-x-2">
                           <button onClick={() => openEditCategory(category)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
-                          <button onClick={() => toggleCategoryStatus(category)} className="text-slate-600 hover:text-red-600"><Trash2 className="inline w-4 h-4" /></button>
+                          <button onClick={() => deleteCategory(category)} className="text-slate-600 hover:text-red-600"><Trash2 className="inline w-4 h-4" /></button>
                         </td>
                       </tr>
                     ))
@@ -461,219 +472,6 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
-
-        {activeTab === 'products' && (
-          <div className="card p-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between mb-4">
-              <div>
-                <h3 className="font-bold text-slate-900">Products</h3>
-                <p className="text-sm text-slate-500">Add and update catalog items used in the POS.</p>
-              </div>
-              <button onClick={() => openNewProduct()} className="btn-primary inline-flex items-center gap-2 text-sm">
-                <Plus className="w-4 h-4" /> Add Product
-              </button>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 text-slate-400 w-4 h-4" />
-                <input
-                  type="search"
-                  placeholder="Search products..."
-                  value={productSearch}
-                  onChange={e => setProductSearch(e.target.value)}
-                  className="input pl-10 w-full"
-                />
-              </div>
-              <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="input w-full">
-                {productOptions.map(option => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="table-head">Name</th>
-                    <th className="table-head">Category</th>
-                    <th className="table-head">Price</th>
-                    <th className="table-head">Status</th>
-                    <th className="table-head text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredProducts.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No products found.</td>
-                    </tr>
-                  ) : (
-                    filteredProducts.map(product => (
-                      <tr
-                        key={product.id}
-                        className="table-row-hover cursor-pointer"
-                        onClick={() => setSelectedProduct(product)}
-                      >
-                        <td className="table-cell">{product.name}</td>
-                        <td className="table-cell">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
-                        <td className="table-cell">{formatMoney(product.price, form.currency)}</td>
-                        <td className="table-cell">
-                          <span className={product.is_active ? 'badge badge-active' : 'badge badge-inactive'}>
-                            {product.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="table-cell text-right space-x-2">
-                          <button onClick={e => { e.stopPropagation(); openEditProduct(product) }} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
-                          <button onClick={e => { e.stopPropagation(); toggleProductStatus(product) }} className="text-slate-600 hover:text-red-600"><Trash2 className="inline w-4 h-4" /></button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {selectedProduct && (
-              <div className="card mt-6 p-6 border-emerald-100 bg-emerald-50/40">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-4">
-                  <div>
-                    <h4 className="text-lg font-semibold text-slate-900">{selectedProduct.name}</h4>
-                    <p className="text-sm text-slate-600">Click any product row to view variant details.</p>
-                  </div>
-                  <button onClick={() => openNewProduct(selectedProduct.parent_product_id || selectedProduct.id, selectedProduct.category_id)} className="btn-secondary inline-flex items-center gap-2 text-sm">
-                    <Plus className="w-4 h-4" /> Add Variant
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wider text-slate-500">Category</p>
-                    <p className="text-sm text-slate-900">{((selectedProduct.category as { name?: string })?.name) || 'Uncategorized'}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wider text-slate-500">Unit</p>
-                    <p className="text-sm text-slate-900">{selectedProduct.unit}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wider text-slate-500">Quantity</p>
-                    <p className="text-sm text-slate-900">{selectedProduct.stock_qty} {selectedProduct.unit}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wider text-slate-500">Low stock alert</p>
-                    <p className="text-sm text-slate-900">{selectedProduct.stock_alert} {selectedProduct.unit}</p>
-                  </div>
-                </div>
-
-                {selectedProduct.parent_product_id && (
-                  <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
-                    <p className="text-xs uppercase tracking-wider text-slate-500">Variant of</p>
-                    <p className="text-sm text-slate-900">{products.find(p => p.id === selectedProduct.parent_product_id)?.name || 'Parent product'}</p>
-                  </div>
-                )}
-
-                <div>
-                  <h5 className="font-semibold text-slate-900 mb-3">Variants</h5>
-                  {selectedVariants.length === 0 ? (
-                    <p className="text-sm text-slate-500">No variants are attached to this product yet.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-slate-200">
-                        <thead className="bg-slate-50">
-                          <tr>
-                            <th className="table-head">Name</th>
-                            <th className="table-head">Unit</th>
-                            <th className="table-head">Qty</th>
-                            <th className="table-head">Price</th>
-                            <th className="table-head text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {selectedVariants.map(variant => (
-                            <tr key={variant.id} className="table-row-hover">
-                              <td className="table-cell">{variant.name}</td>
-                              <td className="table-cell">{variant.unit}</td>
-                              <td className="table-cell">{variant.stock_qty}</td>
-                              <td className="table-cell">{formatMoney(variant.price, form.currency)}</td>
-                              <td className="table-cell text-right">
-                                <button onClick={() => openEditProduct(variant)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        <Modal
-          isOpen={productModalOpen}
-          onClose={() => setProductModalOpen(false)}
-          title={editingProduct ? 'Edit Product' : 'Add Product'}
-          description="Create or update a catalog item. Use the unit field to describe measurements like ml, ltr, or pack."
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setProductModalOpen(false)} className="btn-secondary">Cancel</button>
-              <button onClick={handleSaveProduct} className="btn-primary inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {editingProduct ? 'Update' : 'Save'}
-              </button>
-            </div>
-          }
-          size="xl"
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Product name</span>
-              <input value={productForm.name} onChange={e => setProductForm({ ...productForm, name: e.target.value })} className="input w-full" />
-              {productErrors.name && <p className="text-xs text-red-600">{productErrors.name}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Category</span>
-              <select value={productForm.category_id} onChange={e => setProductForm({ ...productForm, category_id: e.target.value })} className="input w-full">
-                <option value="">Uncategorized</option>
-                {categories.map(category => (
-                  <option key={category.id} value={category.id}>{category.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2 sm:col-span-2">
-              <span className="text-sm font-medium text-slate-700">Description</span>
-              <textarea value={productForm.description} onChange={e => setProductForm({ ...productForm, description: e.target.value })} className="input h-24 w-full resize-none" />
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Variety / Variant name</span>
-              <input value={productForm.variety} onChange={e => setProductForm({ ...productForm, variety: e.target.value })} className="input w-full" />
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Price</span>
-              <input type="number" step="0.01" min="0" value={productForm.price} onChange={e => setProductForm({ ...productForm, price: e.target.value })} className="input w-full" />
-              {productErrors.price && <p className="text-xs text-red-600">{productErrors.price}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Unit</span>
-              <input value={productForm.unit} onChange={e => setProductForm({ ...productForm, unit: e.target.value })} className="input w-full" />
-              {productErrors.unit && <p className="text-xs text-red-600">{productErrors.unit}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Stock quantity</span>
-              <input type="text" placeholder="e.g. 500 ml, 1.5 ltr, 12 pack" value={productForm.stock_qty} onChange={e => setProductForm({ ...productForm, stock_qty: e.target.value })} className="input w-full" />
-              {productErrors.stock_qty && <p className="text-xs text-red-600">{productErrors.stock_qty}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Low stock alert</span>
-              <input type="number" min="0" value={productForm.stock_alert} onChange={e => setProductForm({ ...productForm, stock_alert: e.target.value })} className="input w-full" />
-              {productErrors.stock_alert && <p className="text-xs text-red-600">{productErrors.stock_alert}</p>}
-            </label>
-            <label className="flex items-center gap-3 sm:col-span-2">
-              <input type="checkbox" checked={productForm.is_active} onChange={e => setProductForm({ ...productForm, is_active: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
-              <span className="text-sm text-slate-700">Mark as active</span>
-            </label>
-          </div>
-        </Modal>
 
         <Modal
           isOpen={categoryModalOpen}

@@ -229,6 +229,23 @@ export default function SellPage() {
 
     setSubmitting(true)
 
+    const stockChecks = await Promise.all(
+      cart.map(async item => {
+        const { data: product, error } = await supabase.from('products').select('id, stock_qty').eq('id', item.product.id).single()
+        if (error || !product) throw new Error(`Unable to verify stock for ${formatProductName(item.product)}`)
+        if (Number(product.stock_qty) < item.quantity) {
+          throw new Error(`${formatProductName(item.product)} only has ${product.stock_qty} available`)
+        }
+        return product
+      })
+    )
+
+    if (!stockChecks.length) {
+      toast.error('❌ No items available for sale')
+      setSubmitting(false)
+      return
+    }
+
     const { data: sale, error: saleErr } = await supabase
       .from('sales')
       .insert({
@@ -298,14 +315,7 @@ export default function SellPage() {
       await supabase.from('drawer_balances').upsert(updatedBalance)
     }
 
-    await Promise.all(
-      cart.map(item =>
-        supabase
-          .from('products')
-          .update({ stock_qty: Math.max(0, item.product.stock_qty - item.quantity) })
-          .eq('id', item.product.id)
-      )
-    )
+    await fetchProducts()
 
     setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer })
     setCart([])

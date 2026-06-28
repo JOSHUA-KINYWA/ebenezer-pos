@@ -71,10 +71,16 @@ export default function StockPage() {
     }
   }
 
-  const categories = Array.from(new Set(products.map(p => (p.category as { name?: string })?.name || 'Uncategorized')))
+  const inventoryProducts = useMemo(() => products.map(p => ({
+    ...p,
+    stock_qty: Number(p.stock_qty) || 0,
+    price: Number(p.price) || 0,
+  })), [products])
+
+  const categories = Array.from(new Set(inventoryProducts.map(p => (p.category as { name?: string })?.name || 'Uncategorized')))
 
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    return inventoryProducts.filter(p => {
       const matchesSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.variety ?? '').toLowerCase().includes(search.toLowerCase())
       const matchesCategory = categoryFilter === 'all' || (p.category as { name?: string })?.name === categoryFilter
       const matchesStock = stockFilter === 'all' || 
@@ -83,14 +89,14 @@ export default function StockPage() {
         (stockFilter === 'out_of_stock' && p.stock_qty === 0)
       return matchesSearch && matchesCategory && matchesStock
     })
-  }, [products, search, categoryFilter, stockFilter])
+  }, [inventoryProducts, search, categoryFilter, stockFilter])
 
-  const inStock = products.filter(p => p.stock_qty > p.stock_alert)
-  const lowStock = products.filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0)
-  const outOfStock = products.filter(p => p.stock_qty === 0)
-  const totalValue = products.reduce((sum, p) => sum + p.stock_qty * p.price, 0)
+  const inStock = inventoryProducts.filter(p => p.stock_qty > p.stock_alert)
+  const lowStock = inventoryProducts.filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0)
+  const outOfStock = inventoryProducts.filter(p => p.stock_qty === 0)
+  const totalValue = inventoryProducts.reduce((sum, p) => sum + p.stock_qty * p.price, 0)
 
-  const categoryValues = products.reduce((acc: Record<string, { qty: number; value: number }>, p) => {
+  const categoryValues = inventoryProducts.reduce((acc: Record<string, { qty: number; value: number }>, p) => {
     const cat = (p.category as { name?: string })?.name || 'Uncategorized'
     if (!acc[cat]) acc[cat] = { qty: 0, value: 0 }
     acc[cat].qty += p.stock_qty
