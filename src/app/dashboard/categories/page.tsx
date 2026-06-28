@@ -11,7 +11,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { useToast } from '@/context/ToastContext'
 import { Category } from '@/types'
 import { validateCategoryForm } from '@/lib/validators'
-import { Plus, Edit3, Trash2, Save } from 'lucide-react'
+import { Plus, Edit3, Trash2, Save, X, PowerOff } from 'lucide-react'
 
 interface CategoryForm {
   name: string
@@ -32,6 +32,7 @@ export default function CategoriesPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [form, setForm] = useState<CategoryForm>(initialForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [deleteConfirm, setDeleteConfirm] = useState<Category | null>(null)
   const toast = useToast()
   const supabase = createClient()
 
@@ -92,7 +93,7 @@ export default function CategoriesPage() {
 
     try {
       if (editingCategory) {
-        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id).single()
+        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id)
         if (error) throw error
         toast.success('Category updated successfully')
       } else {
@@ -103,19 +104,35 @@ export default function CategoriesPage() {
       setModalOpen(false)
       fetchCategories()
     } catch (error) {
-      toast.error('Unable to save category')
+      const message = error instanceof Error ? error.message : 'Unable to save category'
+      toast.error(`❌ ${message}`)
       console.error(error)
     }
   }
 
   async function handleToggleActive(category: Category) {
     try {
-      const { error } = await supabase.from('categories').update({ is_active: !category.is_active }).eq('id', category.id).single()
+      const { error } = await supabase.from('categories').update({ is_active: !category.is_active }).eq('id', category.id)
       if (error) throw error
       toast.success(`${category.is_active ? 'Deactivated' : 'Activated'} category`)
       fetchCategories()
     } catch (error) {
-      toast.error('Unable to update category')
+      const message = error instanceof Error ? error.message : 'Unable to update category'
+      toast.error(`❌ ${message}`)
+      console.error(error)
+    }
+  }
+
+  async function handleDeleteCategory(category: Category) {
+    try {
+      const { error } = await supabase.from('categories').delete().eq('id', category.id)
+      if (error) throw error
+      toast.success('Category deleted successfully')
+      setDeleteConfirm(null)
+      fetchCategories()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete category'
+      toast.error(`❌ ${message}`)
       console.error(error)
     }
   }
@@ -176,13 +193,18 @@ export default function CategoriesPage() {
                       {category.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td className="px-4 py-4 text-right text-sm font-medium space-x-2">
-                    <button onClick={() => openEditCategory(category)} className="text-slate-600 hover:text-brand-600" title="Edit category">
-                      <Edit3 className="inline w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleToggleActive(category)} className="text-slate-600 hover:text-red-600" title={category.is_active ? 'Deactivate' : 'Activate'}>
-                      <Trash2 className="inline w-4 h-4" />
-                    </button>
+                  <td className="px-4 py-4 text-right text-sm font-medium">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => openEditCategory(category)} className="text-slate-600 hover:text-brand-600" title="Edit category">
+                        <Edit3 className="inline w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleToggleActive(category)} className={category.is_active ? 'text-slate-400 hover:text-amber-600' : 'text-emerald-600 hover:text-emerald-700'} title={category.is_active ? 'Deactivate' : 'Activate'}>
+                        <PowerOff className="inline w-4 h-4" />
+                      </button>
+                      <button onClick={() => setDeleteConfirm(category)} className="text-slate-600 hover:text-red-600" title="Delete category">
+                        <Trash2 className="inline w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -230,6 +252,28 @@ export default function CategoriesPage() {
             </label>
           </div>
         </Modal>
+
+        {deleteConfirm && (
+          <Modal
+            isOpen={!!deleteConfirm}
+            onClose={() => setDeleteConfirm(null)}
+            title="Delete Category"
+            description={`Are you sure you want to delete "${deleteConfirm.name}"? This action cannot be undone.`}
+            footer={
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setDeleteConfirm(null)} className="btn-secondary">Cancel</button>
+                <button onClick={() => handleDeleteCategory(deleteConfirm)} className="btn-danger inline-flex items-center gap-2">
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            }
+            size="sm"
+          >
+            <p className="text-sm text-slate-600">
+              Products linked to this category will have their category cleared. This is permanent.
+            </p>
+          </Modal>
+        )}
       </div>
     </RoleGuard>
   )
