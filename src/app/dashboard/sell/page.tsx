@@ -14,6 +14,8 @@ import { Barcode, CheckCircle, Search, Plus, Minus, X } from 'lucide-react'
 type POSPaymentType = 'cash'
 type CashMethod = 'cash' | 'coin' | 'till'
 
+const CART_STORAGE_KEY = 'ebenezar-pos-cart'
+
 export default function SellPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -26,6 +28,7 @@ export default function SellPage() {
   const [selectedParentProduct, setSelectedParentProduct] = useState<Product | null>(null)
   const [productVariants, setProductVariants] = useState<Product[]>([])
   const [showVariantModal, setShowVariantModal] = useState(false)
+  const [quickAddValue, setQuickAddValue] = useState('')
   const [paymentType, setPaymentType] = useState<POSPaymentType>('cash')
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('cash')
   const [isReviewingPayment, setIsReviewingPayment] = useState(false)
@@ -49,6 +52,33 @@ export default function SellPage() {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    try {
+      const stored = window.localStorage.getItem(CART_STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as CartItem[]
+        if (Array.isArray(parsed)) {
+          setCart(parsed)
+        }
+      }
+    } catch (error) {
+      console.error('Unable to load cart state', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart))
+    window.dispatchEvent(
+      new CustomEvent('ebenezar-pos-cart-updated', {
+        detail: { count: cart.reduce((sum, item) => sum + item.quantity, 0) },
+      })
+    )
+  }, [cart])
 
   async function fetchProducts() {
     const [{ data: productData }, { data: customerData }] = await Promise.all([
@@ -398,31 +428,43 @@ export default function SellPage() {
     cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  async function handleBarcodeSearch(e: React.FormEvent) {
-    e.preventDefault()
-    if (!barcodeInput.trim()) {
-      toast.error('❌ Enter a barcode')
+  function addProductByCode(code: string) {
+    const trimmed = code.trim()
+    if (!trimmed) {
+      toast.error('❌ Enter a barcode or product code')
       return
     }
 
-    const found = products.find(product => product.barcode === barcodeInput.trim())
+    const found = products.find(product => product.barcode === trimmed || product.name.toLowerCase() === trimmed.toLowerCase())
     if (found) {
       if (found.stock_qty === 0) {
         toast.error(`❌ ${formatProductName(found)} is out of stock!`)
       } else {
         handleProductSelect(found)
-        toast.success(`✓ Found: ${formatProductName(found)}`)
+        toast.success(`✓ Added ${formatProductName(found)}`)
       }
       setBarcodeInput('')
+      setQuickAddValue('')
     } else {
-      toast.error(`❌ Barcode not found: ${barcodeInput.trim()}`)
+      toast.error(`❌ Product not found: ${trimmed}`)
     }
+  }
+
+  async function handleBarcodeSearch(e: React.FormEvent) {
+    e.preventDefault()
+    addProductByCode(barcodeInput)
+  }
+
+  function handleQuickAddSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    addProductByCode(quickAddValue)
   }
 
   if (loading) return <LoadingSpinner label="Loading products..." />
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0)
   const total = subtotal
+  const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
   return (
     <div>
@@ -650,6 +692,24 @@ export default function SellPage() {
               />
             </div>
 
+            <form onSubmit={handleQuickAddSubmit} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</label>
+                  <input
+                    type="text"
+                    value={quickAddValue}
+                    onChange={e => setQuickAddValue(e.target.value)}
+                    placeholder="Enter barcode or product name"
+                    className="input mt-1 w-full"
+                  />
+                </div>
+                <button type="submit" className="btn-primary px-4 py-3 sm:self-end">
+                  Quick add
+                </button>
+              </div>
+            </form>
+
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -671,37 +731,40 @@ export default function SellPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[560px] overflow-y-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[560px] overflow-y-auto pr-1">
             {filteredProducts.length === 0 ? (
               <div className="card p-6 col-span-full text-center text-sm text-slate-500">
                 No products match this filter.
               </div>
             ) : (
               filteredProducts.map(product => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => handleProductSelect(product)}
-                  className="card p-4 text-left hover:shadow-lg transition-shadow flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
+                <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
+                  <button type="button" onClick={() => handleProductSelect(product)} className="w-full text-left">
+                    <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">Parent</span>
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Parent</span>
                     </div>
                     <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
-                  </div>
-                  <div className="mt-4 grid gap-2 text-sm text-slate-600">
-                    <div className="flex items-center justify-between">
-                      <span>Price</span>
-                      <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
+                    <div className="grid gap-2 text-sm text-slate-600">
+                      <div className="flex items-center justify-between">
+                        <span>Price</span>
+                        <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Stock</span>
+                        <span className="font-semibold text-slate-900">{product.stock_qty} {product.unit}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Stock</span>
-                      <span className="font-semibold text-slate-900">{product.stock_qty} {product.unit}</span>
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleProductSelect(product)}
+                    className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add to cart
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -710,47 +773,65 @@ export default function SellPage() {
             ref={cartRef}
             className={`card p-4 transition-all duration-300 ${cartHighlight ? 'border-brand-500 ring-2 ring-brand-200 shadow-lg' : 'border-slate-200'}`}
           >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Cart</h2>
+                <h2 className="text-lg font-semibold text-slate-900">Current cart</h2>
                 <p className="text-sm text-slate-500">
-                  {cart.length > 0 ? `${cart.length} item${cart.length === 1 ? '' : 's'} added` : 'Add a product variant to see it here.'}
+                  {cart.length > 0
+                    ? `${cartItemsCount} unit${cartItemsCount === 1 ? '' : 's'} across ${cart.length} item${cart.length === 1 ? '' : 's'}`
+                    : 'Add products from the catalog to build a sale.'}
                 </p>
               </div>
-              {cart.length > 0 && (
-                <button type="button" onClick={() => setIsReviewingPayment(true)} className="btn-primary px-4 py-2">
-                  Review payment
-                </button>
-              )}
+              <div className="flex flex-wrap gap-2">
+                {cart.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCart([])
+                      toast.info('🧹 Cart cleared')
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                  >
+                    Clear cart
+                  </button>
+                )}
+                {cart.length > 0 && (
+                  <button type="button" onClick={() => setIsReviewingPayment(true)} className="btn-primary px-4 py-2">
+                    Review payment
+                  </button>
+                )}
+              </div>
             </div>
 
             {cart.length === 0 ? (
-              <div className="text-sm text-slate-500">No items in the cart yet. Select a parent product and choose a variant to add it.</div>
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                No items in the cart yet. Tap any product to add it and keep building the sale.
+              </div>
             ) : (
               <div className="space-y-4">
                 {cart.map(item => (
-                  <div key={item.product.id} className="border-b border-slate-200 pb-3 last:border-b-0 last:pb-0">
+                  <div key={item.product.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex-1">
-                        <p className="font-medium text-sm">{formatProductName(item.product)}</p>
+                        <p className="font-semibold text-sm text-slate-900">{formatProductName(item.product)}</p>
                         <p className="text-xs text-slate-500">{formatMoney(item.product.price, settings.currency)} per unit</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => removeFromCart(item.product.id)}
-                        className="text-slate-400 hover:text-red-600 transition-colors p-1"
+                        className="rounded-full p-1.5 text-slate-400 transition hover:bg-white hover:text-red-600"
                         title="Remove from cart"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-2 border border-slate-200 rounded-lg p-1">
+                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1">
                         <button
                           type="button"
                           onClick={() => decreaseQty(item.product.id)}
                           disabled={item.quantity <= 1}
-                          className="p-1.5 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
+                          className="rounded p-1.5 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                           title="Decrease quantity"
                         >
                           <Minus className="w-4 h-4 text-slate-600" />
@@ -761,12 +842,12 @@ export default function SellPage() {
                           step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
                           value={formatQtyDisplay(item.quantity, item.product.unit)}
                           onChange={e => updateQty(item.product.id, Number(e.target.value) || 1)}
-                          className="input w-12 text-center border-0 p-1"
+                          className="input w-12 border-0 bg-transparent p-1 text-center"
                         />
                         <button
                           type="button"
                           onClick={() => increaseQty(item.product.id)}
-                          className="p-1.5 hover:bg-slate-100 rounded transition-colors"
+                          className="rounded p-1.5 hover:bg-slate-100"
                           title="Increase quantity"
                         >
                           <Plus className="w-4 h-4 text-slate-600" />
@@ -788,12 +869,26 @@ export default function SellPage() {
                     </div>
                   </div>
                 ))}
-                <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-sm text-slate-600">
-                  <span className="font-medium">Total</span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                  <span className="font-semibold">Total due</span>
                   <span className="font-semibold text-slate-900">{formatMoney(total, settings.currency)}</span>
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {cart.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">{cartItemsCount} item{cartItemsCount === 1 ? '' : 's'}</p>
+              <p className="text-xs text-slate-500">{formatMoney(total, settings.currency)}</p>
+            </div>
+            <button type="button" onClick={() => setIsReviewingPayment(true)} className="btn-primary px-4 py-2">
+              Checkout
+            </button>
           </div>
         </div>
       )}

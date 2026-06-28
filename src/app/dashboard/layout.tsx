@@ -37,6 +37,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [drawerCoin, setDrawerCoin] = useState(0)
   const [drawerTill, setDrawerTill] = useState(0)
   const [drawerLoaded, setDrawerLoaded] = useState(false)
+  const [cartCount, setCartCount] = useState(0)
   const supabase = createClient()
   const { settings } = useShopSettings()
 
@@ -107,6 +108,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [user, supabase])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const syncCartCount = () => {
+      try {
+        const stored = window.localStorage.getItem('ebenezar-pos-cart')
+        if (!stored) {
+          setCartCount(0)
+          return
+        }
+
+        const parsed = JSON.parse(stored) as Array<{ quantity?: number }>
+        const count = Array.isArray(parsed)
+          ? parsed.reduce((sum, item) => sum + (item.quantity || 0), 0)
+          : 0
+        setCartCount(count)
+      } catch {
+        setCartCount(0)
+      }
+    }
+
+    syncCartCount()
+    window.addEventListener('ebenezar-pos-cart-updated', syncCartCount as EventListener)
+
+    return () => {
+      window.removeEventListener('ebenezar-pos-cart-updated', syncCartCount as EventListener)
+    }
+  }, [])
+
+  useEffect(() => {
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll']
     const updateActivity = () => {
       refreshSession()
@@ -166,6 +196,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <nav className="flex-1 px-4 py-5 space-y-1 overflow-y-auto">
           {visibleNav.map(({ href, icon: Icon, label }) => {
             const active = pathname.startsWith(href)
+            const isCartLink = href === '/dashboard/sell'
+            const badgeCount = isCartLink && cartCount > 0 ? cartCount : 0
+
             return (
               <Link
                 key={href}
@@ -178,7 +211,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 }`}
               >
                 <Icon className="w-4 h-4" />
-                {label}
+                <span className="flex-1">{label}</span>
+                {badgeCount > 0 && (
+                  <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-slate-900">
+                    {badgeCount}
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -217,6 +255,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span className="font-bold text-slate-900 block text-sm">{settings.shop_name}</span>
             <span className="text-xs text-slate-500 capitalize">{user.role}</span>
           </div>
+          <Link href="/dashboard/sell" className="ml-auto relative rounded-lg p-2 hover:bg-slate-100">
+            <ShoppingCart className="w-5 h-5 text-slate-600" />
+            {cartCount > 0 && (
+              <span className="absolute -right-1 -top-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {cartCount}
+              </span>
+            )}
+          </Link>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
