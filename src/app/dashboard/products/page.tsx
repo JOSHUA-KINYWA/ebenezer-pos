@@ -204,7 +204,7 @@ export default function ProductsPage() {
 
     try {
       if (editingProduct) {
-        const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id).single()
+        const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id)
         if (error) throw error
         if (variantsDraft.length > 0) {
           const variantParentId = form.parent_product_id || editingProduct.id
@@ -264,12 +264,13 @@ export default function ProductsPage() {
       return
     }
     try {
-      const { error } = await supabase.from('products').update({ is_active: false }).eq('id', product.id).single()
+      const { error } = await supabase.from('products').update({ is_active: false }).eq('id', product.id)
       if (error) throw error
       toast.success('Product deactivated successfully')
       fetchProducts()
     } catch (error) {
-      toast.error('Unable to deactivate product')
+      const message = error instanceof Error ? error.message : 'Unable to deactivate product'
+      toast.error(`❌ ${message}`)
       console.error(error)
     }
   }

@@ -86,8 +86,15 @@ export default function CategoriesPage() {
       return
     }
 
+    const trimmedName = form.name.trim()
+    const duplicate = categories.find(c => c.name.toLowerCase() === trimmedName.toLowerCase() && c.id !== editingCategory?.id)
+    if (duplicate) {
+      toast.error(`❌ Category "${trimmedName}" already exists`)
+      return
+    }
+
     const payload = {
-      name: form.name.trim(),
+      name: trimmedName,
       description: form.description.trim() || null,
     }
 
