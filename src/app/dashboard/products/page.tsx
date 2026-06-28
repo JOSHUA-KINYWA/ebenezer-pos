@@ -198,18 +198,22 @@ export default function ProductsPage() {
       return
     }
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: form.name.trim(),
       barcode: form.barcode.trim() || null,
       variety: form.variety.trim() || null,
       description: form.description.trim() || null,
-      category_id: form.category_id || null,
-      parent_product_id: form.parent_product_id || null,
       price: parseFloat(form.price),
       unit: form.unit.trim(),
       stock_qty: parseFloat(form.stock_qty),
       stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
+    }
+    if (form.category_id) {
+      payload.category_id = form.category_id
+    }
+    if (form.parent_product_id) {
+      payload.parent_product_id = form.parent_product_id
     }
 
     try {
@@ -218,19 +222,24 @@ export default function ProductsPage() {
         if (error) throw error
         if (variantsDraft.length > 0) {
           const variantParentId = form.parent_product_id || editingProduct.id
-          const variantPayloads = variantsDraft.map(v => ({
-            name: v.name.trim(),
-            barcode: v.barcode.trim() || null,
-            variety: v.variety.trim() || null,
-            description: v.description.trim() || null,
-            category_id: v.category_id || null,
-            parent_product_id: variantParentId,
-            price: parseFloat(v.price),
-            unit: v.unit.trim(),
-            stock_qty: parseFloat(v.stock_qty),
-            stock_alert: parseInt(v.stock_alert, 10),
-            is_active: v.is_active,
-          }))
+          const variantPayloads = variantsDraft.map(v => {
+            const vPayload: Record<string, unknown> = {
+              name: v.name.trim(),
+              barcode: v.barcode.trim() || null,
+              variety: v.variety.trim() || null,
+              description: v.description.trim() || null,
+              price: parseFloat(v.price),
+              unit: v.unit.trim(),
+              stock_qty: parseFloat(v.stock_qty),
+              stock_alert: parseInt(v.stock_alert, 10),
+              is_active: v.is_active,
+              parent_product_id: variantParentId,
+            }
+            if (v.category_id) {
+              vPayload.category_id = v.category_id
+            }
+            return vPayload
+          })
           const { error: vErr } = await supabase.from('products').insert(variantPayloads)
           if (vErr) throw vErr
         }
@@ -241,19 +250,24 @@ export default function ProductsPage() {
         if (error || !newProduct) throw error || new Error('Failed to create product')
         const parentId = newProduct.id
         if (variantsDraft.length > 0) {
-          const variantPayloads = variantsDraft.map(v => ({
-            name: v.name.trim(),
-            barcode: v.barcode.trim() || null,
-            variety: v.variety.trim() || null,
-            description: v.description.trim() || null,
-            category_id: v.category_id || null,
-            parent_product_id: parentId,
-            price: parseFloat(v.price),
-            unit: v.unit.trim(),
-            stock_qty: parseFloat(v.stock_qty),
-            stock_alert: parseInt(v.stock_alert, 10),
-            is_active: v.is_active,
-          }))
+          const variantPayloads = variantsDraft.map(v => {
+            const vPayload: Record<string, unknown> = {
+              name: v.name.trim(),
+              barcode: v.barcode.trim() || null,
+              variety: v.variety.trim() || null,
+              description: v.description.trim() || null,
+              price: parseFloat(v.price),
+              unit: v.unit.trim(),
+              stock_qty: parseFloat(v.stock_qty),
+              stock_alert: parseInt(v.stock_alert, 10),
+              is_active: v.is_active,
+              parent_product_id: parentId,
+            }
+            if (v.category_id) {
+              vPayload.category_id = v.category_id
+            }
+            return vPayload
+          })
           const { error: vErr } = await supabase.from('products').insert(variantPayloads)
           if (vErr) throw vErr
         }
