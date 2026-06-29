@@ -66,14 +66,11 @@ You will see the login screen.
 
 ---
 
-### Step 5 — Log in
+### Step 5 — First login
 
-Use the owner account that was seeded into your database:
+Log in with one of the owner accounts you created in Supabase.
 
-- **Email:** owner@ebenezarshop.com
-- **PIN:** 1234
-
-> Change these in Supabase → Table Editor → users after your first login.
+> If you haven't created owner accounts yet, use the provided seed script or create them manually in Supabase Table Editor, then change the PIN in **Settings → Account** after logging in.
 
 ---
 

@@ -36,7 +36,12 @@ export default function SettingsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  type SettingsTab = 'general' | 'categories'
+  type SettingsTab = 'general' | 'categories' | 'account'
+  const [currentPin, setCurrentPin] = useState('')
+  const [newPin, setNewPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [pinError, setPinError] = useState('')
+  const [savingPin, setSavingPin] = useState(false)
 
   const [productForm, setProductForm] = useState({
     name: '',
@@ -378,6 +383,7 @@ export default function SettingsPage() {
           {[
             { id: 'general', label: 'Shop' },
             { id: 'categories', label: 'Categories' },
+            { id: 'account', label: 'Account' },
           ].map(tab => (
             <button
               key={tab.id}
@@ -520,6 +526,93 @@ export default function SettingsPage() {
             </label>
           </div>
         </Modal>
+
+        {activeTab === 'account' && (
+          <div className="card p-6">
+            <h3 className="font-bold text-slate-900 mb-2">Owner Account</h3>
+            <p className="text-sm text-slate-500 mb-4">Update the PIN for your account. Email is managed in Supabase.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="space-y-2 md:col-span-2">
+                <span className="text-sm font-medium text-slate-700">Current PIN</span>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  className="input w-full"
+                  value={currentPin}
+                  onChange={e => setCurrentPin(e.target.value)}
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">New PIN</span>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  className="input w-full"
+                  value={newPin}
+                  onChange={e => setNewPin(e.target.value)}
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Confirm new PIN</span>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  className="input w-full"
+                  value={confirmPin}
+                  onChange={e => setConfirmPin(e.target.value)}
+                />
+              </label>
+            </div>
+            {pinError && <p className="text-xs text-red-600 mt-2">{pinError}</p>}
+            <button
+              onClick={async () => {
+                setPinError('')
+                if (!user) return
+                if (!currentPin.trim() || !newPin.trim() || !confirmPin.trim()) {
+                  setPinError('All PIN fields are required')
+                  return
+                }
+                if (newPin !== confirmPin) {
+                  setPinError('New PINs do not match')
+                  return
+                }
+                if (newPin.trim().length < 4) {
+                  setPinError('New PIN must be at least 4 characters')
+                  return
+                }
+                setSavingPin(true)
+                try {
+                  const { data: existing } = await supabase
+                    .from('users')
+                    .select('pin')
+                    .eq('id', user.id)
+                    .maybeSingle()
+                  if (!existing || existing.pin !== currentPin.trim()) {
+                    setPinError('Current PIN is incorrect')
+                    setSavingPin(false)
+                    return
+                  }
+                  const { error } = await supabase.from('users').update({ pin: newPin.trim() }).eq('id', user.id)
+                  if (error) throw error
+                  toast.success('PIN updated successfully')
+                  setCurrentPin('')
+                  setNewPin('')
+                  setConfirmPin('')
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : 'Failed to update PIN'
+                  setPinError(message)
+                } finally {
+                  setSavingPin(false)
+                }
+              }}
+              disabled={savingPin}
+              className="btn-primary mt-4 inline-flex items-center gap-2"
+            >
+              {savingPin ? 'Updating...' : 'Update PIN'}
+            </button>
+          </div>
+        )}
 
       </div>
     </RoleGuard>

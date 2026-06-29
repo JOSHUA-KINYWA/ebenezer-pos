@@ -1,11 +1,17 @@
 -- Run this in Supabase: SQL Editor → New query → paste → Run
--- Creates the default owner account and sample products for first login.
+-- Creates the default owner accounts and sample data for first login.
 
--- Owner account (README default credentials)
+-- Owner accounts (change PIN after first login in Settings)
 INSERT INTO users (full_name, email, pin, role, is_active)
-SELECT 'Shop Owner', 'owner@ebenezarshop.com', '1234', 'owner', true
+SELECT 'Global Frank Supplies', 'globalfranksupplies@gmail.com', '1234', 'owner', true
 WHERE NOT EXISTS (
-  SELECT 1 FROM users WHERE email = 'owner@ebenezarshop.com'
+  SELECT 1 FROM users WHERE email = 'globalfranksupplies@gmail.com'
+);
+
+INSERT INTO users (full_name, email, pin, role, is_active)
+SELECT 'Joshua Kinywa', 'joshuakinywa96@gmail.com', '1234', 'owner', true
+WHERE NOT EXISTS (
+  SELECT 1 FROM users WHERE email = 'joshuakinywa96@gmail.com'
 );
 
 -- Sample categories
