@@ -22,7 +22,6 @@ DROP VIEW IF EXISTS sales_by_payment CASCADE;
 ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING change_qty::numeric(12,2);
 ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);
 ALTER TABLE products ALTER COLUMN stock_alert TYPE numeric(12,2) USING stock_alert::numeric(12,2);
-ALTER TABLE products ALTER COLUMN reorder_qty TYPE numeric(12,2) USING reorder_qty::numeric(12,2);
 ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING quantity::numeric(12,2);
 ALTER TABLE sale_items ALTER COLUMN subtotal TYPE numeric(12,2) USING subtotal::numeric(12,2);
 ALTER TABLE sale_items ALTER COLUMN unit_price TYPE numeric(12,2) USING unit_price::numeric(12,2);
