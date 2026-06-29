@@ -9,7 +9,7 @@ import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
-import { Barcode, CheckCircle, Search, Plus, Minus, X } from 'lucide-react'
+import { Barcode, CheckCircle, Search, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
 
 type POSPaymentType = 'cash'
 type CashMethod = 'cash' | 'coin' | 'till'
@@ -137,7 +137,7 @@ export default function SellPage() {
               ? { ...item, quantity: item.quantity + 1, subtotal: item.subtotal + product.price, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount' }
               : item
           )
-        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'quantity' as const }]
+        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'amount' as const }]
 
       if (existing) {
         toast.info(`Added another ${formatProductName(product)}`)
@@ -860,46 +860,77 @@ export default function SellPage() {
                       </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1">
+                      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
                         <button
                           type="button"
-                          onClick={() => decreaseQty(item.product.id)}
-                          disabled={item.quantity <= 1}
-                          className="rounded p-1.5 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          title="Decrease quantity"
+                          onClick={() => setCartItemMode(item.product.id, 'quantity')}
+                          className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                            item.saleMode !== 'amount'
+                              ? 'bg-brand-600 text-white shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
                         >
-                          <Minus className="w-4 h-4 text-slate-600" />
+                          Qty
                         </button>
-                        <input
-                          type="number"
-                          min="1"
-                          step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
-                          value={formatQtyDisplay(item.quantity, item.product.unit)}
-                          onChange={e => updateQty(item.product.id, Number(e.target.value) || 1)}
-                          className="input w-12 border-0 bg-transparent p-1 text-center"
-                        />
                         <button
                           type="button"
-                          onClick={() => increaseQty(item.product.id)}
-                          className="rounded p-1.5 hover:bg-slate-100"
-                          title="Increase quantity"
+                          onClick={() => setCartItemMode(item.product.id, 'amount')}
+                          className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                            item.saleMode === 'amount'
+                              ? 'bg-brand-600 text-white shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
                         >
-                          <Plus className="w-4 h-4 text-slate-600" />
+                          Amount
                         </button>
                       </div>
-                      <div className="flex-1 flex items-center gap-2">
-                        <span className="text-xs text-slate-500 whitespace-nowrap">Amount:</span>
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={item.subtotal.toFixed(2)}
-                          onChange={e => updateAmount(item.product.id, Math.max(0.01, Number(e.target.value) || 0))}
-                          className="input flex-1 text-right"
-                          placeholder="0.00"
-                        />
-                      </div>
-                      <span className="text-sm font-semibold text-slate-900 whitespace-nowrap min-w-fit">{formatMoney(item.subtotal, settings.currency)}</span>
+
+                      {item.saleMode === 'amount' ? (
+                        <div className="flex-1 flex items-center gap-2">
+                          <span className="text-xs text-slate-500 whitespace-nowrap">KSh</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={item.subtotal.toFixed(2)}
+                            onChange={e => updateAmount(item.product.id, Math.max(0.01, Number(e.target.value) || 0))}
+                            className="input flex-1 text-right font-semibold"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1">
+                          <button
+                            type="button"
+                            onClick={() => decreaseQty(item.product.id)}
+                            disabled={item.quantity <= 1}
+                            className="rounded p-1.5 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Decrease quantity"
+                          >
+                            <Minus className="w-4 h-4 text-slate-600" />
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
+                            value={formatQtyDisplay(item.quantity, item.product.unit)}
+                            onChange={e => updateQty(item.product.id, Number(e.target.value) || 1)}
+                            className="input w-12 border-0 bg-transparent p-1 text-center"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => increaseQty(item.product.id)}
+                            className="rounded p-1.5 hover:bg-slate-100"
+                            title="Increase quantity"
+                          >
+                            <Plus className="w-4 h-4 text-slate-600" />
+                          </button>
+                        </div>
+                      )}
+
+                      <span className="text-sm font-bold text-slate-900 whitespace-nowrap min-w-fit w-20 text-right">
+                        {formatMoney(item.subtotal, settings.currency)}
+                      </span>
                     </div>
                   </div>
                 ))}
