@@ -485,7 +485,13 @@ export default function ProductsPage() {
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
                       <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.price, 'KSh')}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{product.stock_qty} {product.unit}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">
+                        {product.parent_product_id
+                          ? `${product.stock_qty} ${product.unit}`
+                          : products.some(p => p.parent_product_id === product.id)
+                            ? products.filter(p => p.parent_product_id === product.id).reduce((sum, p) => sum + Number(p.stock_qty || 0), 0).toLocaleString()
+                            : `${product.stock_qty} ${product.unit}`}
+                      </td>
                       <td className="px-4 py-4 text-sm">
                         <span className={product.is_active ? 'inline-flex rounded-full bg-emerald-100 px-2 py-1 text-emerald-700 text-xs font-semibold' : 'inline-flex rounded-full bg-slate-100 px-2 py-1 text-slate-500 text-xs font-semibold'}>
                           {product.is_active ? 'Active' : 'Inactive'}
@@ -555,7 +561,13 @@ export default function ProductsPage() {
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Quantity</p>
-                <p className="text-sm text-slate-900">{selectedProduct.stock_qty} {selectedProduct.unit}</p>
+                <p className="text-sm text-slate-900">
+                  {selectedProduct.parent_product_id
+                    ? `${selectedProduct.stock_qty} ${selectedProduct.unit}`
+                    : products.some(p => p.parent_product_id === selectedProduct.id)
+                      ? `${products.filter(p => p.parent_product_id === selectedProduct.id).reduce((sum, p) => sum + Number(p.stock_qty || 0), 0).toLocaleString()} (all variants)`
+                      : `${selectedProduct.stock_qty} ${selectedProduct.unit}`}
+                </p>
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Low stock alert</p>

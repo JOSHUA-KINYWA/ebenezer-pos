@@ -102,6 +102,13 @@ export default function SellPage() {
     return products.filter(p => p.parent_product_id === productId && p.is_active)
   }
 
+  function getAggregateStock(product: Product): number {
+    if (product.parent_product_id) return product.stock_qty
+    const variants = getProductVariants(product.id)
+    if (variants.length === 0) return product.stock_qty
+    return variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0)
+  }
+
   const filteredParentProducts = useMemo(() => {
     const query = search.trim().toLowerCase()
     return parentProducts.filter(product => {
@@ -754,7 +761,9 @@ export default function SellPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Stock</span>
-                        <span className="font-semibold text-slate-900">{product.stock_qty} {product.unit}</span>
+                        <span className="font-semibold text-slate-900">
+                          {hasVariants ? getAggregateStock(product).toLocaleString() : `${product.stock_qty} ${product.unit}`}
+                        </span>
                       </div>
                     </div>
 
