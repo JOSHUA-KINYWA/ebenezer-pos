@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   ShoppingBag, ShoppingCart, BarChart2, Package,
-  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag
+  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag, Bell
 } from 'lucide-react'
 import { SessionUser } from '@/types'
 import { clearSession, getSession, refreshSession } from '@/lib/auth'
@@ -38,6 +38,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [drawerTill, setDrawerTill] = useState(0)
   const [drawerLoaded, setDrawerLoaded] = useState(false)
   const [cartCount, setCartCount] = useState(0)
+  const [pendingCount, setPendingCount] = useState(0)
   const supabase = createClient()
   const { settings } = useShopSettings()
 
@@ -99,9 +100,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setDrawerLoaded(true)
   }
 
+  async function fetchPendingCount() {
+    if (!user || user.role !== 'owner') return
+    const { count } = await supabase
+      .from('pending_accounts')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+    if (typeof count === 'number') {
+      setPendingCount(count)
+    }
+  }
+
   useEffect(() => {
     if (user) {
       fetchDrawer()
+      fetchPendingCount()
       const interval = window.setInterval(fetchDrawer, 15000)
       return () => window.clearInterval(interval)
     }
@@ -255,7 +268,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span className="font-bold text-slate-900 block text-sm">{settings.shop_name}</span>
             <span className="text-xs text-slate-500 capitalize">{user.role}</span>
           </div>
-          <Link href="/dashboard/sell" className="ml-auto relative rounded-lg p-2 hover:bg-slate-100">
+          <Link href="/dashboard/sell" className="relative rounded-lg p-2 hover:bg-slate-100">
             <ShoppingCart className="w-5 h-5 text-slate-600" />
             {cartCount > 0 && (
               <span className="absolute -right-1 -top-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -263,6 +276,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </span>
             )}
           </Link>
+          {user.role === 'owner' && (
+            <Link href="/dashboard/staff" className="relative rounded-lg p-2 hover:bg-slate-100">
+              <Bell className="w-5 h-5 text-slate-600" />
+              {pendingCount > 0 && (
+                <span className="absolute -right-1 -top-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {pendingCount}
+                </span>
+              )}
+            </Link>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">

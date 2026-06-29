@@ -8,12 +8,12 @@ import { EmptyState } from '@/components/EmptyState'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Modal } from '@/components/Modal'
-import { SessionUser, User } from '@/types'
+import { SessionUser, User, PendingAccount } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatDate } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
 import { validateStaffForm } from '@/lib/validators'
-import { Search, Users, CheckCircle2, Slash, Plus, Edit3, Trash2, Save } from 'lucide-react'
+import { Search, Users, CheckCircle2, Slash, Plus, Edit3, Trash2, Save, Clock, XCircle, UserPlus } from 'lucide-react'
 
 export default function StaffPage() {
   const router = useRouter()
@@ -27,6 +27,11 @@ export default function StaffPage() {
   const [staffForm, setStaffForm] = useState({ full_name: '', email: '', role: 'cashier' as 'owner' | 'cashier', pin: '', is_active: true })
   const [staffErrors, setStaffErrors] = useState<Record<string, string>>({})
   const [savingStaff, setSavingStaff] = useState(false)
+  const [pendingRequests, setPendingRequests] = useState<PendingAccount[]>([])
+  const [showPending, setShowPending] = useState(false)
+  const [reviewingRequest, setReviewingRequest] = useState<PendingAccount | null>(null)
+  const [reviewNote, setReviewNote] = useState('')
+  const [newPin, setNewPin] = useState('')
   const toast = useToast()
   const supabase = createClient()
 
@@ -113,7 +118,7 @@ export default function StaffPage() {
 
   async function toggleStaffStatus(member: User) {
     try {
-      const { error } = await supabase.from('users').update({ is_active: !member.is_active }).eq('id', member.id).single()
+      const { error } = await supabase.from('users').update({ is_active: !member.is_active }).eq('id', member.id)
       if (error) throw error
       toast.success(`${member.is_active ? 'Deactivated' : 'Activated'} staff member`)
       fetchStaff()
@@ -123,17 +128,72 @@ export default function StaffPage() {
     }
   }
 
+  async function handleApproveRequest(request: PendingAccount) {
+    if (!newPin.trim() || newPin.trim().length < 4) {
+      toast.error('Set a PIN (at least 4 characters) for the new account')
+      return
+    }
+
+    try {
+      const { error: userError } = await supabase.from('users').insert([
+        {
+          full_name: request.full_name,
+          email: request.email,
+          role: request.requested_role,
+          pin: newPin.trim(),
+          is_active: true,
+        },
+      ])
+      if (userError) throw userError
+
+      const { error: updateError } = await supabase
+        .from('pending_accounts')
+        .update({ status: 'approved', reviewed_by: user?.id, reviewed_at: new Date().toISOString(), note: reviewNote || null })
+        .eq('id', request.id)
+      if (updateError) throw updateError
+
+      toast.success(`Account created for ${request.full_name}`)
+      setReviewingRequest(null)
+      setReviewNote('')
+      setNewPin('')
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to approve request'
+      toast.error(message)
+    }
+  }
+
+  async function handleRejectRequest(request: PendingAccount) {
+    try {
+      const { error } = await supabase
+        .from('pending_accounts')
+        .update({ status: 'rejected', reviewed_by: user?.id, reviewed_at: new Date().toISOString(), note: reviewNote || 'Rejected by owner' })
+        .eq('id', request.id)
+      if (error) throw error
+
+      toast.success(`Request from ${request.full_name} rejected`)
+      setReviewingRequest(null)
+      setReviewNote('')
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to reject request'
+      toast.error(message)
+    }
+  }
+
   async function fetchStaff() {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, full_name, email, role, is_active, last_login, created_at')
-        .order('full_name')
+      const [{ data: staffData, error: staffError }, { data: pendingData, error: pendingError }] = await Promise.all([
+        supabase.from('users').select('id, full_name, email, role, is_active, last_login, created_at').order('full_name'),
+        supabase.from('pending_accounts').select('*').eq('status', 'pending').order('created_at'),
+      ])
 
-      if (error) throw error
+      if (staffError) throw staffError
+      if (pendingError) console.error('Failed to load pending requests', pendingError)
 
-      setStaff((data || []) as User[])
+      setStaff((staffData || []) as User[])
+      setPendingRequests((pendingData || []) as PendingAccount[])
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load staff'
@@ -210,7 +270,26 @@ export default function StaffPage() {
                 placeholder="Search staff by name, email, or role"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-              />
+        />
+
+        {pendingRequests.length > 0 && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{pendingRequests.length} pending account request{pendingRequests.length === 1 ? '' : 's'}</p>
+                <p className="text-xs text-slate-500">Review and approve access for new staff</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPending(true)}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" /> Review Requests
+            </button>
+          </div>
+        )}
             </div>
             <p className="text-sm text-slate-500">{filtered.length} of {staff.length} members</p>
           </div>
@@ -305,6 +384,115 @@ export default function StaffPage() {
             </label>
           </div>
         </Modal>
+
+        {showPending && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Pending Account Requests</h3>
+                  <p className="text-sm text-slate-500">Review and approve cashier access requests</p>
+                </div>
+                <button onClick={() => { setShowPending(false); setReviewingRequest(null) }} className="rounded-lg p-2 hover:bg-slate-100">
+                  <XCircle className="w-5 h-5 text-slate-600" />
+                </button>
+              </div>
+
+              {pendingRequests.length === 0 ? (
+                <div className="py-12 text-center text-slate-500">No pending requests</div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingRequests.map(request => (
+                    <div key={request.id} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <p className="font-semibold text-slate-900">{request.full_name}</p>
+                          <p className="text-sm text-slate-500">{request.email}</p>
+                          <p className="text-xs text-slate-400 mt-1">Requested role: <span className="capitalize font-medium text-slate-600">{request.requested_role}</span></p>
+                          <p className="text-xs text-slate-400">Submitted: {formatDate(request.created_at)}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          type="button"
+                          onClick={() => setReviewingRequest(request)}
+                          className="btn-primary inline-flex items-center gap-2 text-sm"
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> Review
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {reviewingRequest && (
+          <Modal
+            isOpen={!!reviewingRequest}
+            onClose={() => { setReviewingRequest(null); setReviewNote(''); setNewPin('') }}
+            title="Review Account Request"
+            description={`Review request from ${reviewingRequest.full_name}`}
+            footer={
+              <div className="flex justify-end gap-3">
+                <button onClick={() => { setReviewingRequest(null); setReviewNote(''); setNewPin('') }} className="btn-secondary">Cancel</button>
+                <button onClick={() => handleRejectRequest(reviewingRequest)} className="btn-danger inline-flex items-center gap-2">
+                  <XCircle className="w-4 h-4" /> Reject
+                </button>
+                <button onClick={() => handleApproveRequest(reviewingRequest)} className="btn-primary inline-flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> Approve & Create Account
+                </button>
+              </div>
+            }
+            size="md"
+          >
+            <div className="space-y-4">
+              <div className="rounded-xl bg-slate-50 p-4 space-y-2">
+                <div>
+                  <p className="text-xs text-slate-500">Name</p>
+                  <p className="text-sm font-semibold text-slate-900">{reviewingRequest.full_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Email</p>
+                  <p className="text-sm font-semibold text-slate-900">{reviewingRequest.email}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Requested Role</p>
+                  <p className="text-sm font-semibold text-slate-900 capitalize">{reviewingRequest.requested_role}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Submitted</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatDate(reviewingRequest.created_at)}</p>
+                </div>
+              </div>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Set account PIN</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="input w-full"
+                  placeholder="Enter PIN (min 4 characters)"
+                  value={newPin}
+                  onChange={e => setNewPin(e.target.value)}
+                />
+                <p className="text-xs text-slate-500">This PIN will be needed by the staff member to log in.</p>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Note (optional)</span>
+                <textarea
+                  className="input h-20 w-full resize-none"
+                  placeholder="Add a note for this decision"
+                  value={reviewNote}
+                  onChange={e => setReviewNote(e.target.value)}
+                />
+              </label>
+            </div>
+          </Modal>
+        )}
       </div>
     </RoleGuard>
   )

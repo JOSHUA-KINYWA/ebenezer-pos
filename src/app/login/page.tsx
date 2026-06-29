@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { setSession, toSessionUser } from '@/lib/auth'
 import { ShoppingBag, Loader2, Shield } from 'lucide-react'
@@ -113,6 +114,11 @@ export default function LoginPage() {
 
           <p className="text-center text-xs text-slate-400 mt-6">
             Contact your shop owner if you need access
+          </p>
+          <p className="text-center text-xs mt-2">
+            <Link href="/request-account" className="text-brand-600 hover:text-brand-700 font-medium">
+              Request an account
+            </Link>
           </p>
         </div>
       </div>

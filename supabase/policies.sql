@@ -15,6 +15,7 @@ ALTER TABLE drawer_balances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_reconciliation ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_accounts ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "pos_public_users" ON users;
 DROP POLICY IF EXISTS "pos_public_categories" ON categories;
@@ -29,6 +30,7 @@ DROP POLICY IF EXISTS "pos_public_drawer_balances" ON drawer_balances;
 DROP POLICY IF EXISTS "pos_public_shifts" ON shifts;
 DROP POLICY IF EXISTS "pos_public_audit_logs" ON audit_logs;
 DROP POLICY IF EXISTS "pos_public_payment_reconciliation" ON payment_reconciliation;
+DROP POLICY IF EXISTS "pos_public_pending_accounts" ON pending_accounts;
 
 CREATE POLICY "pos_public_users" ON users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "pos_public_categories" ON categories FOR ALL USING (true) WITH CHECK (true);
@@ -43,3 +45,4 @@ CREATE POLICY "pos_public_drawer_balances" ON drawer_balances FOR ALL USING (tru
 CREATE POLICY "pos_public_shifts" ON shifts FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "pos_public_audit_logs" ON audit_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "pos_public_payment_reconciliation" ON payment_reconciliation FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "pos_public_pending_accounts" ON pending_accounts FOR ALL USING (true) WITH CHECK (true);

@@ -159,6 +159,18 @@ export interface Customer {
   created_at: string
 }
 
+export interface PendingAccount {
+  id: string
+  full_name: string
+  email: string
+  requested_role: string
+  status: string
+  reviewed_by?: string
+  reviewed_at?: string
+  note?: string
+  created_at: string
+}
+
 export interface Shift {
   id: string
   user_id?: string
