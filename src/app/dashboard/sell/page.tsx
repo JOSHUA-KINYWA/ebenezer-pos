@@ -25,9 +25,6 @@ export default function SellPage() {
   const [barcodeInput, setBarcodeInput] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [cart, setCart] = useState<CartItem[]>([])
-  const [selectedParentProduct, setSelectedParentProduct] = useState<Product | null>(null)
-  const [productVariants, setProductVariants] = useState<Product[]>([])
-  const [showVariantModal, setShowVariantModal] = useState(false)
   const [quickAddValue, setQuickAddValue] = useState('')
   const [paymentType, setPaymentType] = useState<POSPaymentType>('cash')
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('cash')
@@ -98,18 +95,16 @@ export default function SellPage() {
 
   const filteredProducts = useMemo(
     () =>
-      products
-        .filter(product => !product.parent_product_id)
-        .filter(product => {
-          const matchesSearch =
-            !search ||
-            product.name.toLowerCase().includes(search.toLowerCase()) ||
-            (product.variety ?? '').toLowerCase().includes(search.toLowerCase())
-          const matchesCategory =
-            categoryFilter === 'all' ||
-            (product.category as { name?: string })?.name === categoryFilter
-          return matchesSearch && matchesCategory
-        }),
+      products.filter(product => {
+        const matchesSearch =
+          !search ||
+          product.name.toLowerCase().includes(search.toLowerCase()) ||
+          (product.variety ?? '').toLowerCase().includes(search.toLowerCase())
+        const matchesCategory =
+          categoryFilter === 'all' ||
+          (product.category as { name?: string })?.name === categoryFilter
+        return matchesSearch && matchesCategory
+      }),
     [products, search, categoryFilter]
   )
 
@@ -147,13 +142,6 @@ export default function SellPage() {
   }
 
   function handleProductSelect(product: Product) {
-    const variants = products.filter(item => item.parent_product_id === product.id && item.is_active)
-    if (variants.length > 0 && !product.parent_product_id) {
-      setSelectedParentProduct(product)
-      setProductVariants(variants)
-      setShowVariantModal(true)
-      return
-    }
     addToCart(product)
   }
 
@@ -423,8 +411,10 @@ export default function SellPage() {
   function startNewSale() {
     setCompletedSale(null)
     setIsReviewingPayment(false)
-    setShowVariantModal(false)
-    setSelectedParentProduct(null)
+    setCart([])
+    setCustomer('')
+    setPaymentType('cash')
+    setPaymentMethod('cash')
     cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
@@ -662,10 +652,10 @@ export default function SellPage() {
       ) : (
         <div className="space-y-4">
           <div className="card p-4">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Sell products</h2>
-              <p className="text-sm text-slate-500">Search, scan, and choose the parent product first. Variants show after parent selection.</p>
-            </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Sell products</h2>
+                <p className="text-sm text-slate-500">Search, scan, and pick the exact product or variant from the catalog.</p>
+              </div>
 
             <form onSubmit={handleBarcodeSearch} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
               <div className="relative">
@@ -737,35 +727,46 @@ export default function SellPage() {
                 No products match this filter.
               </div>
             ) : (
-              filteredProducts.map(product => (
-                <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
-                  <button type="button" onClick={() => handleProductSelect(product)} className="w-full text-left">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Parent</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
-                    <div className="grid gap-2 text-sm text-slate-600">
-                      <div className="flex items-center justify-between">
-                        <span>Price</span>
-                        <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
+              filteredProducts.map(product => {
+                const isVariant = !!product.parent_product_id
+                const parentName = isVariant
+                  ? products.find(p => p.id === product.parent_product_id)?.name
+                  : undefined
+                return (
+                  <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
+                    <button type="button" onClick={() => handleProductSelect(product)} className="w-full text-left">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${isVariant ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {isVariant ? 'Variant' : 'Parent'}
+                        </span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span>Stock</span>
-                        <span className="font-semibold text-slate-900">{product.stock_qty} {product.unit}</span>
+                      <p className="text-xs text-slate-500 mb-3">
+                        {(product.category as { name?: string })?.name || 'Uncategorized'}
+                        {isVariant && parentName ? ` · ${parentName}` : ''}
+                      </p>
+                      <div className="grid gap-2 text-sm text-slate-600">
+                        <div className="flex items-center justify-between">
+                          <span>Price</span>
+                          <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Stock</span>
+                          <span className="font-semibold text-slate-900">{product.stock_qty} {product.unit}</span>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleProductSelect(product)}
-                    className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add to cart
-                  </button>
-                </div>
-              ))
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleProductSelect(product)}
+                      className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add to cart
+                    </button>
+                  </div>
+                )
+              })
             )}
           </div>
 
@@ -889,31 +890,6 @@ export default function SellPage() {
             <button type="button" onClick={() => setIsReviewingPayment(true)} className="btn-primary px-4 py-2">
               Checkout
             </button>
-          </div>
-        </div>
-      )}
-
-      {showVariantModal && selectedParentProduct && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="card w-full max-w-md mx-4 p-4">
-            <h3 className="text-lg font-bold mb-3">Select Variant: {formatProductName(selectedParentProduct)}</h3>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {productVariants.map(variant => (
-                <button
-                  key={variant.id}
-                  type="button"
-                  onClick={() => {
-                    addToCart(variant)
-                    setShowVariantModal(false)
-                  }}
-                  className="w-full p-3 text-left border border-slate-200 rounded-lg hover:bg-slate-50"
-                >
-                  <p className="font-medium text-sm">{formatProductName(variant)}</p>
-                  <p className="text-xs text-slate-500">{formatMoney(variant.price, settings.currency)} - {variant.stock_qty} in stock</p>
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={() => setShowVariantModal(false)} className="btn-secondary mt-3 w-full">Cancel</button>
           </div>
         </div>
       )}
