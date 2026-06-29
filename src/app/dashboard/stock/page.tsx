@@ -79,30 +79,59 @@ export default function StockPage() {
 
   const categories = Array.from(new Set(inventoryProducts.map(p => (p.category as { name?: string })?.name || 'Uncategorized')))
 
-  const filteredProducts = useMemo(() => {
-    return inventoryProducts.filter(p => {
-      const matchesSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.variety ?? '').toLowerCase().includes(search.toLowerCase())
-      const matchesCategory = categoryFilter === 'all' || (p.category as { name?: string })?.name === categoryFilter
-      const matchesStock = stockFilter === 'all' || 
-        (stockFilter === 'in_stock' && p.stock_qty > p.stock_alert) || 
-        (stockFilter === 'low_stock' && p.stock_qty > 0 && p.stock_qty <= p.stock_alert) || 
-        (stockFilter === 'out_of_stock' && p.stock_qty === 0)
+  const parentProducts = useMemo(() => inventoryProducts.filter(p => !p.parent_product_id), [inventoryProducts])
+
+  function getVariants(parentId: string) {
+    return inventoryProducts.filter(p => p.parent_product_id === parentId)
+  }
+
+  function getAggregateStock(product: Product & { stock_qty: number }): number {
+    const variants = getVariants(product.id)
+    if (variants.length === 0) return product.stock_qty
+    return variants.reduce((sum, v) => sum + v.stock_qty, 0)
+  }
+
+  const groupedProducts = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return parentProducts.filter(product => {
+      const matchesSearch =
+        !query ||
+        product.name.toLowerCase().includes(query) ||
+        (product.variety ?? '').toLowerCase().includes(query)
+      const matchesCategory =
+        categoryFilter === 'all' ||
+        (product.category as { name?: string })?.name === categoryFilter
+      const aggregateStock = getAggregateStock(product)
+      const matchesStock =
+        stockFilter === 'all' ||
+        (stockFilter === 'in_stock' && aggregateStock > product.stock_alert) ||
+        (stockFilter === 'low_stock' && aggregateStock > 0 && aggregateStock <= product.stock_alert) ||
+        (stockFilter === 'out_of_stock' && aggregateStock === 0)
       return matchesSearch && matchesCategory && matchesStock
     })
-  }, [inventoryProducts, search, categoryFilter, stockFilter])
+  }, [parentProducts, search, categoryFilter, stockFilter])
 
-  const inStock = inventoryProducts.filter(p => p.stock_qty > p.stock_alert)
-  const lowStock = inventoryProducts.filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0)
-  const outOfStock = inventoryProducts.filter(p => p.stock_qty === 0)
-  const totalValue = inventoryProducts.reduce((sum, p) => sum + p.stock_qty * p.price, 0)
+  const inStock = parentProducts.filter(p => getAggregateStock(p) > p.stock_alert)
+  const lowStock = parentProducts.filter(p => { const s = getAggregateStock(p); return s > 0 && s <= p.stock_alert })
+  const outOfStock = parentProducts.filter(p => getAggregateStock(p) === 0)
+  const totalValue = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    if (variants.length === 0) return sum + p.stock_qty * p.price
+    return sum + variants.reduce((vSum, v) => vSum + v.stock_qty * v.price, 0)
+  }, 0)
 
-  const categoryValues = inventoryProducts.reduce((acc: Record<string, { qty: number; value: number }>, p) => {
+  const categoryValues = parentProducts.reduce((acc: Record<string, { qty: number; value: number }>, p) => {
+    const variants = getVariants(p.id)
+    const qty = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
+    const value = variants.length === 0 ? p.stock_qty * p.price : variants.reduce((vSum, v) => vSum + v.stock_qty * v.price, 0)
     const cat = (p.category as { name?: string })?.name || 'Uncategorized'
     if (!acc[cat]) acc[cat] = { qty: 0, value: 0 }
-    acc[cat].qty += p.stock_qty
-    acc[cat].value += p.stock_qty * p.price
+    acc[cat].qty += qty
+    acc[cat].value += value
     return acc
   }, {})
+
+  const filteredProducts = useMemo(() => groupedProducts, [groupedProducts])
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>
   if (error) return <div className="flex items-center justify-center py-20 text-center text-sm text-red-600">{error}</div>
@@ -155,25 +184,44 @@ export default function StockPage() {
           {filteredProducts.length === 0 ? (
             <div className="col-span-full"><p className="text-slate-500 text-center py-12">No products match filters</p></div>
           ) : (
-            filteredProducts.map(product => {
-              const isLow = product.stock_qty <= product.stock_alert && product.stock_qty > 0
-              const isOut = product.stock_qty === 0
-              return (
-                <div key={product.id} className="card p-4 hover:shadow-md transition-shadow">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className={'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ' + (isOut ? 'bg-slate-100 text-slate-400' : 'bg-brand-50 text-brand-700')}>
-                      {product.name.charAt(0).toUpperCase()}
-                    </div>
-                    <span className={'px-2 py-1 rounded-full text-xs font-medium border ' + (isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
-                      {isOut ? 'Out' : isLow ? 'Low' : 'OK'}
-                    </span>
+          filteredProducts.map(product => {
+            const variants = getVariants(product.id)
+            const aggregateStock = getAggregateStock(product)
+            const isLow = aggregateStock <= product.stock_alert && aggregateStock > 0
+            const isOut = aggregateStock === 0
+            return (
+              <div key={product.id} className="card p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between mb-3">
+                  <div className={'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ' + (isOut ? 'bg-slate-100 text-slate-400' : 'bg-brand-50 text-brand-700')}>
+                    {product.name.charAt(0).toUpperCase()}
                   </div>
-                  <h3 className="font-semibold text-slate-900 text-sm mb-1">{formatProductName(product)}</h3>
-                  <p className="text-xs text-slate-500 mb-3">{formatMoney(product.price, settings.currency)} • {product.stock_qty} {product.unit}</p>
-                  <p className="text-xs text-slate-400 mb-2">Value: {formatMoney(product.stock_qty * product.price, settings.currency)}</p>
+                  <span className={'px-2 py-1 rounded-full text-xs font-medium border ' + (isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
+                    {isOut ? 'Out' : isLow ? 'Low' : 'OK'}
+                  </span>
                 </div>
-              )
-            })
+                <h3 className="font-semibold text-slate-900 text-sm mb-1">{formatProductName(product)}</h3>
+                <p className="text-xs text-slate-500 mb-1">
+                  {formatMoney(product.price, settings.currency)} • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
+                  {variants.length > 0 && <span className="text-slate-400"> total</span>}
+                </p>
+                {variants.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {variants.map(v => (
+                      <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
+                        <span className="text-slate-600">{formatProductName(v)}</span>
+                        <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
+                          {v.stock_qty} {v.unit}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-slate-400 mt-2">
+                  Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                </p>
+              </div>
+            )
+          })
           )}
         </div>
       </div>
