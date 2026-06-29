@@ -155,6 +155,8 @@ CREATE TABLE IF NOT EXISTS stock_log (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING change_qty::numeric(12,2);
+
 -- Audit Log (NEW - for security)
 CREATE TABLE IF NOT EXISTS audit_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
