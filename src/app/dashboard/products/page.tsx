@@ -26,6 +26,7 @@ interface ProductForm {
   stock_qty: string
   stock_alert: string
   is_active: boolean
+  product_type: 'standalone' | 'parent'
 }
 
 const initialForm: ProductForm = {
@@ -40,6 +41,7 @@ const initialForm: ProductForm = {
   stock_qty: '0',
   stock_alert: '10',
   is_active: true,
+  product_type: 'standalone',
 }
 
 export default function ProductsPage() {
@@ -110,9 +112,11 @@ export default function ProductsPage() {
       ...initialForm,
       category_id: categories[0]?.id ?? '',
       parent_product_id: '',
+      product_type: 'standalone',
     })
     setErrors({})
     setEditingProduct(null)
+    setVariantsDraft([])
   }
 
   function openNewProduct(parentId?: string, parentCategoryId?: string, parent?: Product) {
@@ -125,6 +129,7 @@ export default function ProductsPage() {
       stock_qty: '0',
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
       name: '',
+      product_type: 'standalone',
     })
     setErrors({})
     setVariantsDraft([])
@@ -134,6 +139,8 @@ export default function ProductsPage() {
 
   function openEditProduct(product: Product) {
     setEditingProduct(product)
+    const isVariant = !!product.parent_product_id
+    const hasChildren = products.some(p => p.parent_product_id === product.id)
     setForm({
       name: product.name || '',
       barcode: product.barcode || '',
@@ -146,6 +153,7 @@ export default function ProductsPage() {
       stock_qty: product.stock_qty?.toString() || '0',
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
+      product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
     })
     setErrors({})
     setVariantsDraft([])
@@ -168,6 +176,7 @@ export default function ProductsPage() {
         stock_qty: '0',
         stock_alert: form.stock_alert,
         is_active: true,
+        product_type: 'standalone',
       },
     ])
   }
@@ -361,6 +370,8 @@ export default function ProductsPage() {
     ? 'Edit Product'
     : form.parent_product_id
     ? 'Add Variant'
+    : form.product_type === 'parent'
+    ? 'Add Parent Product'
     : 'Add Product'
 
   const parentProductName = form.parent_product_id
@@ -630,161 +641,75 @@ export default function ProductsPage() {
                 <p>{parentProductName}</p>
               </div>
             )}
-            <label className="space-y-2">
+
+            {!editingProduct && !parentProductName && (
+              <div className="sm:col-span-2">
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Product type</span>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, product_type: 'standalone' })}
+                      className={`flex-1 rounded-xl border-2 px-4 py-3 text-sm font-medium transition ${
+                        form.product_type === 'standalone'
+                          ? 'border-brand-600 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      Standalone product
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, product_type: 'parent' })}
+                      className={`flex-1 rounded-xl border-2 px-4 py-3 text-sm font-medium transition ${
+                        form.product_type === 'parent'
+                          ? 'border-brand-600 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      Parent product (with variants)
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {form.product_type === 'parent'
+                      ? 'Parent products group variants together in the POS (e.g., Rice → Bismart, Pishori).'
+                      : 'Sold individually without variants (e.g., a loaf of bread).'}
+                  </p>
+                </label>
+              </div>
+            )}
+
+            <label className="space-y-2 sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Product name</span>
               <input
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 className="input w-full"
+                placeholder={form.product_type === 'parent' ? 'e.g., Rice' : 'e.g., White Bread'}
               />
               {errors.name && <p className="text-xs text-red-600">{errors.name}</p>}
             </label>
+
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Barcode</span>
+              <input
+                value={form.barcode}
+                onChange={e => setForm({ ...form, barcode: e.target.value })}
+                className="input w-full"
+                placeholder="Scan or enter barcode"
+              />
+            </label>
+
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Variety</span>
               <input
                 value={form.variety}
                 onChange={e => setForm({ ...form, variety: e.target.value })}
                 className="input w-full"
+                placeholder="e.g., 1kg, 500ml, large"
               />
             </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Price</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.price}
-                onChange={e => setForm({ ...form, price: e.target.value })}
-                className="input w-full"
-              />
-              {errors.price && <p className="text-xs text-red-600">{errors.price}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Stock quantity</span>
-              <input
-                value={form.stock_qty}
-                onChange={e => setForm({ ...form, stock_qty: e.target.value })}
-                className="input w-full"
-              />
-              {errors.stock_qty && <p className="text-xs text-red-600">{errors.stock_qty}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Unit</span>
-              <input
-                value={form.unit}
-                onChange={e => setForm({ ...form, unit: e.target.value })}
-                className="input w-full"
-              />
-              {errors.unit && <p className="text-xs text-red-600">{errors.unit}</p>}
-            </label>
-            <div className="sm:col-span-2">
-              <h5 className="font-semibold text-slate-900 mb-2">Variants</h5>
-              {editingProduct && !editingProduct.parent_product_id && (
-                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Existing variants</p>
-                      <p className="text-xs text-slate-500">Variants already attached to this product.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={addVariantDraft}
-                      className="btn-secondary inline-flex items-center gap-2 text-sm"
-                    >
-                      <Plus className="w-4 h-4" /> Add Variant Draft
-                    </button>
-                  </div>
-                  {products.filter(p => p.parent_product_id === editingProduct.id).length === 0 ? (
-                    <p className="text-sm text-slate-500">No existing variants attached.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-slate-200">
-                        <thead className="bg-white">
-                          <tr>
-                            <th className="table-head">Name</th>
-                            <th className="table-head">Unit</th>
-                            <th className="table-head">Qty</th>
-                            <th className="table-head">Price</th>
-                            <th className="table-head text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {products.filter(p => p.parent_product_id === editingProduct.id).map(v => (
-                            <tr key={v.id} className="table-row-hover">
-                              <td className="px-3 py-2 text-sm text-slate-900">{v.name}</td>
-                              <td className="px-3 py-2 text-sm text-slate-600">{v.unit}</td>
-                              <td className="px-3 py-2 text-sm text-slate-600">{v.stock_qty}</td>
-                              <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.price, 'KSh')}</td>
-                              <td className="px-3 py-2 text-right"><button onClick={() => openEditProduct(v)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {variantsDraft.length > 0 && (
-                <div className="mb-3 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Variant drafts</p>
-                      <p className="text-xs text-slate-500">Each variant is a mini product under the parent.</p>
-                    </div>
-                    <button type="button" onClick={addVariantDraft} className="btn-secondary inline-flex items-center gap-2 text-sm">
-                      <Plus className="w-4 h-4" /> Add another variant
-                    </button>
-                  </div>
-                  <div className="space-y-4">
-                    {variantsDraft.map((v, i) => (
-                      <div key={i} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="flex items-center justify-between gap-3 mb-3">
-                          <p className="text-sm font-semibold text-slate-900">Variant {i + 1}</p>
-                          <button type="button" onClick={() => removeVariantDraft(i)} className="text-sm text-red-600 hover:text-red-800">Remove</button>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <label className="space-y-2">
-                            <span className="text-xs text-slate-500">Name</span>
-                            <input value={v.name} onChange={e => updateVariantDraft(i, 'name', e.target.value)} className="input w-full" />
-                          </label>
-                          <label className="space-y-2">
-                            <span className="text-xs text-slate-500">Variety</span>
-                            <input value={v.variety} onChange={e => updateVariantDraft(i, 'variety', e.target.value)} className="input w-full" />
-                          </label>
-                          <label className="space-y-2">
-                            <span className="text-xs text-slate-500">Category</span>
-                            <select value={v.category_id} onChange={e => updateVariantDraft(i, 'category_id', e.target.value)} className="input w-full">
-                              <option value="">Uncategorized</option>
-                              {categories.map(category => (
-                                <option key={category.id} value={category.id}>{category.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="space-y-2">
-                            <span className="text-xs text-slate-500">Price</span>
-                            <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
-                          </label>
-                          <label className="space-y-2">
-                            <span className="text-xs text-slate-500">Quantity</span>
-                            <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
-                          </label>
-                          <label className="space-y-2">
-                            <span className="text-xs text-slate-500">Unit</span>
-                            <input value={v.unit} onChange={e => updateVariantDraft(i, 'unit', e.target.value)} className="input w-full" />
-                          </label>
-                          <label className="space-y-2 sm:col-span-2">
-                            <span className="text-xs text-slate-500">Stock alert</span>
-                            <input type="number" min="0" value={v.stock_alert} onChange={e => updateVariantDraft(i, 'stock_alert', e.target.value)} className="input w-full" />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="text-xs text-slate-500">Each variant is saved with its own price, quantity, and unit as a mini product under the parent.</div>
-            </div>
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Category</span>
               <select
@@ -798,22 +723,17 @@ export default function ProductsPage() {
                 ))}
               </select>
             </label>
+
             <label className="space-y-2 sm:col-span-2">
               <span className="text-sm font-medium text-slate-700">Description</span>
               <textarea
                 value={form.description}
                 onChange={e => setForm({ ...form, description: e.target.value })}
-                className="input h-24 w-full resize-none"
+                className="input h-20 w-full resize-none"
+                placeholder="Short description for this product"
               />
             </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Variety</span>
-              <input
-                value={form.variety}
-                onChange={e => setForm({ ...form, variety: e.target.value })}
-                className="input w-full"
-              />
-            </label>
+
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Price</span>
               <input
@@ -826,26 +746,29 @@ export default function ProductsPage() {
               />
               {errors.price && <p className="text-xs text-red-600">{errors.price}</p>}
             </label>
+
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Unit</span>
               <input
                 value={form.unit}
                 onChange={e => setForm({ ...form, unit: e.target.value })}
                 className="input w-full"
+                placeholder="piece, kg, litre, pack..."
               />
               {errors.unit && <p className="text-xs text-red-600">{errors.unit}</p>}
             </label>
+
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Stock quantity</span>
               <input
-                type="text"
-                placeholder="e.g. 500 ml, 1.5 ltr, 12 pack"
                 value={form.stock_qty}
                 onChange={e => setForm({ ...form, stock_qty: e.target.value })}
                 className="input w-full"
+                placeholder="Current stock level"
               />
               {errors.stock_qty && <p className="text-xs text-red-600">{errors.stock_qty}</p>}
             </label>
+
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Low stock alert</span>
               <input
@@ -857,6 +780,131 @@ export default function ProductsPage() {
               />
               {errors.stock_alert && <p className="text-xs text-red-600">{errors.stock_alert}</p>}
             </label>
+
+            {(form.product_type === 'parent' || (editingProduct && !editingProduct.parent_product_id)) && (
+              <div className="sm:col-span-2">
+                <h5 className="font-semibold text-slate-900 mb-2">Variants</h5>
+                <p className="text-xs text-slate-500 mb-3">
+                  Add variants like sizes, brands, or types under this parent product.
+                </p>
+
+                {editingProduct && !editingProduct.parent_product_id && (
+                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Existing variants</p>
+                        <p className="text-xs text-slate-500">Variants already attached to this product.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addVariantDraft}
+                        className="btn-secondary inline-flex items-center gap-2 text-sm"
+                      >
+                        <Plus className="w-4 h-4" /> Add Variant Draft
+                      </button>
+                    </div>
+                    {products.filter(p => p.parent_product_id === editingProduct.id).length === 0 ? (
+                      <p className="text-sm text-slate-500">No existing variants attached.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-200">
+                          <thead className="bg-white">
+                            <tr>
+                              <th className="table-head">Name</th>
+                              <th className="table-head">Unit</th>
+                              <th className="table-head">Qty</th>
+                              <th className="table-head">Price</th>
+                              <th className="table-head text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {products.filter(p => p.parent_product_id === editingProduct.id).map(v => (
+                              <tr key={v.id} className="table-row-hover">
+                                <td className="px-3 py-2 text-sm text-slate-900">{v.name}</td>
+                                <td className="px-3 py-2 text-sm text-slate-600">{v.unit}</td>
+                                <td className="px-3 py-2 text-sm text-slate-600">{v.stock_qty}</td>
+                                <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.price, 'KSh')}</td>
+                                <td className="px-3 py-2 text-right"><button onClick={() => openEditProduct(v)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {variantsDraft.length > 0 && (
+                  <div className="mb-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Variant drafts</p>
+                        <p className="text-xs text-slate-500">Each variant is a mini product under the parent.</p>
+                      </div>
+                      <button type="button" onClick={addVariantDraft} className="btn-secondary inline-flex items-center gap-2 text-sm">
+                        <Plus className="w-4 h-4" /> Add another variant
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      {variantsDraft.map((v, i) => (
+                        <div key={i} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <p className="text-sm font-semibold text-slate-900">Variant {i + 1}</p>
+                            <button type="button" onClick={() => removeVariantDraft(i)} className="text-sm text-red-600 hover:text-red-800">Remove</button>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Name</span>
+                              <input value={v.name} onChange={e => updateVariantDraft(i, 'name', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Variety</span>
+                              <input value={v.variety} onChange={e => updateVariantDraft(i, 'variety', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Category</span>
+                              <select value={v.category_id} onChange={e => updateVariantDraft(i, 'category_id', e.target.value)} className="input w-full">
+                                <option value="">Uncategorized</option>
+                                {categories.map(category => (
+                                  <option key={category.id} value={category.id}>{category.name}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Price</span>
+                              <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Quantity</span>
+                              <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Unit</span>
+                              <input value={v.unit} onChange={e => updateVariantDraft(i, 'unit', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2 sm:col-span-2">
+                              <span className="text-xs text-slate-500">Stock alert</span>
+                              <input type="number" min="0" value={v.stock_alert} onChange={e => updateVariantDraft(i, 'stock_alert', e.target.value)} className="input w-full" />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {form.product_type === 'parent' && !editingProduct && variantsDraft.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={addVariantDraft}
+                    className="btn-secondary inline-flex items-center gap-2 text-sm"
+                  >
+                    <Plus className="w-4 h-4" /> Add Variant
+                  </button>
+                )}
+              </div>
+            )}
+
             <label className="flex items-center gap-3 sm:col-span-2">
               <input
                 type="checkbox"
