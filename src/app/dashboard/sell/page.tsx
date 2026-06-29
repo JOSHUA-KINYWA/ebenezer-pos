@@ -93,20 +93,28 @@ export default function SellPage() {
     [products]
   )
 
-  const filteredProducts = useMemo(
-    () =>
-      products.filter(product => {
-        const matchesSearch =
-          !search ||
-          product.name.toLowerCase().includes(search.toLowerCase()) ||
-          (product.variety ?? '').toLowerCase().includes(search.toLowerCase())
-        const matchesCategory =
-          categoryFilter === 'all' ||
-          (product.category as { name?: string })?.name === categoryFilter
-        return matchesSearch && matchesCategory
-      }),
-    [products, search, categoryFilter]
+  const parentProducts = useMemo(
+    () => products.filter(product => !product.parent_product_id),
+    [products]
   )
+
+  function getProductVariants(productId: string) {
+    return products.filter(p => p.parent_product_id === productId && p.is_active)
+  }
+
+  const filteredParentProducts = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return parentProducts.filter(product => {
+      const matchesSearch =
+        !query ||
+        product.name.toLowerCase().includes(query) ||
+        (product.variety ?? '').toLowerCase().includes(query)
+      const matchesCategory =
+        categoryFilter === 'all' ||
+        (product.category as { name?: string })?.name === categoryFilter
+      return matchesSearch && matchesCategory
+    })
+  }, [parentProducts, search, categoryFilter])
 
   function addToCart(product: Product) {
     if (product.stock_qty === 0) {
@@ -654,7 +662,7 @@ export default function SellPage() {
           <div className="card p-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Sell products</h2>
-                <p className="text-sm text-slate-500">Search, scan, and pick the exact product or variant from the catalog.</p>
+                <p className="text-sm text-slate-500">Search, scan, and select a variant under each main product.</p>
               </div>
 
             <form onSubmit={handleBarcodeSearch} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
@@ -722,48 +730,64 @@ export default function SellPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[560px] overflow-y-auto pr-1">
-            {filteredProducts.length === 0 ? (
+            {filteredParentProducts.length === 0 ? (
               <div className="card p-6 col-span-full text-center text-sm text-slate-500">
                 No products match this filter.
               </div>
             ) : (
-              filteredProducts.map(product => {
-                const isVariant = !!product.parent_product_id
-                const parentName = isVariant
-                  ? products.find(p => p.id === product.parent_product_id)?.name
-                  : undefined
+              filteredParentProducts.map(product => {
+                const variants = getProductVariants(product.id)
+                const hasVariants = variants.length > 0
                 return (
                   <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
-                    <button type="button" onClick={() => handleProductSelect(product)} className="w-full text-left">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${isVariant ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                          {isVariant ? 'Variant' : 'Parent'}
-                        </span>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${hasVariants ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : 'Product'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
+                    <div className="grid gap-2 text-sm text-slate-600 mb-3">
+                      <div className="flex items-center justify-between">
+                        <span>Price</span>
+                        <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
                       </div>
-                      <p className="text-xs text-slate-500 mb-3">
-                        {(product.category as { name?: string })?.name || 'Uncategorized'}
-                        {isVariant && parentName ? ` · ${parentName}` : ''}
-                      </p>
-                      <div className="grid gap-2 text-sm text-slate-600">
-                        <div className="flex items-center justify-between">
-                          <span>Price</span>
-                          <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>Stock</span>
-                          <span className="font-semibold text-slate-900">{product.stock_qty} {product.unit}</span>
+                      <div className="flex items-center justify-between">
+                        <span>Stock</span>
+                        <span className="font-semibold text-slate-900">{product.stock_qty} {product.unit}</span>
+                      </div>
+                    </div>
+
+                    {hasVariants && (
+                      <div className="mb-3">
+                        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Variants</p>
+                        <div className="flex flex-wrap gap-2">
+                          {variants.map(variant => (
+                            <button
+                              key={variant.id}
+                              type="button"
+                              onClick={() => addToCart(variant)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand-400 hover:text-brand-700"
+                            >
+                              <Plus className="w-3 h-3" />
+                              {formatProductName(variant)}
+                              <span className="text-slate-400">({formatMoney(variant.price, settings.currency)})</span>
+                            </button>
+                          ))}
                         </div>
                       </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleProductSelect(product)}
-                      className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add to cart
-                    </button>
+                    )}
+
+                    {!hasVariants && (
+                      <button
+                        type="button"
+                        onClick={() => addToCart(product)}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add to cart
+                      </button>
+                    )}
                   </div>
                 )
               })
