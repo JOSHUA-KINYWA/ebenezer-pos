@@ -65,36 +65,36 @@ export default function DrawerPage() {
     setSaving(true)
     try {
       const today = new Date().toISOString().split('T')[0]
-      
-      // Check for discrepancies
       const newCash = parseFloat(cash) || 0
       const newCoin = parseFloat(coin) || 0
       const newTill = parseFloat(till) || 0
-      const newTotal = newCash + newCoin + newTill
-      const oldTotal = totalCash + totalCoin + totalTill
-      const difference = newTotal - oldTotal
-      
-      if (Math.abs(difference) > 1000) {
-        const confirm = window.confirm(`⚠️ Large discrepancy detected! ${difference > 0 ? '+' : ''}${formatMoney(difference, settings.currency)}. Confirm this entry?`)
-        if (!confirm) {
-          setSaving(false)
-          toast.info('💭 Balance entry cancelled')
-          return
-        }
+
+      const { data: existing } = await supabase
+        .from('drawer_balances')
+        .select('id, cash, coin, till')
+        .eq('date', today)
+        .is('shift_id', null)
+        .maybeSingle()
+
+      if (existing) {
+        await supabase.from('drawer_balances').update({
+          cash: newCash,
+          coin: newCoin,
+          till: newTill,
+          note: note || null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', existing.id)
+      } else {
+        await supabase.from('drawer_balances').insert({
+          date: today,
+          shift_id: null,
+          cash: newCash,
+          coin: newCoin,
+          till: newTill,
+          note: note || null,
+        })
       }
-      
-      if (difference > 0) {
-        toast.success(`✓ Balance surplus of ${formatMoney(difference, settings.currency)}`)
-      } else if (difference < 0) {
-        toast.warning(`⚠️ Balance shortage of ${formatMoney(Math.abs(difference), settings.currency)}`)
-      }
-      
-      const { error } = await supabase.from('drawer_balances').upsert({
-        date: today, shift_id: null, cash: newCash, coin: newCoin, till: newTill,
-        note: note || null,
-        updated_at: new Date().toISOString(),
-      })
-      if (error) throw error
+
       toast.success('✓ Balance saved successfully')
       setError(null)
       window.dispatchEvent(new Event('drawer-update'))

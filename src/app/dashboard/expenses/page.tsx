@@ -113,13 +113,13 @@ export default function ExpensesPage() {
     try {
       const { data: existing } = await supabase
         .from('drawer_balances')
-        .select('cash, coin, till')
+        .select('id, cash, coin, till')
         .eq('date', expense.expense_date)
         .is('shift_id', null)
         .maybeSingle()
 
       const current = existing || { cash: 0, coin: 0, till: 0 }
-      const nextBalance: any = { date: expense.expense_date, shift_id: null, cash: current.cash, coin: current.coin, till: current.till }
+      const nextBalance: any = { date: expense.expense_date, shift_id: null }
 
       if (expense.payment_method === 'cash') {
         nextBalance.cash = Number(current.cash || 0) + Number(expense.amount)
@@ -129,7 +129,11 @@ export default function ExpensesPage() {
         nextBalance.till = Number(current.till || 0) + Number(expense.amount)
       }
 
-      await supabase.from('drawer_balances').upsert(nextBalance)
+      if (existing) {
+        await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
+      } else {
+        await supabase.from('drawer_balances').insert(nextBalance)
+      }
       const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
       if (error) throw error
 
@@ -196,34 +200,40 @@ export default function ExpensesPage() {
 
     const { data: existing } = await supabase
       .from('drawer_balances')
-      .select('cash, coin, till')
+      .select('id, cash, coin, till')
       .eq('date', todayString)
       .is('shift_id', null)
       .maybeSingle()
 
     const current = existing || { cash: 0, coin: 0, till: 0 }
-    const nextBalance: any = { date: todayString, shift_id: null, cash: current.cash, coin: current.coin, till: current.till }
+    const nextBalance: any = { date: todayString, shift_id: null }
 
     if (form.payment_method === 'cash') {
-      if (current.cash < amount) {
-        toast.warning(`⚠️ Cash balance (${formatMoney(current.cash, settings.currency)}) is less than expense amount`)
+      if (Number(current.cash || 0) < amount) {
+        toast.warning(`⚠️ Cash balance (${formatMoney(Number(current.cash || 0), settings.currency)}) is less than expense amount`)
       }
-      nextBalance.cash = current.cash - amount
+      nextBalance.cash = Number(current.cash || 0) - amount
     }
     else if (form.payment_method === 'coin') {
-      if (current.coin < amount) {
-        toast.warning(`⚠️ Coin balance (${formatMoney(current.coin, settings.currency)}) is less than expense amount`)
+      if (Number(current.coin || 0) < amount) {
+        toast.warning(`⚠️ Coin balance (${formatMoney(Number(current.coin || 0), settings.currency)}) is less than expense amount`)
       }
-      nextBalance.coin = current.coin - amount
+      nextBalance.coin = Number(current.coin || 0) - amount
     }
     else {
-      if (current.till < amount) {
-        toast.warning(`⚠️ Till balance (${formatMoney(current.till, settings.currency)}) is less than expense amount`)
+      if (Number(current.till || 0) < amount) {
+        toast.warning(`⚠️ Till balance (${formatMoney(Number(current.till || 0), settings.currency)}) is less than expense amount`)
       }
-      nextBalance.till = current.till - amount
+      nextBalance.till = Number(current.till || 0) - amount
     }
 
-    await supabase.from('drawer_balances').upsert(nextBalance)
+    if (existing) {
+      const { error } = await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
+      if (error) throw error
+    } else {
+      const { error } = await supabase.from('drawer_balances').insert(nextBalance)
+      if (error) throw error
+    }
 
     window.dispatchEvent(new Event('drawer-update'))
 

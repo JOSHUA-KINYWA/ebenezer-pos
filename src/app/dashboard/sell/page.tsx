@@ -382,27 +382,29 @@ export default function SellPage() {
         const today = new Date().toISOString().split('T')[0]
         const { data: existing } = await supabase
           .from('drawer_balances')
-          .select('cash, coin, till')
+          .select('id, cash, coin, till')
           .eq('date', today)
           .is('shift_id', null)
           .maybeSingle()
 
-        const balance = existing ?? { cash: 0, coin: 0, till: 0 }
-        const updatedBalance: any = {
-          date: today,
-          shift_id: null,
-          cash: balance.cash,
-          coin: balance.coin,
-          till: balance.till,
-        }
-
-        if (paymentMethod === 'cash') updatedBalance.cash += totalAmount
-        if (paymentMethod === 'coin') updatedBalance.coin += totalAmount
-        if (paymentMethod === 'till') updatedBalance.till += totalAmount
-
-        const { error: drawerError } = await supabase.from('drawer_balances').upsert(updatedBalance)
-        if (drawerError) {
-          throw new Error(drawerError.message)
+        if (existing) {
+          const nextCash = Number(existing.cash || 0) + (paymentMethod === 'cash' ? totalAmount : 0)
+          const nextCoin = Number(existing.coin || 0) + (paymentMethod === 'coin' ? totalAmount : 0)
+          const nextTill = Number(existing.till || 0) + (paymentMethod === 'till' ? totalAmount : 0)
+          const { error: drawerError } = await supabase
+            .from('drawer_balances')
+            .update({ cash: nextCash, coin: nextCoin, till: nextTill, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+          if (drawerError) throw new Error(drawerError.message)
+        } else {
+          const { error: drawerError } = await supabase.from('drawer_balances').insert({
+            date: today,
+            shift_id: null,
+            cash: paymentMethod === 'cash' ? totalAmount : 0,
+            coin: paymentMethod === 'coin' ? totalAmount : 0,
+            till: paymentMethod === 'till' ? totalAmount : 0,
+          })
+          if (drawerError) throw new Error(drawerError.message)
         }
       }
 

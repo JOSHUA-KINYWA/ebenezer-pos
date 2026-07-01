@@ -54,6 +54,15 @@ export default function DashboardPage() {
     if (session) fetchDashboardData()
   }, [range])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleDrawerUpdate = () => {
+      fetchDashboardData()
+    }
+    window.addEventListener('drawer-update', handleDrawerUpdate)
+    return () => window.removeEventListener('drawer-update', handleDrawerUpdate)
+  }, [])
+
   async function fetchDashboardData() {
     try {
       setLoading(true)
