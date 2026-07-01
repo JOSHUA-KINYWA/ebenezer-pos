@@ -200,6 +200,22 @@ export default function SellPage() {
     return isDecimalUnit(unit) ? qty.toFixed(2) : qty.toString()
   }
 
+  function recalculateCartItem(item: CartItem, qty?: number, amount?: number): CartItem {
+    const tier = item.selectedTier
+    if (tier) {
+      const targetQty = qty ?? item.quantity
+      const tierMultiples = Math.max(1, Math.round(targetQty / tier.qty))
+      const newQty = tierMultiples * tier.qty
+      const subtotal = tierMultiples * tier.price
+      return { ...item, quantity: newQty, subtotal: Math.round(subtotal * 100) / 100 }
+    }
+    const baseQty = qty ?? item.quantity
+    const baseSubtotal = amount ?? item.subtotal
+    const newQty = Math.round(baseQty * 100) / 100
+    const newSubtotal = Math.round(baseSubtotal * 100) / 100
+    return { ...item, quantity: newQty, subtotal: newSubtotal }
+  }
+
   function updateQty(productId: string, qty: number) {
     const cartItem = cart.find(item => item.product.id === productId)
     if (!cartItem) return
@@ -211,7 +227,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: finalQty, subtotal: Math.round(finalQty * item.product.price * 100) / 100, saleMode: 'quantity' }
+          ? recalculateCartItem(item, finalQty)
           : item
       )
     )
@@ -227,7 +243,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
+          ? recalculateCartItem(item, newQty)
           : item
       )
     )
@@ -243,7 +259,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
+          ? recalculateCartItem(item, newQty)
           : item
       )
     )
@@ -256,22 +272,19 @@ export default function SellPage() {
 
         if (saleMode === 'quantity') {
           const quantity = Math.max(0.01, item.quantity || 1)
-          return {
-            ...item,
-            saleMode,
-            quantity,
-            subtotal: Math.round(quantity * item.product.price * 100) / 100,
-          }
+          return recalculateCartItem(item, quantity)
         }
 
         const amount = Math.max(0.01, item.subtotal || item.product.price)
-        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
-        return {
-          ...item,
-          saleMode,
-          quantity,
-          subtotal: Math.round(amount * 100) / 100,
+        if (item.selectedTier) {
+          const tierMultiples = Math.max(1, Math.round(amount / item.selectedTier.price))
+          const quantity = tierMultiples * item.selectedTier.qty
+          const subtotal = tierMultiples * item.selectedTier.price
+          return { ...item, saleMode, quantity, subtotal: Math.round(subtotal * 100) / 100 }
         }
+
+        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
+        return { ...item, saleMode, quantity, subtotal: Math.round(amount * 100) / 100 }
       })
     )
   }
@@ -287,16 +300,10 @@ export default function SellPage() {
   function updateAmount(productId: string, amount: number) {
     if (amount < 0) return
     setCart(prev =>
-      prev.map(item =>
-        item.product.id === productId
-          ? {
-              ...item,
-              subtotal: Math.round(amount * 100) / 100,
-              quantity: item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0,
-              saleMode: 'amount',
-            }
-          : item
-      )
+      prev.map(item => {
+        if (item.product.id !== productId) return item
+        return recalculateCartItem(item, undefined, amount)
+      })
     )
   }
 
