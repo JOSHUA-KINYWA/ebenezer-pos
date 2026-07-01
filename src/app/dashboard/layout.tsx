@@ -116,7 +116,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       fetchDrawer()
       fetchPendingCount()
       const interval = window.setInterval(fetchDrawer, 15000)
-      return () => window.clearInterval(interval)
+
+      const handleDrawerUpdate = () => {
+        fetchDrawer()
+      }
+      window.addEventListener('drawer-update', handleDrawerUpdate)
+
+      return () => {
+        window.clearInterval(interval)
+        window.removeEventListener('drawer-update', handleDrawerUpdate)
+      }
     }
   }, [user, supabase])
 

@@ -408,6 +408,8 @@ export default function SellPage() {
 
       await fetchProducts()
 
+      window.dispatchEvent(new Event('drawer-update'))
+
       setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer })
       setCart([])
       setCustomer('')
