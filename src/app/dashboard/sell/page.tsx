@@ -405,6 +405,28 @@ export default function SellPage() {
         throw new Error(itemsErr.message)
       }
 
+      const preSaleStock = new Map<string, number>()
+      stockChecks.forEach((product: any) => {
+        preSaleStock.set(product.id, Number(product.stock_qty))
+      })
+
+      const stockAdjustments = await Promise.all(
+        cart.map(async item => {
+          const { data: product, error } = await supabase.from('products').select('stock_qty').eq('id', item.product.id).single()
+          if (error || !product) return null
+          const expected = Math.max(0, (preSaleStock.get(item.product.id) ?? Number(product.stock_qty)) - item.quantity)
+          if (Number(product.stock_qty) !== expected) {
+            const { error: updateErr } = await supabase.from('products').update({ stock_qty: expected }).eq('id', item.product.id)
+            if (updateErr) console.error('Stock adjust failed', item.product.id, updateErr)
+          }
+          return { productId: item.product.id, name: item.product.name, deducted: item.quantity, nextStock: expected }
+        })
+      )
+
+      if (stockAdjustments.some(item => item && item.deducted > 0 && Number(item.nextStock) !== (preSaleStock.get(item.productId) ?? 0) - item.deducted)) {
+        console.warn('Stock adjustments applied after sale:', stockAdjustments)
+      }
+
       if (paymentType === 'cash') {
         const today = new Date().toISOString().split('T')[0]
         const { data: existing } = await supabase

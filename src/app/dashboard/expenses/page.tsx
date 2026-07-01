@@ -170,16 +170,46 @@ export default function ExpensesPage() {
       const confirm = window.confirm(`⚠️ Large expense detected (${formatMoney(amount, settings.currency)}). Confirm this transaction?`)
       if (!confirm) {
         toast.info('💭 Expense cancelled')
+        setSubmitting(false)
         return
       }
     }
 
-    if (!form.category.trim()) {
-      toast.info('ℹ️ No category selected - expense recorded as miscellaneous')
-    }
-
     setSubmitting(true)
     const todayString = today.current
+
+    const { data: existing } = await supabase
+      .from('drawer_balances')
+      .select('id, cash, coin, till')
+      .eq('date', todayString)
+      .is('shift_id', null)
+      .maybeSingle()
+
+    const current = existing || { cash: 0, coin: 0, till: 0 }
+    const available = Number(current[form.payment_method] || 0)
+
+    if (available < amount) {
+      const shortage = amount - available
+      const confirmOverride = window.confirm(
+        `⚠️ Insufficient ${form.payment_method} drawer balance.\n\n` +
+        `Available: ${formatMoney(available, settings.currency)}\n` +
+        `Required: ${formatMoney(amount, settings.currency)}\n` +
+        `Shortage: ${formatMoney(shortage, settings.currency)}\n\n` +
+        `This will make the ${form.payment_method} drawer negative (${formatMoney(available - amount, settings.currency)}).\n\n` +
+        `Do you want to proceed anyway?`
+      )
+      if (!confirmOverride) {
+        toast.info('💭 Expense cancelled - please select a different payment method')
+        setSubmitting(false)
+        return
+      }
+    }
+
+    if (!confirm(`Record expense: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)} via ${form.payment_method}?`)) {
+      toast.info('💭 Expense cancelled')
+      setSubmitting(false)
+      return
+    }
 
     const { error: insertError } = await supabase.from('expenses').insert({
       item_name: form.item_name.trim(),
@@ -198,32 +228,15 @@ export default function ExpensesPage() {
       return
     }
 
-    const { data: existing } = await supabase
-      .from('drawer_balances')
-      .select('id, cash, coin, till')
-      .eq('date', todayString)
-      .is('shift_id', null)
-      .maybeSingle()
-
-    const current = existing || { cash: 0, coin: 0, till: 0 }
     const nextBalance: any = { date: todayString, shift_id: null }
 
     if (form.payment_method === 'cash') {
-      if (Number(current.cash || 0) < amount) {
-        toast.warning(`⚠️ Cash balance (${formatMoney(Number(current.cash || 0), settings.currency)}) is less than expense amount`)
-      }
       nextBalance.cash = Number(current.cash || 0) - amount
     }
     else if (form.payment_method === 'coin') {
-      if (Number(current.coin || 0) < amount) {
-        toast.warning(`⚠️ Coin balance (${formatMoney(Number(current.coin || 0), settings.currency)}) is less than expense amount`)
-      }
       nextBalance.coin = Number(current.coin || 0) - amount
     }
     else {
-      if (Number(current.till || 0) < amount) {
-        toast.warning(`⚠️ Till balance (${formatMoney(Number(current.till || 0), settings.currency)}) is less than expense amount`)
-      }
       nextBalance.till = Number(current.till || 0) - amount
     }
 
