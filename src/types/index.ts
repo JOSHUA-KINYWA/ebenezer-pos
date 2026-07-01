@@ -119,6 +119,7 @@ export interface CartItem {
   quantity: number
   subtotal: number
   saleMode?: 'quantity' | 'amount'
+  selectedTier?: { qty: number; price: number }
 }
 
 export interface DailySalesSummary {

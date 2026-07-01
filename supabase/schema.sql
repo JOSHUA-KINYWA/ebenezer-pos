@@ -148,19 +148,19 @@ CREATE TABLE IF NOT EXISTS categories (
 -- Products with enhanced fields
 CREATE TABLE IF NOT EXISTS products (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  category_id uuid REFERENCES categories(id) ON DELETE SET NULL,
-  parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE,
   name text NOT NULL,
+  barcode text UNIQUE,
   variety text,
   description text,
-  price numeric(12,2) NOT NULL CHECK (price >= 0),
-  cost numeric(12,2) CHECK (cost >= 0),
+  category_id uuid REFERENCES categories(id) ON DELETE SET NULL,
+  parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE,
+  price numeric(12,2) NOT NULL DEFAULT 0,
   unit text NOT NULL DEFAULT 'piece',
-  stock_qty numeric(12,2) NOT NULL DEFAULT 0 CHECK (stock_qty >= 0),
-  stock_alert integer NOT NULL DEFAULT 10 CHECK (stock_alert >= 0),
-  reorder_qty integer NOT NULL DEFAULT 0,
-  supplier text,
+  stock_qty numeric(12,2) NOT NULL DEFAULT 0,
+  stock_alert numeric(12,2) NOT NULL DEFAULT 10,
+  reorder_qty numeric(12,2) NOT NULL DEFAULT 0,
   is_active boolean NOT NULL DEFAULT true,
+  pricing_tiers jsonb DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );

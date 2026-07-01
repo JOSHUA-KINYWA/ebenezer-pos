@@ -12,7 +12,7 @@ import { useToast } from '@/context/ToastContext'
 import { Product, Category } from '@/types'
 import { validateProductForm } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
-import { Search, Plus, Edit3, Trash2, Save } from 'lucide-react'
+import { Search, Plus, Edit3, Trash2, Save, X } from 'lucide-react'
 
 interface ProductForm {
   name: string
@@ -27,6 +27,7 @@ interface ProductForm {
   stock_alert: string
   is_active: boolean
   product_type: 'standalone' | 'parent'
+  pricing_tiers: { qty: string; price: string }[]
 }
 
 const initialForm: ProductForm = {
@@ -42,6 +43,7 @@ const initialForm: ProductForm = {
   stock_alert: '10',
   is_active: true,
   product_type: 'standalone',
+  pricing_tiers: [],
 }
 
 export default function ProductsPage() {
@@ -113,6 +115,7 @@ export default function ProductsPage() {
       category_id: categories[0]?.id ?? '',
       parent_product_id: '',
       product_type: 'standalone',
+      pricing_tiers: [],
     })
     setErrors({})
     setEditingProduct(null)
@@ -130,6 +133,7 @@ export default function ProductsPage() {
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
       name: '',
       product_type: 'standalone',
+      pricing_tiers: [],
     })
     setErrors({})
     setVariantsDraft([])
@@ -141,6 +145,7 @@ export default function ProductsPage() {
     setEditingProduct(product)
     const isVariant = !!product.parent_product_id
     const hasChildren = products.some(p => p.parent_product_id === product.id)
+    const tiers = (product as any).pricing_tiers || []
     setForm({
       name: product.name || '',
       barcode: product.barcode || '',
@@ -154,6 +159,7 @@ export default function ProductsPage() {
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
       product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
+      pricing_tiers: Array.isArray(tiers) ? tiers.map((t: any) => ({ qty: String(t.qty ?? ''), price: String(t.price ?? '') })) : [],
     })
     setErrors({})
     setVariantsDraft([])
@@ -177,6 +183,7 @@ export default function ProductsPage() {
         stock_alert: form.stock_alert,
         is_active: true,
         product_type: 'standalone',
+        pricing_tiers: [],
       },
     ])
   }
@@ -207,6 +214,15 @@ export default function ProductsPage() {
       return
     }
 
+    const normalizedTiers = form.pricing_tiers
+      .filter(tier => tier.qty && tier.price)
+      .map(tier => ({
+        qty: Math.max(parseInt(tier.qty, 10) || 1, 1),
+        price: Math.max(parseFloat(tier.price) || 0, 0),
+      }))
+      .filter((tier, index, self) => index === 0 || tier.qty !== self[index - 1].qty)
+      .sort((a, b) => a.qty - b.qty)
+
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       barcode: form.barcode.trim() || null,
@@ -217,6 +233,7 @@ export default function ProductsPage() {
       stock_qty: parseFloat(form.stock_qty),
       stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
+      pricing_tiers: normalizedTiers,
     }
     if (form.category_id) {
       payload.category_id = form.category_id
@@ -766,6 +783,72 @@ export default function ProductsPage() {
               />
               {errors.price && <p className="text-xs text-red-600">{errors.price}</p>}
             </label>
+
+            <div className="sm:col-span-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-slate-700">Pricing tiers</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextQty = Number(form.stock_qty || 0) > 0 ? Number(form.stock_qty) : 1
+                    const basePrice = Number(form.price || 0)
+                    setForm({
+                      ...form,
+                      pricing_tiers: [
+                        ...form.pricing_tiers,
+                        { qty: String(nextQty), price: String(basePrice) },
+                      ],
+                    })
+                  }}
+                  className="btn-secondary inline-flex items-center gap-1 text-xs py-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add tier
+                </button>
+              </div>
+              {form.pricing_tiers.length === 0 ? (
+                <p className="text-xs text-slate-500">No pricing tiers. Leave empty for standard per-unit pricing.</p>
+              ) : (
+                <div className="space-y-2">
+                  {form.pricing_tiers.map((tier, index) => (
+                    <div key={index} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                      <span className="text-xs text-slate-500 w-16">Qty</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="input flex-1 py-1.5 text-sm"
+                        value={tier.qty}
+                        onChange={e => {
+                          const next = [...form.pricing_tiers]
+                          next[index] = { ...next[index], qty: e.target.value }
+                          setForm({ ...form, pricing_tiers: next })
+                        }}
+                      />
+                      <span className="text-xs text-slate-500 w-12">Price</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="input flex-1 py-1.5 text-sm"
+                        value={tier.price}
+                        onChange={e => {
+                          const next = [...form.pricing_tiers]
+                          next[index] = { ...next[index], price: e.target.value }
+                          setForm({ ...form, pricing_tiers: next })
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, pricing_tiers: form.pricing_tiers.filter((_, i) => i !== index) })}
+                        className="rounded p-1.5 text-red-600 hover:bg-red-50"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Unit</span>

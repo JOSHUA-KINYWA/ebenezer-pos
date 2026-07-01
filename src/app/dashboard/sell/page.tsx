@@ -26,6 +26,7 @@ export default function SellPage() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [cart, setCart] = useState<CartItem[]>([])
   const [quickAddValue, setQuickAddValue] = useState('')
+  const [tierSelectionProduct, setTierSelectionProduct] = useState<Product | null>(null)
   const [paymentType, setPaymentType] = useState<POSPaymentType>('cash')
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('cash')
   const [isReviewingPayment, setIsReviewingPayment] = useState(false)
@@ -102,6 +103,11 @@ export default function SellPage() {
     return products.filter(p => p.parent_product_id === productId && p.is_active)
   }
 
+  function getPricingTiers(product: Product) {
+    const tiers = (product as any).pricing_tiers || []
+    return Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
+  }
+
   function getAggregateStock(product: Product): number {
     if (product.parent_product_id) return product.stock_qty
     const variants = getProductVariants(product.id)
@@ -123,9 +129,22 @@ export default function SellPage() {
     })
   }, [parentProducts, search, categoryFilter])
 
-  function addToCart(product: Product) {
-    if (product.stock_qty === 0) {
+  function addToCart(product: Product, tier?: { qty: number; price: number }) {
+    if (product.stock_qty === 0 && !tier) {
       toast.error(`⚠️ ${formatProductName(product)} is out of stock!`)
+      return
+    }
+
+    const tiers = (product as any).pricing_tiers || []
+    const validTiers = Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
+    const selectedTier = tier || (validTiers.length === 1 ? { qty: validTiers[0].qty, price: validTiers[0].price } : undefined)
+
+    const quantity = selectedTier ? selectedTier.qty : 1
+    const subtotal = selectedTier ? selectedTier.price : product.price
+    const effectiveStock = selectedTier ? product.stock_qty : product.stock_qty
+
+    if (effectiveStock < quantity && !tier) {
+      toast.error(`⚠️ ${formatProductName(product)} only has ${product.stock_qty} available`)
       return
     }
 
@@ -134,10 +153,10 @@ export default function SellPage() {
       const next = existing
         ? prev.map(item =>
             item.product.id === product.id
-              ? { ...item, quantity: item.quantity + 1, subtotal: item.subtotal + product.price, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount' }
+              ? { ...item, quantity: item.quantity + quantity, subtotal: item.subtotal + subtotal, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount', selectedTier: item.selectedTier || selectedTier }
               : item
           )
-        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'amount' as const }]
+        : [...prev, { product, quantity, subtotal, saleMode: 'amount' as const, selectedTier }]
 
       if (existing) {
         toast.info(`Added another ${formatProductName(product)}`)
@@ -157,6 +176,14 @@ export default function SellPage() {
   }
 
   function handleProductSelect(product: Product) {
+    const tiers = (product as any).pricing_tiers || []
+    const validTiers = Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
+
+    if (validTiers.length > 1) {
+      setTierSelectionProduct(product)
+      return
+    }
+
     addToCart(product)
   }
 
@@ -369,7 +396,7 @@ export default function SellPage() {
         product_id: item.product.id,
         product_name: formatProductName(item.product),
         quantity: item.quantity,
-        unit_price: item.product.price,
+        unit_price: item.selectedTier ? item.selectedTier.price : item.product.price,
         subtotal: item.subtotal,
       }))
 
@@ -542,7 +569,11 @@ export default function SellPage() {
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1">
                           <p className="font-medium text-xs">{formatProductName(item.product)}</p>
-                          <p className="text-xs text-slate-500">{formatMoney(item.product.price, settings.currency)} each</p>
+                          <p className="text-xs text-slate-500">
+                            {item.selectedTier
+                              ? `${item.selectedTier.qty} for ${formatMoney(item.selectedTier.price, settings.currency)}`
+                              : `${formatMoney(item.product.price, settings.currency)} each`}
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -791,16 +822,39 @@ export default function SellPage() {
                       </div>
                     )}
 
-                    {!hasVariants && (
-                      <button
-                        type="button"
-                        onClick={() => addToCart(product)}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add to cart
-                      </button>
-                    )}
+                    {!hasVariants && (() => {
+                      const tiers = getPricingTiers(product)
+                      if (tiers.length > 1) {
+                        return (
+                          <div className="mb-3">
+                            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Pricing tiers</p>
+                            <div className="flex flex-wrap gap-2">
+                              {tiers.map((tier: any, idx: number) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => addToCart(product, { qty: Number(tier.qty), price: Number(tier.price) })}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand-400 hover:text-brand-700"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  {tier.qty} for {formatMoney(Number(tier.price), settings.currency)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      }
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => addToCart(product)}
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add to cart
+                        </button>
+                      )
+                    })()}
                   </div>
                 )
               })
@@ -852,7 +906,11 @@ export default function SellPage() {
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex-1">
                         <p className="font-semibold text-sm text-slate-900">{formatProductName(item.product)}</p>
-                        <p className="text-xs text-slate-500">{formatMoney(item.product.price, settings.currency)} per unit</p>
+                        <p className="text-xs text-slate-500">
+                          {item.selectedTier
+                            ? `${item.selectedTier.qty} for ${formatMoney(item.selectedTier.price, settings.currency)}`
+                            : `${formatMoney(item.product.price, settings.currency)} per unit`}
+                        </p>
                       </div>
                       <button
                         type="button"
