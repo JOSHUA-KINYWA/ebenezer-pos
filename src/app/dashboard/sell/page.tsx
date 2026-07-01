@@ -203,17 +203,22 @@ export default function SellPage() {
   function recalculateCartItem(item: CartItem, qty?: number, amount?: number): CartItem {
     const tier = item.selectedTier
     if (tier) {
+      if (amount !== undefined && amount >= 0) {
+        const tierMultiples = Math.max(1, Math.round((amount || 0) / tier.price))
+        const newQty = tierMultiples * tier.qty
+        const newSubtotal = tierMultiples * tier.price
+        return { ...item, quantity: newQty, subtotal: Math.round(newSubtotal * 100) / 100 }
+      }
       const targetQty = qty ?? item.quantity
       const tierMultiples = Math.max(1, Math.round(targetQty / tier.qty))
       const newQty = tierMultiples * tier.qty
       const subtotal = tierMultiples * tier.price
       return { ...item, quantity: newQty, subtotal: Math.round(subtotal * 100) / 100 }
     }
-    const baseQty = qty ?? item.quantity
-    const baseSubtotal = amount ?? item.subtotal
-    const newQty = Math.round(baseQty * 100) / 100
-    const newSubtotal = Math.round(baseSubtotal * 100) / 100
-    return { ...item, quantity: newQty, subtotal: newSubtotal }
+
+    const finalQty = Math.round((qty ?? item.quantity) * 100) / 100
+    const finalSubtotal = Math.round((amount ?? item.subtotal) * 100) / 100
+    return { ...item, quantity: finalQty, subtotal: finalSubtotal }
   }
 
   function updateQty(productId: string, qty: number) {
