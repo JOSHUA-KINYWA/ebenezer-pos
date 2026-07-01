@@ -133,6 +133,7 @@ export default function ExpensesPage() {
       const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
       if (error) throw error
 
+      window.dispatchEvent(new Event('drawer-update'))
       toast.success('Expense removed and drawer balance updated')
       await fetchExpenses()
     } catch (error) {
@@ -223,6 +224,8 @@ export default function ExpensesPage() {
     }
 
     await supabase.from('drawer_balances').upsert(nextBalance)
+
+    window.dispatchEvent(new Event('drawer-update'))
 
     toast.success(`✓ Expense recorded: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)}`)
     setForm({ ...form, item_name: '', amount: '', vendor: '', category: '', payment_note: '' })

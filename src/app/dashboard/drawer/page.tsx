@@ -97,6 +97,7 @@ export default function DrawerPage() {
       if (error) throw error
       toast.success('✓ Balance saved successfully')
       setError(null)
+      window.dispatchEvent(new Event('drawer-update'))
       await fetchData()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save balance'
