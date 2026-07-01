@@ -154,7 +154,7 @@ export default function ExpensesPage() {
       toast.error('❌ Item name is required')
       return
     }
-    
+
     if (!form.amount) {
       toast.error('❌ Amount is required')
       return
@@ -175,6 +175,10 @@ export default function ExpensesPage() {
       }
     }
 
+    if (!form.category.trim()) {
+      toast.info('ℹ️ No category selected - expense recorded as miscellaneous')
+    }
+
     setSubmitting(true)
     const todayString = today.current
 
@@ -185,27 +189,74 @@ export default function ExpensesPage() {
       .is('shift_id', null)
       .maybeSingle()
 
-    const current = existing || { cash: 0, coin: 0, till: 0 }
-    const available = Number(current[form.payment_method] || 0)
+    const drawer = existing || { cash: 0, coin: 0, till: 0 }
+    const cashBalance = Number(drawer.cash || 0)
+    const coinBalance = Number(drawer.coin || 0)
+    const tillBalance = Number(drawer.till || 0)
+    const totalDrawer = cashBalance + coinBalance + tillBalance
 
-    if (available < amount) {
-      const shortage = amount - available
-      const confirmOverride = window.confirm(
-        `⚠️ Insufficient ${form.payment_method} drawer balance.\n\n` +
-        `Available: ${formatMoney(available, settings.currency)}\n` +
-        `Required: ${formatMoney(amount, settings.currency)}\n` +
-        `Shortage: ${formatMoney(shortage, settings.currency)}\n\n` +
-        `This will make the ${form.payment_method} drawer negative (${formatMoney(available - amount, settings.currency)}).\n\n` +
-        `Do you want to proceed anyway?`
-      )
-      if (!confirmOverride) {
-        toast.info('💭 Expense cancelled - please select a different payment method')
-        setSubmitting(false)
-        return
+    const selectedBalance = Number(drawer[form.payment_method] || 0)
+    const shortage = amount - selectedBalance
+    const otherMethods: PaymentMethod[] = ['cash', 'coin', 'till'].filter(m => m !== form.payment_method) as PaymentMethod[]
+    const methodLabel = form.payment_method.toUpperCase()
+
+    let confirmedPayment = form.payment_method
+    let confirmedAmount = amount
+
+    if (shortage > 0 && totalDrawer >= amount) {
+      const fallback = otherMethods.find(method => Number(drawer[method] || 0) >= shortage)
+      if (fallback) {
+        const fallbackLabel = fallback.toUpperCase()
+        const proceed = window.confirm(
+          `⚠️ ${methodLabel} is short by ${formatMoney(shortage, settings.currency)}.\n\n` +
+          `${methodLabel} available: ${formatMoney(selectedBalance, settings.currency)}\n` +
+          `${fallbackLabel} available: ${formatMoney(Number(drawer[fallback] || 0), settings.currency)}\n\n` +
+          `Pay ${formatMoney(selectedBalance, settings.currency)} from ${methodLabel} ` +
+          `and ${formatMoney(shortage, settings.currency)} from ${fallbackLabel} instead?`
+        )
+        if (proceed) {
+          confirmedPayment = form.payment_method
+          confirmedAmount = amount
+        } else {
+          toast.info('💭 Expense cancelled')
+          setSubmitting(false)
+          return
+        }
+      } else {
+        const totalOther = otherMethods.reduce((sum, method) => sum + Number(drawer[method] || 0), 0)
+        if (totalOther >= shortage && (otherMethods.length === 2 || otherMethods.length === 1)) {
+          const parts = otherMethods.map(method => `${method.toUpperCase()}: ${formatMoney(Number(drawer[method] || 0), settings.currency)}`).join('\n')
+          const proceed = window.confirm(
+            `⚠️ ${methodLabel} does not fully cover this expense.\n\n` +
+            `Available across other methods:\n${parts}\n\n` +
+            `Use available funds from other methods so no drawer goes negative?`
+          )
+          if (!proceed) {
+            toast.info('💭 Expense cancelled')
+            setSubmitting(false)
+            return
+          }
+          confirmedPayment = form.payment_method
+          confirmedAmount = amount
+        } else {
+          const proceed = window.confirm(
+            `⚠️ Not enough funds across drawer to cover this expense.\n\n` +
+            `Total drawer: ${formatMoney(totalDrawer, settings.currency)}\n` +
+            `Expense:    ${formatMoney(amount, settings.currency)}\n\n` +
+            `Record expense anyway without touching drawer balances?`
+          )
+          if (!proceed) {
+            toast.info('💭 Expense cancelled')
+            setSubmitting(false)
+            return
+          }
+          confirmedPayment = form.payment_method
+          confirmedAmount = amount
+        }
       }
     }
 
-    if (!confirm(`Record expense: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)} via ${form.payment_method}?`)) {
+    if (shortage <= 0 && !window.confirm(`Record expense: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)} via ${methodLabel}?`)) {
       toast.info('💭 Expense cancelled')
       setSubmitting(false)
       return
@@ -214,7 +265,7 @@ export default function ExpensesPage() {
     const { error: insertError } = await supabase.from('expenses').insert({
       item_name: form.item_name.trim(),
       amount,
-      payment_method: form.payment_method,
+      payment_method: confirmedPayment,
       vendor: form.vendor.trim() || null,
       category: form.category.trim() || 'Miscellaneous',
       payment_note: form.payment_note.trim() || null,
@@ -228,16 +279,43 @@ export default function ExpensesPage() {
       return
     }
 
-    const nextBalance: any = { date: todayString, shift_id: null }
+    const nextBalance: any = { date: todayString, shift_id: null, cash: cashBalance, coin: coinBalance, till: tillBalance }
 
-    if (form.payment_method === 'cash') {
-      nextBalance.cash = Number(current.cash || 0) - amount
-    }
-    else if (form.payment_method === 'coin') {
-      nextBalance.coin = Number(current.coin || 0) - amount
-    }
-    else {
-      nextBalance.till = Number(current.till || 0) - amount
+    if (shortage <= 0) {
+      if (form.payment_method === 'cash') nextBalance.cash = cashBalance - amount
+      else if (form.payment_method === 'coin') nextBalance.coin = coinBalance - amount
+      else nextBalance.till = tillBalance - amount
+    } else if (totalDrawer >= amount) {
+      const fallback = otherMethods.find(method => Number(drawer[method] || 0) >= shortage)
+      if (fallback) {
+        const usedFromFallback = Math.min(shortage, Number(drawer[fallback] || 0))
+        const usedFromSelected = Math.max(0, amount - usedFromFallback)
+        if (form.payment_method === 'cash') nextBalance.cash = Math.max(0, cashBalance - usedFromSelected)
+        else if (form.payment_method === 'coin') nextBalance.coin = Math.max(0, coinBalance - usedFromSelected)
+        else nextBalance.till = Math.max(0, tillBalance - usedFromSelected)
+        if (fallback === 'cash') nextBalance.cash = Math.max(0, cashBalance - usedFromFallback)
+        else if (fallback === 'coin') nextBalance.coin = Math.max(0, coinBalance - usedFromFallback)
+        else nextBalance.till = Math.max(0, tillBalance - usedFromFallback)
+      } else {
+        const remaining = amount
+        let availableCash = cashBalance
+        let availableCoin = coinBalance
+        let availableTill = tillBalance
+        let stillNeed = remaining
+        const useFrom = (key: string, balance: number) => {
+          const use = Math.min(balance, stillNeed)
+          stillNeed -= use
+          if (key === 'cash') nextBalance.cash = Math.max(0, availableCash - use)
+          if (key === 'coin') nextBalance.coin = Math.max(0, availableCoin - use)
+          if (key === 'till') nextBalance.till = Math.max(0, availableTill - use)
+          return use
+        }
+        useFrom(form.payment_method, Number(drawer[form.payment_method] || 0))
+        for (const method of otherMethods) {
+          if (stillNeed <= 0) break
+          useFrom(method, Number(drawer[method] || 0))
+        }
+      }
     }
 
     if (existing) {
@@ -249,7 +327,6 @@ export default function ExpensesPage() {
     }
 
     window.dispatchEvent(new Event('drawer-update'))
-
     toast.success(`✓ Expense recorded: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)}`)
     setForm({ ...form, item_name: '', amount: '', vendor: '', category: '', payment_note: '' })
     setSubmitting(false)

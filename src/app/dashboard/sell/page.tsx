@@ -423,6 +423,13 @@ export default function SellPage() {
         })
       )
 
+      console.log('Sale completed', {
+        cart,
+        saleItems,
+        stockAdjustments,
+        preSaleStock: Object.fromEntries(preSaleStock),
+      })
+
       if (stockAdjustments.some(item => item && item.deducted > 0 && Number(item.nextStock) !== (preSaleStock.get(item.productId) ?? 0) - item.deducted)) {
         console.warn('Stock adjustments applied after sale:', stockAdjustments)
       }
