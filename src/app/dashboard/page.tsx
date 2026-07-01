@@ -119,11 +119,13 @@ export default function DashboardPage() {
         .limit(dailyLimit)
 
       const { data: drawerData } = await supabase
-      .from('drawer_balances')
-      .select('cash, coin, till')
-      .eq('date', today)
-      .is('shift_id', null)
-      .maybeSingle()
+        .from('drawer_balances')
+        .select('cash, coin, till')
+        .eq('date', today)
+        .is('shift_id', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+      const drawerRow = drawerData && drawerData.length > 0 ? drawerData[0] : null
 
       const { data: expenseData } = await supabase
         .from('expenses')
@@ -153,9 +155,9 @@ export default function DashboardPage() {
         activeShifts: openShifts?.length || 0,
         totalStaff: staffData?.length || 0,
         dailyData: dailyData || [],
-        drawerCash: drawerData?.cash || 0,
-        drawerCoin: drawerData?.coin || 0,
-        drawerTill: drawerData?.till || 0,
+        drawerCash: drawerRow?.cash || 0,
+        drawerCoin: drawerRow?.coin || 0,
+        drawerTill: drawerRow?.till || 0,
         topProducts,
         totalExpenses,
         avgOrderValue,
