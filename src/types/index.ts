@@ -100,6 +100,9 @@ export interface Expense {
   expense_date: string
   created_by?: string
   created_at: string
+  cash_deducted?: number
+  coin_deducted?: number
+  till_deducted?: number
 }
 
 export interface StockLog {

@@ -252,14 +252,15 @@ CREATE TABLE IF NOT EXISTS sale_items (
 CREATE TABLE IF NOT EXISTS expenses (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   item_name text NOT NULL,
-  vendor text,
-  category text,
-  amount numeric(12,2) NOT NULL CHECK (amount >= 0),
-  payment_method text NOT NULL CHECK (payment_method IN ('cash', 'till')),
+  amount numeric(12,2) NOT NULL,
+  payment_method text NOT NULL CHECK (payment_method IN ('cash', 'coin', 'till')),
   payment_note text,
   expense_date date NOT NULL DEFAULT CURRENT_DATE,
   created_by uuid REFERENCES users(id) ON DELETE SET NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  cash_deducted numeric(12,2) NOT NULL DEFAULT 0,
+  coin_deducted numeric(12,2) NOT NULL DEFAULT 0,
+  till_deducted numeric(12,2) NOT NULL DEFAULT 0
 );
 
 -- Stock log (enhanced)
