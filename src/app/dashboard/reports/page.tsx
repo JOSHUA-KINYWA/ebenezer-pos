@@ -16,9 +16,9 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
   TrendingUp, ShoppingBag, Banknote, Download,
-  RefreshCw, FileText, Ban, CreditCard, Percent, User as UserIcon
+  RefreshCw, FileText, Ban, CreditCard, Percent, User as UserIcon, Calendar
 } from 'lucide-react'
-import { format, subDays } from 'date-fns'
+import { format, subDays, startOfDay, endOfDay } from 'date-fns'
 
 type Range = '7' | '30' | '90' | 'all'
 type Tab = 'overview' | 'top_products' | 'transactions'
@@ -36,6 +36,7 @@ export default function ReportsPage() {
   const [products, setProducts] = useState<ProductSalesSummary[]>([])
   const [transactions, setTransactions] = useState<Sale[]>([])
   const [cashiers, setCashiers] = useState<SessionUser[]>([])
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const { settings } = useShopSettings()
   const toast = useToast()
   const supabase = createClient()
@@ -58,11 +59,16 @@ export default function ReportsPage() {
         .from('sales')
         .select('*, sale_items(*), user:users(full_name)')
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(500)
 
       if (since) salesQuery = salesQuery.gte('created_at', since)
       if (filterCashier !== 'all') salesQuery = salesQuery.eq('user_id', filterCashier)
       if (filterPayment !== 'all') salesQuery = salesQuery.eq('payment_type', filterPayment)
+      if (selectedDate) {
+        const dayStart = startOfDay(new Date(selectedDate)).toISOString()
+        const dayEnd = endOfDay(new Date(selectedDate)).toISOString()
+        salesQuery = salesQuery.gte('created_at', dayStart).lte('created_at', dayEnd)
+      }
 
       const fromDate = since ? since.split('T')[0] : '2000-01-01'
       const todayDate = new Date().toISOString().split('T')[0]
@@ -75,15 +81,12 @@ export default function ReportsPage() {
 
       if (txnError) throw txnError
 
-      const { data: cashierData, error: cashierErr } = await supabase.from('users').select('id, full_name').eq('is_active', true)
+      const { data: cashierData, error: cashierErr } = await supabase.from('users').select('id, full_name').eq('is_active', true).order('full_name')
       if (cashierErr) throw cashierErr
-
-      // Filter to cash-only payments
-      const cashOnlyTxns = (txns ?? []).filter(t => t.payment_type === 'cash') as Sale[]
 
       setDaily(d || [])
       setProducts(p || [])
-      setTransactions(cashOnlyTxns)
+      setTransactions((txns ?? []) as Sale[])
       setCashiers((cashierData || []) as SessionUser[])
       setError(null)
     } catch (err) {
@@ -95,7 +98,7 @@ export default function ReportsPage() {
     }
   }
 
-  useEffect(() => { fetchAll() }, [range, filterCashier, filterPayment])
+  useEffect(() => { fetchAll() }, [range, filterCashier, filterPayment, selectedDate])
 
   async function voidSale(sale: Sale) {
     if (!canVoidSales(user?.role)) return
@@ -198,24 +201,35 @@ export default function ReportsPage() {
     <RoleGuard allowed={['owner', 'cashier']}>
       <div className="space-y-6">
         <PageHeader title="Reports & Analytics" description="Track revenue, sales trends, and transaction history" action={
-          <div className="flex flex-wrap gap-2">
-            <select className="input w-auto py-2" value={range} onChange={e => setRange(e.target.value as Range)}>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-              <option value="all">All time</option>
-            </select>
-            <select className="input w-auto py-2" value={filterCashier} onChange={e => setFilterCashier(e.target.value)}>
-              <option value="all">All cashiers</option>
-              {cashiers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-            </select>
-            <select className="input w-auto py-2" value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
-              <option value="all">All payments</option>
-              <option value="cash">Cash only</option>
-            </select>
-            <button onClick={fetchAll} className="btn-secondary"><RefreshCw className="w-4 h-4" /> Refresh</button>
-            <button onClick={exportDaily} className="btn-secondary"><Download className="w-4 h-4" /> Export CSV</button>
+        <div className="flex flex-wrap gap-2">
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="date"
+              className="input pl-9 py-2"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+            />
           </div>
+          <select className="input w-auto py-2" value={range} onChange={e => setRange(e.target.value as Range)}>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="all">All time</option>
+          </select>
+          <select className="input w-auto py-2" value={filterCashier} onChange={e => setFilterCashier(e.target.value)}>
+            <option value="all">All cashiers</option>
+            {cashiers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+          </select>
+          <select className="input w-auto py-2" value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
+            <option value="all">All payments</option>
+            <option value="cash">Cash only</option>
+            <option value="mpesa">M-Pesa</option>
+            <option value="card">Card</option>
+          </select>
+          <button onClick={fetchAll} className="btn-secondary"><RefreshCw className="w-4 h-4" /> Refresh</button>
+          <button onClick={exportDaily} className="btn-secondary"><Download className="w-4 h-4" /> Export CSV</button>
+        </div>
         } />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -318,27 +332,45 @@ export default function ReportsPage() {
             </div>
           )}
           {tab === 'transactions' && (
-            <div className="overflow-x-auto">
-              {transactions.length === 0 ? <EmptyState icon={FileText} title="No transactions" description="Sales will appear here" /> : (
-                <table className="w-full">
-                  <thead><tr className="border-b border-slate-100 text-slate-500 text-sm"><th className="py-2 text-left">ID</th><th className="py-2 text-left">Cashier</th><th className="py-2 text-left">Amount</th><th className="py-2 text-left">Payment</th><th className="py-2 text-left">Time</th><th className="py-2 text-left">Items</th><th className="py-2 text-right">Action</th></tr></thead>
-                  <tbody>{transactions.map(t => (
-                    <tr key={t.id} className="border-b border-slate-50">
-                      <td className="py-2 text-sm font-mono text-slate-900">#{t.id.slice(0, 8)}</td>
-                      <td className="py-2 text-sm text-slate-600">{(t.user as any)?.full_name || '—'}</td>
-                      <td className="py-2 text-sm font-semibold text-slate-900">{formatMoney(Number(t.total_amount), settings.currency)}</td>
-                      <td className="py-2 text-sm text-slate-500 capitalize">{t.payment_type}</td>
-                      <td className="py-2 text-sm text-slate-400">{formatDateTime(t.created_at)}</td>
-                      <td className="py-2 text-sm text-slate-500">{t.sale_items?.length || 0}</td>
-                      <td className="py-2 text-right">
+            <div className="space-y-3">
+              {transactions.length === 0 ? (
+                <EmptyState icon={FileText} title="No transactions" description="Sales will appear here" />
+              ) : (
+                transactions.map(t => (
+                  <div key={t.id} className={`rounded-2xl border p-4 ${t.is_voided ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm font-mono font-semibold text-slate-900">#{t.id.slice(0, 8)}</span>
+                        <span className="text-sm text-slate-600">{(t.user as any)?.full_name || '—'}</span>
+                        <span className="text-sm text-slate-500 capitalize">{t.payment_type}</span>
+                        <span className="text-sm text-slate-400">{formatDateTime(t.created_at)}</span>
+                        {t.is_voided && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Voided</span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-base font-bold text-slate-900">{formatMoney(Number(t.total_amount), settings.currency)}</span>
                         {canVoidSales(user?.role) && !t.is_voided && (
                           <button onClick={() => voidSale(t)} className="text-xs text-red-600 hover:text-red-700">Void</button>
                         )}
-                        {t.is_voided && <span className="text-xs text-slate-400">Voided</span>}
-                      </td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+                      </div>
+                    </div>
+                    {t.customer?.name && <p className="text-xs text-slate-500 mb-2">Customer: {t.customer.name}</p>}
+                    {t.note && <p className="text-xs text-slate-500 mb-2">Note: {t.note}</p>}
+                    <div className="space-y-1">
+                      {(t.sale_items || []).map((item, idx) => (
+                        <div key={idx} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-900">{item.product_name || 'Item'}</span>
+                            <span className="text-slate-500">x{item.quantity}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-slate-600">
+                            <span>{formatMoney(Number(item.unit_price), settings.currency)}</span>
+                            <span className="font-semibold text-slate-900">{formatMoney(Number(item.subtotal), settings.currency)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           )}
