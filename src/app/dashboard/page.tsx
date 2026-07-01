@@ -361,10 +361,6 @@ export default function DashboardPage() {
                     <span className="text-sm text-slate-600">Till</span>
                     <span className="font-bold text-slate-900">{formatMoney(stats?.drawerTill || 0, settings.currency)}</span>
                   </div>
-                  <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-700">Total</span>
-                    <span className="text-lg font-bold text-brand-600">{formatMoney(drawerTotal, settings.currency)}</span>
-                  </div>
                 </div>
               </div>
 
