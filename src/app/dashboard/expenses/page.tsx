@@ -106,7 +106,7 @@ export default function ExpensesPage() {
   )
 
   async function handleDeleteExpense(expense: Expense) {
-    const confirmed = window.confirm(`Delete expense "${expense.item_name}"? This will also adjust the drawer balance for ${expense.expense_date}.`)
+    const confirmed = window.confirm(`Delete expense "${expense.item_name}"? This will restore ${formatMoney(Number(expense.amount), settings.currency)} to ${expense.payment_method.toUpperCase()} drawer.`)
     if (!confirmed) return
 
     setDeletingExpenseId(expense.id)
@@ -116,6 +116,8 @@ export default function ExpensesPage() {
         .select('id, cash, coin, till')
         .eq('date', expense.expense_date)
         .is('shift_id', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
 
       const current = existing || { cash: 0, coin: 0, till: 0 }
@@ -138,7 +140,7 @@ export default function ExpensesPage() {
       if (error) throw error
 
       window.dispatchEvent(new Event('drawer-update'))
-      toast.success('Expense removed and drawer balance updated')
+      toast.success(`Expense deleted — ${expense.payment_method.toUpperCase()} restored ${formatMoney(Number(expense.amount), settings.currency)}`)
       await fetchExpenses()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to delete expense'
@@ -187,6 +189,8 @@ export default function ExpensesPage() {
       .select('id, cash, coin, till')
       .eq('date', todayString)
       .is('shift_id', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     const drawer = existing || { cash: 0, coin: 0, till: 0 }
@@ -201,9 +205,14 @@ export default function ExpensesPage() {
     const methodLabel = form.payment_method.toUpperCase()
 
     let confirmedPayment = form.payment_method
-    let confirmedAmount = amount
 
-    if (shortage > 0 && totalDrawer >= amount) {
+    if (shortage <= 0) {
+      if (!window.confirm(`Record expense: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)} via ${methodLabel}?`)) {
+        toast.info('💭 Expense cancelled')
+        setSubmitting(false)
+        return
+      }
+    } else if (totalDrawer >= amount) {
       const fallback = otherMethods.find(method => Number(drawer[method] || 0) >= shortage)
       if (fallback) {
         const fallbackLabel = fallback.toUpperCase()
@@ -214,17 +223,15 @@ export default function ExpensesPage() {
           `Pay ${formatMoney(selectedBalance, settings.currency)} from ${methodLabel} ` +
           `and ${formatMoney(shortage, settings.currency)} from ${fallbackLabel} instead?`
         )
-        if (proceed) {
-          confirmedPayment = form.payment_method
-          confirmedAmount = amount
-        } else {
+        if (!proceed) {
           toast.info('💭 Expense cancelled')
           setSubmitting(false)
           return
         }
+        confirmedPayment = form.payment_method
       } else {
         const totalOther = otherMethods.reduce((sum, method) => sum + Number(drawer[method] || 0), 0)
-        if (totalOther >= shortage && (otherMethods.length === 2 || otherMethods.length === 1)) {
+        if (totalOther >= shortage) {
           const parts = otherMethods.map(method => `${method.toUpperCase()}: ${formatMoney(Number(drawer[method] || 0), settings.currency)}`).join('\n')
           const proceed = window.confirm(
             `⚠️ ${methodLabel} does not fully cover this expense.\n\n` +
@@ -237,27 +244,14 @@ export default function ExpensesPage() {
             return
           }
           confirmedPayment = form.payment_method
-          confirmedAmount = amount
         } else {
-          const proceed = window.confirm(
-            `⚠️ Not enough funds across drawer to cover this expense.\n\n` +
-            `Total drawer: ${formatMoney(totalDrawer, settings.currency)}\n` +
-            `Expense:    ${formatMoney(amount, settings.currency)}\n\n` +
-            `Record expense anyway without touching drawer balances?`
-          )
-          if (!proceed) {
-            toast.info('💭 Expense cancelled')
-            setSubmitting(false)
-            return
-          }
-          confirmedPayment = form.payment_method
-          confirmedAmount = amount
+          toast.error(`❌ Insufficient funds across drawer.\n\nTotal drawer: ${formatMoney(totalDrawer, settings.currency)}\nExpense: ${formatMoney(amount, settings.currency)}\nShortage: ${formatMoney(amount - totalDrawer, settings.currency)}`)
+          setSubmitting(false)
+          return
         }
       }
-    }
-
-    if (shortage <= 0 && !window.confirm(`Record expense: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)} via ${methodLabel}?`)) {
-      toast.info('💭 Expense cancelled')
+    } else {
+      toast.error(`❌ Insufficient funds across drawer.\n\nTotal drawer: ${formatMoney(totalDrawer, settings.currency)}\nExpense: ${formatMoney(amount, settings.currency)}\nShortage: ${formatMoney(amount - totalDrawer, settings.currency)}`)
       setSubmitting(false)
       return
     }
