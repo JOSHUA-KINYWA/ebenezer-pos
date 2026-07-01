@@ -352,11 +352,26 @@ export default function SettingsPage() {
 
   const productOptions = ['all', ...Array.from(new Set(products.map(product => ((product.category as { name?: string })?.name || 'Uncategorized'))))]
 
-  const inventorySummary = useMemo(() => ({
-    total: products.length,
-    active: products.filter(product => product.is_active).length,
-    lowStock: products.filter(product => product.is_active && product.stock_qty <= product.stock_alert).length,
-  }), [products])
+  const inventorySummary = useMemo(() => {
+    const parentProducts = products.filter(p => !p.parent_product_id)
+    const stockMap = new Map<string, { stock_qty: number; stock_alert: number }>()
+    products.forEach((product: any) => {
+      if (product.parent_product_id) {
+        const parent = stockMap.get(product.parent_product_id)
+        if (parent) {
+          parent.stock_qty += Number(product.stock_qty || 0)
+        }
+      } else {
+        stockMap.set(product.id, { stock_qty: Number(product.stock_qty || 0), stock_alert: Number(product.stock_alert || 0) })
+      }
+    })
+    const aggregateStocks = Array.from(stockMap.values())
+    return {
+      total: parentProducts.length,
+      active: parentProducts.filter(p => p.is_active).length,
+      lowStock: aggregateStocks.filter(p => p.stock_qty > 0 && p.stock_qty <= p.stock_alert).length,
+    }
+  }, [products])
 
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase()

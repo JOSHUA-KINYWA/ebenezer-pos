@@ -334,9 +334,10 @@ export default function ProductsPage() {
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase()
     return products.filter(product => {
-      if (product.parent_product_id) return false
-      if (statusFilter === 'active' && !product.is_active) return false
-      if (statusFilter === 'inactive' && product.is_active) return false
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'active' && product.is_active) ||
+        (statusFilter === 'inactive' && !product.is_active)
       const matchesSearch =
         !query ||
         product.name.toLowerCase().includes(query) ||
@@ -347,7 +348,7 @@ export default function ProductsPage() {
       const matchesCategory =
         categoryFilter === 'all' ||
         ((product.category as { name?: string })?.name || 'Uncategorized') === categoryFilter
-      return matchesSearch && matchesCategory
+      return matchesStatus && matchesSearch && matchesCategory
     })
   }, [products, search, categoryFilter, statusFilter])
 
