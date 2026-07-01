@@ -95,10 +95,22 @@ export default function DashboardPage() {
 
       const { data: productsData } = await supabase
         .from('products')
-        .select('id, stock_qty, stock_alert')
+        .select('id, name, stock_qty, stock_alert, parent_product_id, category:category_id(name)')
         .eq('is_active', true)
 
-      const lowStockItems = (productsData || []).filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0).length
+      const stockMap = new Map<string, { stock_qty: number; stock_alert: number }>()
+      ;(productsData || []).forEach((product: any) => {
+        if (product.parent_product_id) {
+          const parent = stockMap.get(product.parent_product_id)
+          if (parent) {
+            parent.stock_qty += Number(product.stock_qty || 0)
+          }
+        } else {
+          stockMap.set(product.id, { stock_qty: Number(product.stock_qty || 0), stock_alert: Number(product.stock_alert || 0) })
+        }
+      })
+
+      const lowStockItems = Array.from(stockMap.values()).filter(p => p.stock_qty > 0 && p.stock_qty <= p.stock_alert).length
 
       const { data: staffData } = await supabase
         .from('users')
