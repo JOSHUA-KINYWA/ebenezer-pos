@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   ShoppingBag, ShoppingCart, BarChart2, Package,
-  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag, Bell
+  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag, Bell, AlertTriangle
 } from 'lucide-react'
 import { SessionUser } from '@/types'
 import { clearSession, getSession, refreshSession } from '@/lib/auth'
@@ -39,6 +39,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [drawerLoaded, setDrawerLoaded] = useState(false)
   const [cartCount, setCartCount] = useState(0)
   const [pendingCount, setPendingCount] = useState(0)
+  const [lowStockCount, setLowStockCount] = useState(0)
   const supabase = createClient()
   const { settings } = useShopSettings()
 
@@ -111,11 +112,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }
 
+  async function fetchLowStockCount() {
+    if (!user) return
+    try {
+      const { data } = await supabase
+        .from('products')
+        .select('id, stock_qty, stock_alert, parent_product_id')
+        .eq('is_active', true)
+
+      if (!data) {
+        setLowStockCount(0)
+        return
+      }
+
+      const stockMap = new Map<string, { stock_qty: number; stock_alert: number }>()
+      data.forEach((product: any) => {
+        if (product.parent_product_id) {
+          const parent = stockMap.get(product.parent_product_id)
+          if (parent) {
+            parent.stock_qty += Number(product.stock_qty || 0)
+          }
+        } else {
+          stockMap.set(product.id, { stock_qty: Number(product.stock_qty || 0), stock_alert: Number(product.stock_alert || 0) })
+        }
+      })
+
+      const outOfStock = Array.from(stockMap.values()).filter(p => p.stock_qty === 0).length
+      const lowStock = Array.from(stockMap.values()).filter(p => p.stock_qty > 0 && p.stock_qty <= p.stock_alert).length
+      setLowStockCount(outOfStock + lowStock)
+    } catch {
+      setLowStockCount(0)
+    }
+  }
+
   useEffect(() => {
     if (user) {
       fetchDrawer()
       fetchPendingCount()
-      const interval = window.setInterval(fetchDrawer, 15000)
+      fetchLowStockCount()
+      const interval = window.setInterval(() => {
+        fetchDrawer()
+        fetchLowStockCount()
+      }, 15000)
 
       const handleDrawerUpdate = () => {
         fetchDrawer()
@@ -295,6 +333,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
             </Link>
           )}
+          <Link href="/dashboard/stock" className="relative rounded-lg p-2 hover:bg-slate-100">
+            <AlertTriangle className="w-5 h-5 text-slate-600" />
+            {lowStockCount > 0 && (
+              <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {lowStockCount}
+              </span>
+            )}
+          </Link>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">

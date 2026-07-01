@@ -58,7 +58,7 @@ export default function ProductsPage() {
   const [variantsDraft, setVariantsDraft] = useState<ProductForm[]>([])
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'instock' | 'outofstock'>('all')
   const toast = useToast()
   const supabase = createClient()
 
@@ -94,7 +94,7 @@ export default function ProductsPage() {
   async function fetchProducts() {
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('products').select('*, category:categories(name)').order('name')
+      const { data, error } = await supabase.from('products').select('*, category:categories(name), parent:products!parent_product_id(name)').order('name')
       if (error) throw error
       setProducts((data || []) as Product[])
       setError(null)
@@ -331,13 +331,20 @@ export default function ProductsPage() {
     }
   }
 
+  function getAggregateStock(product: Product): number {
+    const variants = products.filter(p => p.parent_product_id === product.id)
+    if (variants.length === 0) return Number(product.stock_qty || 0)
+    return variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0)
+  }
+
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase()
     return products.filter(product => {
+      const aggregateStock = getAggregateStock(product)
       const matchesStatus =
         statusFilter === 'all' ||
-        (statusFilter === 'active' && product.is_active) ||
-        (statusFilter === 'inactive' && !product.is_active)
+        (statusFilter === 'instock' && aggregateStock > 0) ||
+        (statusFilter === 'outofstock' && aggregateStock === 0)
       const matchesSearch =
         !query ||
         product.name.toLowerCase().includes(query) ||
@@ -439,12 +446,12 @@ export default function ProductsPage() {
             </select>
             <select
               value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+              onChange={e => setStatusFilter(e.target.value as 'all' | 'instock' | 'outofstock')}
               className="input w-full"
             >
               <option value="all">All statuses</option>
-              <option value="active">Active only</option>
-              <option value="inactive">Inactive only</option>
+              <option value="instock">In stock</option>
+              <option value="outofstock">Out of stock</option>
             </select>
           </div>
         </div>
