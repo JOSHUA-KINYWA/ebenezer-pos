@@ -59,6 +59,7 @@ export default function SettingsPage() {
   const [productErrors, setProductErrors] = useState<Record<string, string>>({})
   const [categoryErrors, setCategoryErrors] = useState<Record<string, string>>({})
   const [catalogLoading, setCatalogLoading] = useState(true)
+  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const [productSearch, setProductSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
@@ -121,59 +122,88 @@ export default function SettingsPage() {
   }
 
   async function resetSales() {
-    if (!confirm('Delete all sales records and transaction history? This cannot be undone.')) return
-    if (!confirm('This will remove all sales data. Are you sure?')) return
-    try {
-      await Promise.all([clearTable('sale_items'), clearTable('sales')])
-      toast.success('All sales and transactions reset')
-      refresh()
-    } catch (err) {
-      toast.error('Failed to reset sales')
-    }
+    setConfirm({
+      title: 'Reset sales',
+      description: 'Delete all sales records and transaction history? This cannot be undone.',
+      tone: 'danger',
+      confirmLabel: 'Reset',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          await Promise.all([clearTable('sale_items'), clearTable('sales')])
+          toast.success('All sales and transactions reset')
+          refresh()
+        } catch (err) {
+          toast.error('Failed to reset sales')
+        }
+      },
+    })
   }
 
   async function resetExpenses() {
-    if (!confirm('Delete all expense records? This cannot be undone.')) return
-    try {
-      await clearTable('expenses')
-      toast.success('All expenses reset')
-      refresh()
-    } catch (err) {
-      toast.error('Failed to reset expenses')
-    }
+    setConfirm({
+      title: 'Reset expenses',
+      description: 'Delete all expense records? This cannot be undone.',
+      tone: 'danger',
+      confirmLabel: 'Reset',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          await clearTable('expenses')
+          toast.success('All expenses reset')
+          refresh()
+        } catch (err) {
+          toast.error('Failed to reset expenses')
+        }
+      },
+    })
   }
 
   async function resetDrawer() {
-    if (!confirm('Delete all drawer balance records? This cannot be undone.')) return
-    try {
-      await clearTable('drawer_balances')
-      toast.success('All drawer balances reset')
-      refresh()
-    } catch (err) {
-      toast.error('Failed to reset drawer balances')
-    }
+    setConfirm({
+      title: 'Reset drawer',
+      description: 'Delete all drawer balance records? This cannot be undone.',
+      tone: 'danger',
+      confirmLabel: 'Reset',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          await clearTable('drawer_balances')
+          toast.success('All drawer balances reset')
+          refresh()
+        } catch (err) {
+          toast.error('Failed to reset drawer balances')
+        }
+      },
+    })
   }
 
   async function resetFactoryData() {
-    if (!confirm('Factory reset will remove sales, inventory, expenses, customers, and catalog data. This cannot be undone.')) return
-    if (!confirm('This will remove your business history and inventory records. Continue?')) return
+    setConfirm({
+      title: 'Factory reset',
+      description: 'Factory reset will remove sales, inventory, expenses, customers, and catalog data. This cannot be undone.',
+      tone: 'danger',
+      confirmLabel: 'Reset everything',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balances', 'stock_log', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
 
-    try {
-      const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balances', 'stock_log', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
+          for (const tableName of tablesToClear) {
+            await clearTable(tableName)
+          }
 
-      for (const tableName of tablesToClear) {
-        await clearTable(tableName)
-      }
-
-      setProducts([])
-      setCategories([])
-      setSelectedProduct(null)
-      toast.success('Factory reset complete')
-      refresh()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to reset factory data'
-      toast.error(message)
-    }
+          setProducts([])
+          setCategories([])
+          setSelectedProduct(null)
+          toast.success('Factory reset complete')
+          refresh()
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to reset factory data'
+          toast.error(message)
+        }
+      },
+    })
   }
 
   async function fetchCategories() {
@@ -333,21 +363,28 @@ export default function SettingsPage() {
   }
 
   async function deleteCategory(category: Category) {
-    if (!confirm(`Delete category "${category.name}"? Products in this category will be uncategorized.`)) return
+    setConfirm({
+      title: 'Delete category',
+      description: `Delete category "${category.name}"? Products in this category will be uncategorized.`,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', category.id)
+          if (productError) throw productError
 
-    try {
-      const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', category.id)
-      if (productError) throw productError
+          const { error } = await supabase.from('categories').delete().eq('id', category.id)
+          if (error) throw error
 
-      const { error } = await supabase.from('categories').delete().eq('id', category.id)
-      if (error) throw error
-
-      toast.success('Category deleted successfully')
-      await Promise.all([fetchCategories(), fetchProducts()])
-    } catch (error) {
-      toast.error('Unable to delete category')
-      console.error(error)
-    }
+          toast.success('Category deleted successfully')
+          await Promise.all([fetchCategories(), fetchProducts()])
+        } catch (error) {
+          toast.error('Unable to delete category')
+          console.error(error)
+        }
+      },
+    })
   }
 
   const productOptions = ['all', ...Array.from(new Set(products.map(product => ((product.category as { name?: string })?.name || 'Uncategorized'))))]
@@ -630,6 +667,23 @@ export default function SettingsPage() {
         )}
 
       </div>
+
+      {confirm && (
+        <Modal
+          isOpen={!!confirm}
+          onClose={() => setConfirm(null)}
+          title={confirm.title}
+          description={confirm.description}
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
+              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
+            </div>
+          }
+        >
+          <p className="text-sm text-slate-600">{confirm.description}</p>
+        </Modal>
+      )}
     </RoleGuard>
   )
 }

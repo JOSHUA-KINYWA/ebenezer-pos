@@ -10,7 +10,7 @@ import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { Modal } from '@/components/Modal'
 import { PageHeader } from '@/components/PageHeader'
-import { CheckCircle, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
+import { CheckCircle, Plus, Minus, X, ArrowLeftRight, Search } from 'lucide-react'
 
 type POSPaymentType = 'cash'
 type CashMethod = 'cash' | 'coin' | 'till'
@@ -22,6 +22,7 @@ export default function SellPage() {
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [cart, setCart] = useState<CartItem[]>([])
   const [tierSelectionProduct, setTierSelectionProduct] = useState<Product | null>(null)
@@ -121,6 +122,20 @@ export default function SellPage() {
     if (variants.length === 0) return product.stock_qty
     return variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0)
   }
+
+  const filteredParentProducts = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return parentProducts.filter(product => {
+      const matchesSearch =
+        !query ||
+        product.name.toLowerCase().includes(query) ||
+        (product.variety ?? '').toLowerCase().includes(query)
+      const matchesCategory =
+        categoryFilter === 'all' ||
+        (product.category as { name?: string })?.name === categoryFilter
+      return matchesSearch && matchesCategory
+    })
+  }, [parentProducts, search, categoryFilter])
 
   function addToCart(product: Product, tier?: { qty: number; price: number }) {
     if (product.stock_qty === 0 && !tier) {
@@ -715,8 +730,19 @@ export default function SellPage() {
           <div className="card p-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Sell products</h2>
-                <p className="text-sm text-slate-500">Select a product or variant to add it to the cart.</p>
+                <p className="text-sm text-slate-500">Search, scan, and select a variant under each main product.</p>
               </div>
+
+            <div className="mt-4 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="input pl-9 w-full"
+              />
+            </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -740,7 +766,7 @@ export default function SellPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[560px] overflow-y-auto pr-1">
-            {parentProducts.length === 0 ? (
+            {filteredParentProducts.length === 0 ? (
               <div className="card p-6 col-span-full text-center text-sm text-slate-500">
                 No products match this filter.
               </div>

@@ -12,6 +12,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { canVoidSales } from '@/lib/permissions'
+import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
@@ -37,6 +38,7 @@ export default function ReportsPage() {
   const [transactions, setTransactions] = useState<Sale[]>([])
   const [cashiers, setCashiers] = useState<SessionUser[]>([])
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const { settings } = useShopSettings()
   const toast = useToast()
   const supabase = createClient()
@@ -100,66 +102,73 @@ export default function ReportsPage() {
 
   useEffect(() => { fetchAll() }, [range, filterCashier, filterPayment, selectedDate])
 
-  async function voidSale(sale: Sale) {
+  async function cancelSale(sale: Sale) {
     if (!canVoidSales(user?.role)) return
     if (sale.is_voided) {
-      toast.info('This sale is already voided.')
+      toast.info('This sale is already cancelled.')
       return
     }
-    if (!confirm(`Void receipt ${sale.receipt_no}? Stock will be restored.`)) return
+    setConfirm({
+      title: 'Cancel sale',
+      description: `Cancel receipt ${sale.receipt_no}? Stock will be restored.`,
+      tone: 'danger',
+      confirmLabel: 'Cancel sale',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          const today = new Date().toISOString().split('T')[0]
+          if (sale.sale_items) {
+            await Promise.all(
+              (sale.sale_items || [])
+                .filter((item): item is NonNullable<Sale['sale_items']>[0] & { product_id: string } => !!item.product_id)
+                .map(async item => {
+                  const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product_id).single()
+                  if (productError || !product) throw new Error(`Unable to restore stock for ${item.product_name || item.product_id}`)
 
-    try {
-      const today = new Date().toISOString().split('T')[0]
-      if (sale.sale_items) {
-        await Promise.all(
-          (sale.sale_items || [])
-            .filter((item): item is NonNullable<Sale['sale_items']>[0] & { product_id: string } => !!item.product_id)
-            .map(async item => {
-              const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product_id).single()
-              if (productError || !product) throw new Error(`Unable to restore stock for ${item.product_name || item.product_id}`)
+                  const nextStock = Number(product.stock_qty) + Number(item.quantity)
+                  const { error: updateError } = await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product_id)
+                  if (updateError) throw updateError
 
-              const nextStock = Number(product.stock_qty) + Number(item.quantity)
-              const { error: updateError } = await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product_id)
-              if (updateError) throw updateError
+                  const { error: logError } = await supabase.from('stock_log').insert({
+                    product_id: item.product_id,
+                    user_id: user?.id ?? null,
+                    change_qty: Number(item.quantity),
+                    reason: 'adjustment',
+                    note: `Cancel sale ${sale.receipt_no}`,
+                  })
+                  if (logError) throw logError
+                })
+            )
+          }
 
-              const { error: logError } = await supabase.from('stock_log').insert({
-                product_id: item.product_id,
-                user_id: user?.id ?? null,
-                change_qty: Number(item.quantity),
-                reason: 'adjustment',
-                note: `Void sale ${sale.receipt_no}`,
-              })
-              if (logError) throw logError
-            })
-        )
-      }
+          const { data: existing } = await supabase
+            .from('drawer_balances')
+            .select('cash, coin, till')
+            .eq('date', today)
+            .or(sale.shift_id ? `shift_id.eq.${sale.shift_id}` : 'shift_id.is.null')
+            .maybeSingle()
+          const curr = existing || { cash: 0, coin: 0, till: 0 }
+          const updated: any = { date: today, shift_id: sale.shift_id || null }
+          if (sale.payment_method === 'cash') updated.cash = curr.cash - sale.total_amount
+          else if (sale.payment_method === 'coin') updated.coin = curr.coin - sale.total_amount
+          else updated.till = curr.till - sale.total_amount
+          updated.cash = updated.cash ?? curr.cash
+          updated.coin = updated.coin ?? curr.coin
+          updated.till = updated.till ?? curr.till
+          const { error: drawerError } = await supabase.from('drawer_balances').upsert(updated)
+          if (drawerError) throw drawerError
 
-      const { data: existing } = await supabase
-        .from('drawer_balances')
-        .select('cash, coin, till')
-        .eq('date', today)
-        .or(sale.shift_id ? `shift_id.eq.${sale.shift_id}` : 'shift_id.is.null')
-        .maybeSingle()
-      const curr = existing || { cash: 0, coin: 0, till: 0 }
-      const updated: any = { date: today, shift_id: sale.shift_id || null }
-      if (sale.payment_method === 'cash') updated.cash = curr.cash - sale.total_amount
-      else if (sale.payment_method === 'coin') updated.coin = curr.coin - sale.total_amount
-      else updated.till = curr.till - sale.total_amount
-      updated.cash = updated.cash ?? curr.cash
-      updated.coin = updated.coin ?? curr.coin
-      updated.till = updated.till ?? curr.till
-      const { error: drawerError } = await supabase.from('drawer_balances').upsert(updated)
-      if (drawerError) throw drawerError
+          const { error: saleError } = await supabase.from('sales').update({ is_voided: true, voided_by: user?.id, voided_at: new Date().toISOString() }).eq('id', sale.id)
+          if (saleError) throw saleError
 
-      const { error: saleError } = await supabase.from('sales').update({ is_voided: true, voided_by: user?.id, voided_at: new Date().toISOString() }).eq('id', sale.id)
-      if (saleError) throw saleError
-
-      toast.success('Sale voided')
-      fetchAll()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to void sale'
-      toast.error(message)
-    }
+          toast.success('Sale cancelled')
+          fetchAll()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unable to cancel sale'
+          toast.error(message)
+        }
+      },
+    })
   }
 
   function exportDaily() {
@@ -237,11 +246,11 @@ export default function ReportsPage() {
             { label: 'Total Revenue', value: formatMoney(totalRevenue, settings.currency), icon: TrendingUp, color: 'text-brand-600 bg-brand-50' },
             { label: 'Transactions', value: totalTxns.toString(), icon: ShoppingBag, color: 'text-sky-600 bg-sky-50' },
             { label: 'Avg Per Sale', value: formatMoney(avgTxnValue, settings.currency), icon: CreditCard, color: 'text-blue-600 bg-blue-50' },
-            { label: 'Void Rate', value: `${voidRate}%`, icon: Ban, color: 'text-red-600 bg-red-50' },
+            { label: 'Cancel Rate', value: `${voidRate}%`, icon: Ban, color: 'text-red-600 bg-red-50' },
             { label: 'Cash Received', value: formatMoney(totalCash, settings.currency), icon: Banknote, color: 'text-amber-600 bg-amber-50' },
             { label: 'Top Product', value: topProduct?.name || '—', icon: Percent, color: 'text-emerald-600 bg-emerald-50', subtext: topProduct ? formatMoney(topProduct.total_revenue, settings.currency) : '' },
             { label: 'Busiest Day', value: busiestDay ? format(new Date(busiestDay.sale_date), 'dd MMM') : '—', icon: UserIcon, color: 'text-purple-600 bg-purple-50', subtext: busiestDay ? `${busiestDay.total_transactions} sales` : '' },
-            { label: 'Voided Txns', value: voidedSales.length.toString(), icon: Ban, color: 'text-orange-600 bg-orange-50' },
+            { label: 'Cancelled Txns', value: voidedSales.length.toString(), icon: Ban, color: 'text-orange-600 bg-orange-50' },
           ].map(({ label, value, icon: Icon, color, subtext }) => (
             <div key={label} className="stat-card">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${color}`}><Icon className="w-5 h-5" /></div>
@@ -344,13 +353,13 @@ export default function ReportsPage() {
                         <span className="text-sm text-slate-600">{(t.user as any)?.full_name || '—'}</span>
                         <span className="text-sm text-slate-500 capitalize">{t.payment_type}</span>
                         <span className="text-sm text-slate-400">{formatDateTime(t.created_at)}</span>
-                        {t.is_voided && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Voided</span>}
+                        {t.is_voided && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Cancelled</span>}
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-base font-bold text-slate-900">{formatMoney(Number(t.total_amount), settings.currency)}</span>
-                        {canVoidSales(user?.role) && !t.is_voided && (
-                          <button onClick={() => voidSale(t)} className="text-xs text-red-600 hover:text-red-700">Void</button>
-                        )}
+                         {canVoidSales(user?.role) && !t.is_voided && (
+                           <button onClick={() => cancelSale(t)} className="text-xs text-red-600 hover:text-red-700">Cancel Sale</button>
+                         )}
                       </div>
                     </div>
                     {t.customer?.name && <p className="text-xs text-slate-500 mb-2">Customer: {t.customer.name}</p>}
@@ -376,6 +385,23 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+
+      {confirm && (
+        <Modal
+          isOpen={!!confirm}
+          onClose={() => setConfirm(null)}
+          title={confirm.title}
+          description={confirm.description}
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
+              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
+            </div>
+          }
+        >
+          <p className="text-sm text-slate-600">{confirm.description}</p>
+        </Modal>
+      )}
     </RoleGuard>
   )
 }
