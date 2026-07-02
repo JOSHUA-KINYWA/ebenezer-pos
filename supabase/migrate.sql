@@ -105,17 +105,30 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS pin text;
 
 -- Support decimal quantities for items sold by weight/volume
 ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);
-ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING change_qty::numeric(12,2);
-ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING quantity::numeric(12,2);
+ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING stock_log.change_qty::numeric(12,2);
+ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING sale_items.quantity::numeric(12,2);
+
+-- Drawer balances: track cash/coin/till per date and shift
+CREATE TABLE IF NOT EXISTS drawer_balances (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  date date NOT NULL,
+  shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
+  cash numeric(12,2) NOT NULL DEFAULT 0,
+  coin numeric(12,2) NOT NULL DEFAULT 0,
+  till numeric(12,2) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(date, shift_id)
+);
+
+-- Ensure drawer balances has numeric types (for existing tables that may have integer types)
+ALTER TABLE drawer_balances ALTER COLUMN cash TYPE numeric(12,2) USING COALESCE(cash::numeric, 0);
+ALTER TABLE drawer_balances ALTER COLUMN coin TYPE numeric(12,2) USING COALESCE(coin::numeric, 0);
+ALTER TABLE drawer_balances ALTER COLUMN till TYPE numeric(12,2) USING COALESCE(till::numeric, 0);
 
 -- Refresh report views
 DROP VIEW IF EXISTS daily_sales_summary;
 DROP VIEW IF EXISTS product_sales_summary;
-
--- Ensure drawer balances has numeric types
-ALTER TABLE drawer_balances ALTER COLUMN cash TYPE numeric(12,2) USING COALESCE(cash, 0)::numeric(12,2);
-ALTER TABLE drawer_balances ALTER COLUMN coin TYPE numeric(12,2) USING COALESCE(coin, 0)::numeric(12,2);
-ALTER TABLE drawer_balances ALTER COLUMN till TYPE numeric(12,2) USING COALESCE(till, 0)::numeric(12,2);
 
 CREATE VIEW daily_sales_summary AS
 SELECT
@@ -146,19 +159,6 @@ ORDER BY total_revenue DESC;
 ALTER TABLE shop_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pos_public_shop_settings" ON shop_settings;
 CREATE POLICY "pos_public_shop_settings" ON shop_settings FOR ALL USING (true) WITH CHECK (true);
-
--- Drawer balances: track cash/coin/till per date and shift
-CREATE TABLE IF NOT EXISTS drawer_balances (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  date date NOT NULL,
-  shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
-  cash numeric(12,2) NOT NULL DEFAULT 0,
-  coin numeric(12,2) NOT NULL DEFAULT 0,
-  till numeric(12,2) NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(date, shift_id)
-);
 
 -- Function to adjust drawer balances (decrement when expenses occur)
 CREATE OR REPLACE FUNCTION adjust_drawer_balance(p_method text, p_amount numeric, p_date date, p_shift_id uuid)
