@@ -11,6 +11,7 @@ import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { RoleGuard } from '@/components/RoleGuard'
+import { Modal } from '@/components/Modal'
 import { Wallet, Coins, CreditCard, DollarSign, TrendingUp, Clock, CheckCircle, RefreshCw } from 'lucide-react'
 
 export default function DrawerPage() {
@@ -23,6 +24,7 @@ export default function DrawerPage() {
   const [till, setTill] = useState('')
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const [history, setHistory] = useState<any[]>([])
   const { settings } = useShopSettings()
   const toast = useToast()
@@ -62,50 +64,59 @@ export default function DrawerPage() {
   }
 
   async function saveBalance() {
-    setSaving(true)
-    try {
-      const today = new Date().toISOString().split('T')[0]
-      const newCash = parseFloat(cash) || 0
-      const newCoin = parseFloat(coin) || 0
-      const newTill = parseFloat(till) || 0
+    setConfirm({
+      title: 'Update drawer balance',
+      description: `Are you sure you want to update the drawer balance to ${formatMoney(grandTotal, settings.currency)}? This will overwrite the current balance.`,
+      tone: 'danger',
+      confirmLabel: 'Update',
+      onConfirm: async () => {
+        setConfirm(null)
+        setSaving(true)
+        try {
+          const today = new Date().toISOString().split('T')[0]
+          const newCash = parseFloat(cash) || 0
+          const newCoin = parseFloat(coin) || 0
+          const newTill = parseFloat(till) || 0
 
-      const { data: existing } = await supabase
-        .from('drawer_balances')
-        .select('id, cash, coin, till')
-        .eq('date', today)
-        .is('shift_id', null)
-        .maybeSingle()
+          const { data: existing } = await supabase
+            .from('drawer_balances')
+            .select('id, cash, coin, till')
+            .eq('date', today)
+            .is('shift_id', null)
+            .maybeSingle()
 
-      if (existing) {
-        await supabase.from('drawer_balances').update({
-          cash: newCash,
-          coin: newCoin,
-          till: newTill,
-          note: note || null,
-          updated_at: new Date().toISOString(),
-        }).eq('id', existing.id)
-      } else {
-        await supabase.from('drawer_balances').insert({
-          date: today,
-          shift_id: null,
-          cash: newCash,
-          coin: newCoin,
-          till: newTill,
-          note: note || null,
-        })
-      }
+          if (existing) {
+            await supabase.from('drawer_balances').update({
+              cash: newCash,
+              coin: newCoin,
+              till: newTill,
+              note: note || null,
+              updated_at: new Date().toISOString(),
+            }).eq('id', existing.id)
+          } else {
+            await supabase.from('drawer_balances').insert({
+              date: today,
+              shift_id: null,
+              cash: newCash,
+              coin: newCoin,
+              till: newTill,
+              note: note || null,
+            })
+          }
 
-      toast.success('✓ Balance saved successfully')
-      setError(null)
-      window.dispatchEvent(new Event('drawer-update'))
-      await fetchData()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save balance'
-      setError(message)
-      toast.error(`❌ ${message}`)
-    } finally {
-      setSaving(false)
-    }
+          toast.success('✓ Balance saved successfully')
+          setError(null)
+          window.dispatchEvent(new Event('drawer-update'))
+          await fetchData()
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to save balance'
+          setError(message)
+          toast.error(`❌ ${message}`)
+        } finally {
+          setSaving(false)
+        }
+      },
+    })
   }
 
   const totalCash = parseFloat(cash) || 0
@@ -324,6 +335,23 @@ export default function DrawerPage() {
           </div>
         )}
       </div>
+
+      {confirm && (
+        <Modal
+          isOpen={!!confirm}
+          onClose={() => setConfirm(null)}
+          title={confirm.title}
+          description={confirm.description}
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
+              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
+            </div>
+          }
+        >
+          <p className="text-sm text-slate-600">{confirm.description}</p>
+        </Modal>
+      )}
     </RoleGuard>
   )
 }
