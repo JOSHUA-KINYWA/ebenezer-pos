@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS products (
   parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE,
   price numeric(12,2) NOT NULL DEFAULT 0,
   unit text NOT NULL DEFAULT 'piece',
+  initial_stock numeric(12,2) NOT NULL DEFAULT 0,
   stock_qty numeric(12,2) NOT NULL DEFAULT 0,
   stock_alert numeric(12,2) NOT NULL DEFAULT 10,
   reorder_qty numeric(12,2) NOT NULL DEFAULT 0,

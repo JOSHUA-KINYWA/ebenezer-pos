@@ -16,6 +16,7 @@ import { Search, Plus, X, Package, TrendingUp, TrendingDown, History } from 'luc
 export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [products, setProducts] = useState<Product[]>([])
+  const [stockLog, setStockLog] = useState<{ product_id: string; change_qty: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -41,33 +42,39 @@ export default function StockPage() {
     setError('')
 
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*, category:categories(name)')
-        .eq('is_active', true)
-        .order('name')
+      const [{ data: productData }, { data: logData }] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*, category:categories(name)')
+          .eq('is_active', true)
+          .order('name'),
+        supabase
+          .from('stock_log')
+          .select('product_id, change_qty')
+          .eq('reason', 'sale')
+      ])
 
-      if (error) {
-        setError(error.message)
-        toast.error(`❌ Failed to load inventory: ${error.message}`)
-        setProducts([])
+      if (productData) {
+        setProducts(productData)
+        setStockLog(logData || [])
       } else {
-        setProducts(data || [])
-        if (data && data.length > 0) {
-          const parentData = data.filter(p => !p.parent_product_id)
-          const lowStockItems = parentData.filter(p => {
-            const variants = data.filter(v => v.parent_product_id === p.id)
-            const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
-            return aggregateStock > 0 && aggregateStock <= p.stock_alert
-          })
-          const outOfStock = parentData.filter(p => {
-            const variants = data.filter(v => v.parent_product_id === p.id)
-            const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
-            return aggregateStock === 0
-          })
-          if (lowStockItems.length > 0 || outOfStock.length > 0) {
-            toast.warning(`⚠️ ${lowStockItems.length} low stock, ${outOfStock.length} out of stock`)
-          }
+        setProducts([])
+        setStockLog([])
+      }
+      if (productData && productData.length > 0) {
+        const parentData = productData.filter(p => !p.parent_product_id)
+        const lowStockItems = parentData.filter(p => {
+          const variants = productData.filter(v => v.parent_product_id === p.id)
+          const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
+          return aggregateStock > 0 && aggregateStock <= p.stock_alert
+        })
+        const outOfStock = parentData.filter(p => {
+          const variants = productData.filter(v => v.parent_product_id === p.id)
+          const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
+          return aggregateStock === 0
+        })
+        if (lowStockItems.length > 0 || outOfStock.length > 0) {
+          toast.warning(`⚠️ ${lowStockItems.length} low stock, ${outOfStock.length} out of stock`)
         }
       }
     } catch (error) {
@@ -75,6 +82,7 @@ export default function StockPage() {
       setError(message)
       toast.error(`❌ ${message}`)
       setProducts([])
+      setStockLog([])
     } finally {
       setLoading(false)
     }
@@ -83,6 +91,7 @@ export default function StockPage() {
   const inventoryProducts = useMemo(() => products.map(p => ({
     ...p,
     stock_qty: Number(p.stock_qty) || 0,
+    initial_stock: Number(p.initial_stock) || 0,
     price: Number(p.price) || 0,
   })), [products])
 
@@ -98,6 +107,18 @@ export default function StockPage() {
     const variants = getVariants(product.id)
     if (variants.length === 0) return product.stock_qty
     return variants.reduce((sum, v) => sum + v.stock_qty, 0)
+  }
+
+  function getAggregateInitialStock(product: Product & { stock_qty: number }): number {
+    const variants = getVariants(product.id)
+    if (variants.length === 0) return product.initial_stock || 0
+    return variants.reduce((sum, v) => sum + (v.initial_stock || 0), 0)
+  }
+
+  function getSoldQty(productId: string): number {
+    return Math.abs(stockLog
+      .filter(l => l.product_id && productId === l.product_id)
+      .reduce((sum, l) => sum + Number(l.change_qty || 0), 0))
   }
 
   const groupedProducts = useMemo(() => {
@@ -197,8 +218,13 @@ export default function StockPage() {
           filteredProducts.map(product => {
             const variants = getVariants(product.id)
             const aggregateStock = getAggregateStock(product)
+            const aggregateInitial = getAggregateInitialStock(product)
+            const totalSold = variants.length > 0
+              ? variants.reduce((sum, v) => sum + getSoldQty(v.id), 0)
+              : getSoldQty(product.id)
             const isLow = aggregateStock <= product.stock_alert && aggregateStock > 0
             const isOut = aggregateStock === 0
+            const progress = aggregateInitial > 0 ? Math.min(100, Math.max(0, ((aggregateInitial - aggregateStock) / aggregateInitial) * 100)) : 0
             return (
               <div key={product.id} className="card p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-3">
@@ -214,6 +240,17 @@ export default function StockPage() {
                   {formatMoney(product.price, settings.currency)} • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
                   {variants.length > 0 && <span className="text-slate-400"> total</span>}
                 </p>
+                {aggregateInitial > 0 && (
+                  <div className="mb-2">
+                    <div className="flex justify-between text-xs text-slate-500 mb-1">
+                      <span>Initial: {aggregateInitial.toLocaleString()} • Sold: {totalSold.toLocaleString()}</span>
+                      <span>{Math.round(progress)}%</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-1.5">
+                      <div className="bg-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                    </div>
+                  </div>
+                )}
                 {variants.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {variants.map(v => (

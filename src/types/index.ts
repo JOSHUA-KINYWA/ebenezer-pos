@@ -43,6 +43,7 @@ export interface Product {
   description?: string
   price: number
   unit: string
+  initial_stock?: number
   stock_qty: number
   stock_alert: number
   is_active: boolean

@@ -242,6 +242,9 @@ export default function ProductsPage() {
     if (form.parent_product_id) {
       payload.parent_product_id = form.parent_product_id
     }
+    if (!editingProduct) {
+      payload.initial_stock = parseFloat(form.stock_qty)
+    }
 
     try {
       if (editingProduct) {
@@ -261,6 +264,7 @@ export default function ProductsPage() {
               stock_alert: parseInt(v.stock_alert, 10),
               is_active: v.is_active,
               parent_product_id: variantParentId,
+              initial_stock: parseFloat(v.stock_qty),
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -289,6 +293,7 @@ export default function ProductsPage() {
               stock_alert: parseInt(v.stock_alert, 10),
               is_active: v.is_active,
               parent_product_id: parentId,
+              initial_stock: parseFloat(v.stock_qty),
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
