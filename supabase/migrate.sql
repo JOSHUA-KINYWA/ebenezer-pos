@@ -103,7 +103,10 @@ UPDATE products SET initial_stock = stock_qty WHERE initial_stock = 0 OR initial
 -- Staff account support
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin text;
 
--- Support decimal quantities for items sold by weight/volume
+-- Support decimal quantities for items sold by weight/volume (drop views first)
+DROP VIEW IF EXISTS daily_sales_summary;
+DROP VIEW IF EXISTS product_sales_summary;
+
 ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);
 ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING stock_log.change_qty::numeric(12,2);
 ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING sale_items.quantity::numeric(12,2);
@@ -111,7 +114,7 @@ ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING sale_items
 -- Drawer balances: track cash/coin/till per date and shift
 CREATE TABLE IF NOT EXISTS drawer_balances (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  date date NOT NULL,
+  date date NOT NULL DEFAULT CURRENT_DATE,
   shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
   cash numeric(12,2) NOT NULL DEFAULT 0,
   coin numeric(12,2) NOT NULL DEFAULT 0,
@@ -126,10 +129,7 @@ ALTER TABLE drawer_balances ALTER COLUMN cash TYPE numeric(12,2) USING COALESCE(
 ALTER TABLE drawer_balances ALTER COLUMN coin TYPE numeric(12,2) USING COALESCE(coin::numeric, 0);
 ALTER TABLE drawer_balances ALTER COLUMN till TYPE numeric(12,2) USING COALESCE(till::numeric, 0);
 
--- Refresh report views
-DROP VIEW IF EXISTS daily_sales_summary;
-DROP VIEW IF EXISTS product_sales_summary;
-
+-- Recreate report views
 CREATE VIEW daily_sales_summary AS
 SELECT
   date(created_at) AS sale_date,
