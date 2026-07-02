@@ -15,7 +15,7 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { Search, TrendingUp, TrendingDown, History, Package, BarChart3 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
-type Tab = 'products' | 'history'
+type Tab = 'products' | 'history' | 'movements'
 
 export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
@@ -28,6 +28,7 @@ export default function StockPage() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [stockFilter, setStockFilter] = useState('all')
   const [activeTab, setActiveTab] = useState<Tab>('products')
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null)
   const supabase = createClient()
   const { settings } = useShopSettings()
   const toast = useToast()
@@ -241,13 +242,13 @@ export default function StockPage() {
 
         {/* Tabs */}
         <div className="flex border-b border-slate-200 mb-4">
-          {(['products', 'history'] as Tab[]).map(tab => (
+          {(['products', 'history', 'movements'] as Tab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTab === tab ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}
             >
-              {tab === 'products' ? 'Products' : 'Stock Analytics'}
+              {tab === 'products' ? 'Products' : tab === 'history' ? 'Stock Analytics' : 'Product Movements'}
             </button>
           ))}
         </div>
@@ -382,12 +383,106 @@ export default function StockPage() {
                       <p className="text-xs text-slate-400 mt-2">
                         Value: {formatMoney(aggregateStock * product.price, settings.currency)}
                       </p>
+                      <button
+                        onClick={() => { setSelectedProduct(product.id); setActiveTab('movements') }}
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
+                      >
+                        <History className="w-3 h-3" /> View movements
+                      </button>
                     </div>
                   )
                 })
               )}
             </div>
           </>
+        )}
+
+        {activeTab === 'movements' && (
+          <div className="card">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <History className="w-4 h-4" />
+                {selectedProduct ? 'Product Movement History' : 'All Product Movements'}
+                {selectedProduct && (
+                  <button onClick={() => { setSelectedProduct(null); setActiveTab('products') }} className="text-xs text-slate-500 ml-2">← Back</button>
+                )}
+              </h3>
+            </div>
+            <div className="p-4">
+              {selectedProduct ? (
+                <div className="space-y-4">
+                  {stockLog
+                    .filter(l => l.product_id === selectedProduct)
+                    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+                    .map((entry, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 rounded bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          {Number(entry.change_qty) > 0 ? (
+                            <TrendingUp className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4 text-red-600" />
+                          )}
+                          <span className="capitalize text-slate-700">{entry.reason || 'adjustment'}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className={Number(entry.change_qty) > 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+                            {Number(entry.change_qty) > 0 ? '+' : ''}{Number(entry.change_qty)}
+                          </span>
+                          <span className="text-xs text-slate-400 block">
+                            {entry.created_at && format(new Date(entry.created_at), 'dd MMM yyyy HH:mm')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  {stockLog.filter(l => l.product_id === selectedProduct).length === 0 && (
+                    <p className="text-center text-slate-500 py-8">No movements for this product</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-600 mb-3">Select a product to view its movement history, or view all movements below:</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-slate-500">
+                          <th className="py-2 text-left pl-4">Product</th>
+                          <th className="py-2 text-left">Type</th>
+                          <th className="py-2 text-right">Change</th>
+                          <th className="py-2 text-right">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stockLog.slice(0, 100).map((entry, idx) => {
+                          const product = products.find(p => p.id === entry.product_id)
+                          const productName = product ? formatProductName(product) : 'Unknown'
+                          return (
+                            <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedProduct(entry.product_id)}>
+                              <td className="py-2 pl-4">
+                                <span className="font-medium text-slate-900">{productName}</span>
+                              </td>
+                              <td className="py-2">
+                                <span className={`px-2 py-1 rounded text-xs ${entry.reason === 'sale' ? 'bg-red-100 text-red-700' : entry.reason === 'restock' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                  {entry.reason || 'adjustment'}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-4 text-right font-medium">
+                                <span className={Number(entry.change_qty) > 0 ? 'text-emerald-600' : 'text-red-600'}>
+                                  {Number(entry.change_qty) > 0 ? '+' : ''}{Number(entry.change_qty)}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-4 text-right text-slate-500">
+                                {entry.created_at && format(new Date(entry.created_at), 'dd MMM HH:mm')}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {activeTab === 'history' && (
