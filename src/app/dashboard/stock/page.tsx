@@ -54,13 +54,14 @@ export default function StockPage() {
       } else {
         setProducts(data || [])
         if (data && data.length > 0) {
-          const lowStockItems = data.filter(p => {
-            const variants = getVariants(p.id)
+          const parentData = data.filter(p => !p.parent_product_id)
+          const lowStockItems = parentData.filter(p => {
+            const variants = data.filter(v => v.parent_product_id === p.id)
             const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
             return aggregateStock > 0 && aggregateStock <= p.stock_alert
           })
-          const outOfStock = data.filter(p => {
-            const variants = getVariants(p.id)
+          const outOfStock = parentData.filter(p => {
+            const variants = data.filter(v => v.parent_product_id === p.id)
             const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
             return aggregateStock === 0
           })
