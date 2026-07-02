@@ -12,7 +12,8 @@ import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { RoleGuard } from '@/components/RoleGuard'
-import { Search, X, TrendingUp, TrendingDown, History, Package } from 'lucide-react'
+import { Search, TrendingUp, TrendingDown, History, Package, BarChart3 } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
 type Tab = 'products' | 'history'
 
@@ -20,6 +21,7 @@ export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [stockLog, setStockLog] = useState<any[]>([])
+  const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -46,7 +48,7 @@ export default function StockPage() {
     setError('')
 
     try {
-      const [{ data: productData }, { data: logData }] = await Promise.all([
+      const [{ data: productData }, { data: logData }, { data: salesData }] = await Promise.all([
         supabase
           .from('products')
           .select('*, category:categories(name)')
@@ -56,15 +58,22 @@ export default function StockPage() {
           .from('stock_log')
           .select('*, product:products(name, variety, unit)')
           .order('created_at', { ascending: false })
+          .limit(500),
+        supabase
+          .from('sales')
+          .select('total_amount, created_at')
+          .order('created_at', { ascending: false })
           .limit(500)
       ])
 
       if (productData) {
         setProducts(productData)
         setStockLog(logData || [])
+        setSales(salesData || [])
       } else {
         setProducts([])
         setStockLog([])
+        setSales([])
       }
       if (productData && productData.length > 0) {
         const parentData = productData.filter(p => !p.parent_product_id)
@@ -88,6 +97,7 @@ export default function StockPage() {
       toast.error(`❌ ${message}`)
       setProducts([])
       setStockLog([])
+      setSales([])
     } finally {
       setLoading(false)
     }
@@ -155,6 +165,27 @@ export default function StockPage() {
   const inStock = parentProducts.filter(p => getAggregateStock(p) > p.stock_alert)
   const lowStock = parentProducts.filter(p => { const s = getAggregateStock(p); return s > 0 && s <= p.stock_alert })
   const outOfStock = parentProducts.filter(p => getAggregateStock(p) === 0)
+
+  // Stock analytics
+  const totalInitialStock = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    return variants.length === 0 ? sum + (p.initial_stock || 0) : sum + variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0)
+  }, 0)
+
+  const totalCurrentStock = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    return variants.length === 0 ? sum + p.stock_qty : sum + variants.reduce((vSum, v) => vSum + v.stock_qty, 0)
+  }, 0)
+
+  const totalSoldUnits = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    return variants.length === 0 ? sum + getSoldQty(p.id) : sum + variants.reduce((vSum, v) => vSum + getSoldQty(v.id), 0)
+  }, 0)
+
+  const totalRestocked = stockLog
+    .filter(l => l.reason === 'restock' && l.change_qty > 0)
+    .reduce((sum, l) => sum + Number(l.change_qty), 0)
+
   const totalValue = parentProducts.reduce((sum, p) => {
     const variants = getVariants(p.id)
     if (variants.length === 0) return sum + p.stock_qty * p.price
@@ -172,6 +203,34 @@ export default function StockPage() {
     return acc
   }, {})
 
+  // Monthly profit analytics
+  const monthlyProfits = useMemo(() => {
+    const monthly: Record<string, { revenue: number; cost: number; profit: number }> = {}
+    sales.forEach(sale => {
+      const month = format(new Date(sale.created_at), 'yyyy-MM')
+      if (!monthly[month]) monthly[month] = { revenue: 0, cost: 0, profit: 0 }
+      monthly[month].revenue += Number(sale.total_amount)
+    })
+    // Calculate cost based on sold items
+    stockLog
+      .filter(l => l.reason === 'sale')
+      .forEach(l => {
+        const prod = products.find(p => p.id === l.product_id)
+        if (prod && l.change_qty) {
+          const month = format(new Date(l.created_at || new Date()), 'yyyy-MM')
+          if (!monthly[month]) monthly[month] = { revenue: 0, cost: 0, profit: 0 }
+          monthly[month].cost += Math.abs(Number(l.change_qty)) * Number(prod.price)
+        }
+      })
+    Object.keys(monthly).forEach(m => {
+      monthly[m].profit = monthly[m].revenue - monthly[m].cost
+    })
+    return Object.entries(monthly).map(([month, data]) => ({
+      month: format(new Date(month), 'MMM yyyy'),
+      ...data
+    }))
+  }, [sales, stockLog, products])
+
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>
   if (error) return <div className="flex items-center justify-center py-20 text-center text-sm text-red-600">{error}</div>
 
@@ -188,7 +247,7 @@ export default function StockPage() {
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTab === tab ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}
             >
-              {tab === 'products' ? 'Products' : 'Stock History'}
+              {tab === 'products' ? 'Products' : 'Stock Analytics'}
             </button>
           ))}
         </div>
@@ -332,61 +391,112 @@ export default function StockPage() {
         )}
 
         {activeTab === 'history' && (
-          <div className="card">
-            <div className="p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 flex items-center gap-2">
-                <History className="w-4 h-4" /> Stock Movement History
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">All stock changes: sales, restocks, and adjustments</p>
+          <div className="space-y-6">
+            {/* Stock Summary */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Initial Stock</p><p className="text-xl font-bold text-slate-900">{totalInitialStock.toLocaleString()} units</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Current Stock</p><p className="text-xl font-bold text-emerald-600">{totalCurrentStock.toLocaleString()} units</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Sold</p><p className="text-xl font-bold text-red-600">{totalSoldUnits.toLocaleString()} units</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Restocked</p><p className="text-xl font-bold text-amber-600">{totalRestocked.toLocaleString()} units</p></div>
             </div>
-            <div className="overflow-x-auto">
-              {stockLog.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  <History className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                  <p>No stock movements recorded</p>
+
+            {/* Stock Reduction Chart */}
+            <div className="card p-5">
+              <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" /> Stock Movement Trend
+              </h3>
+              <div className="h-[200px]">
+                {monthlyProfits.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyProfits}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <Tooltip formatter={(v: number) => formatMoney(v, settings.currency)} />
+                      <Bar dataKey="revenue" fill="#16a34a" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="cost" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-center text-slate-500 py-8">No data for chart</p>
+                )}
+              </div>
+            </div>
+
+            {/* Profit Summary */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="card p-5">
+                <h3 className="font-bold text-slate-900 mb-3">Monthly Profit Summary</h3>
+                <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  {monthlyProfits.length === 0 ? (
+                    <p className="text-xs text-slate-500">No monthly data</p>
+                  ) : (
+                    monthlyProfits.map(m => (
+                      <div key={m.month} className="flex justify-between text-sm">
+                        <span className="text-slate-600">{m.month}</span>
+                        <span className={m.profit >= 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+                          {formatMoney(m.profit, settings.currency)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-500">
-                      <th className="py-2 text-left pl-4">Product</th>
-                      <th className="py-2 text-left">Type</th>
-                      <th className="py-2 text-right">Change</th>
-                      <th className="py-2 text-right">Date</th>
-                      <th className="py-2 text-left pr-4">Note</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockLog.map((entry, idx) => {
-                      const product = products.find(p => p.id === entry.product_id)
-                      const productName = product ? formatProductName(product) : 'Unknown'
-                      return (
-                        <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-2 pl-4">
-                            <span className="font-medium text-slate-900">{productName}</span>
-                          </td>
-                          <td className="py-2">
-                            <span className={`px-2 py-1 rounded text-xs ${entry.reason === 'sale' ? 'bg-red-100 text-red-700' : entry.reason === 'restock' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                              {entry.reason || 'adjustment'}
-                            </span>
-                          </td>
-                          <td className="py-2 pr-4 text-right">
-                            <span className={Number(entry.change_qty) > 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
-                              {Number(entry.change_qty) > 0 ? '+' : ''}{Number(entry.change_qty)}
-                            </span>
-                          </td>
-                          <td className="py-2 pr-4 text-right text-slate-500">
-                            {entry.created_at && format(new Date(entry.created_at), 'dd MMM HH:mm')}
-                          </td>
-                          <td className="py-2 pr-4 text-slate-500 max-w-xs truncate">
-                            {entry.note || '-'}
-                          </td>
+              </div>
+
+              <div className="card p-5 lg:col-span-2">
+                <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+                  <History className="w-4 h-4" /> Recent Stock Movements
+                </h3>
+                <div className="overflow-x-auto">
+                  {stockLog.length === 0 ? (
+                    <div className="p-4 text-center text-slate-500">
+                      <History className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                      <p>No stock movements recorded</p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-slate-500">
+                          <th className="py-2 text-left pl-4">Product</th>
+                          <th className="py-2 text-left">Type</th>
+                          <th className="py-2 text-right">Change</th>
+                          <th className="py-2 text-right">Date</th>
+                          <th className="py-2 text-left pr-4">Note</th>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
+                      </thead>
+                      <tbody>
+                        {stockLog.slice(0, 50).map((entry, idx) => {
+                          const product = products.find(p => p.id === entry.product_id)
+                          const productName = product ? formatProductName(product) : 'Unknown'
+                          return (
+                            <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50">
+                              <td className="py-2 pl-4">
+                                <span className="font-medium text-slate-900">{productName}</span>
+                              </td>
+                              <td className="py-2">
+                                <span className={`px-2 py-1 rounded text-xs ${entry.reason === 'sale' ? 'bg-red-100 text-red-700' : entry.reason === 'restock' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                  {entry.reason || 'adjustment'}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-4 text-right">
+                                <span className={Number(entry.change_qty) > 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+                                  {Number(entry.change_qty) > 0 ? '+' : ''}{Number(entry.change_qty)}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-4 text-right text-slate-500">
+                                {entry.created_at && format(new Date(entry.created_at), 'dd MMM HH:mm')}
+                              </td>
+                              <td className="py-2 pr-4 text-slate-500 max-w-xs truncate">
+                                {entry.note || '-'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
