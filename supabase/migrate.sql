@@ -112,6 +112,11 @@ ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING quantity::
 DROP VIEW IF EXISTS daily_sales_summary;
 DROP VIEW IF EXISTS product_sales_summary;
 
+-- Ensure drawer balances has numeric types
+ALTER TABLE drawer_balances ALTER COLUMN cash TYPE numeric(12,2) USING COALESCE(cash, 0)::numeric(12,2);
+ALTER TABLE drawer_balances ALTER COLUMN coin TYPE numeric(12,2) USING COALESCE(coin, 0)::numeric(12,2);
+ALTER TABLE drawer_balances ALTER COLUMN till TYPE numeric(12,2) USING COALESCE(till, 0)::numeric(12,2);
+
 CREATE VIEW daily_sales_summary AS
 SELECT
   date(created_at) AS sale_date,
