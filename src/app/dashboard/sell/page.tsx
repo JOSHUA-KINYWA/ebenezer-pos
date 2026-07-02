@@ -9,7 +9,7 @@ import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
-import { Barcode, CheckCircle, Search, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
+import { CheckCircle, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
 
 type POSPaymentType = 'cash'
 type CashMethod = 'cash' | 'coin' | 'till'
@@ -21,11 +21,8 @@ export default function SellPage() {
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [search, setSearch] = useState('')
-  const [barcodeInput, setBarcodeInput] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [cart, setCart] = useState<CartItem[]>([])
-  const [quickAddValue, setQuickAddValue] = useState('')
   const [tierSelectionProduct, setTierSelectionProduct] = useState<Product | null>(null)
   const [paymentType, setPaymentType] = useState<POSPaymentType>('cash')
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('cash')
@@ -103,6 +100,14 @@ export default function SellPage() {
     return products.filter(p => p.parent_product_id === productId && p.is_active)
   }
 
+  function isProductOutOfStock(product: Product): boolean {
+    const variants = getProductVariants(product.id)
+    if (variants.length > 0) {
+      return getAggregateStock(product) === 0
+    }
+    return Number(product.stock_qty || 0) === 0
+  }
+
   function getPricingTiers(product: Product) {
     const tiers = (product as any).pricing_tiers || []
     return Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
@@ -114,20 +119,6 @@ export default function SellPage() {
     if (variants.length === 0) return product.stock_qty
     return variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0)
   }
-
-  const filteredParentProducts = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return parentProducts.filter(product => {
-      const matchesSearch =
-        !query ||
-        product.name.toLowerCase().includes(query) ||
-        (product.variety ?? '').toLowerCase().includes(query)
-      const matchesCategory =
-        categoryFilter === 'all' ||
-        (product.category as { name?: string })?.name === categoryFilter
-      return matchesSearch && matchesCategory
-    })
-  }, [parentProducts, search, categoryFilter])
 
   function addToCart(product: Product, tier?: { qty: number; price: number }) {
     if (product.stock_qty === 0 && !tier) {
@@ -505,38 +496,6 @@ export default function SellPage() {
     cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  function addProductByCode(code: string) {
-    const trimmed = code.trim()
-    if (!trimmed) {
-      toast.error('❌ Enter a barcode or product code')
-      return
-    }
-
-    const found = products.find(product => product.barcode === trimmed || product.name.toLowerCase() === trimmed.toLowerCase())
-    if (found) {
-      if (found.stock_qty === 0) {
-        toast.error(`❌ ${formatProductName(found)} is out of stock!`)
-      } else {
-        handleProductSelect(found)
-        toast.success(`✓ Added ${formatProductName(found)}`)
-      }
-      setBarcodeInput('')
-      setQuickAddValue('')
-    } else {
-      toast.error(`❌ Product not found: ${trimmed}`)
-    }
-  }
-
-  async function handleBarcodeSearch(e: React.FormEvent) {
-    e.preventDefault()
-    addProductByCode(barcodeInput)
-  }
-
-  function handleQuickAddSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    addProductByCode(quickAddValue)
-  }
-
   if (loading) return <LoadingSpinner label="Loading products..." />
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0)
@@ -745,51 +704,8 @@ export default function SellPage() {
           <div className="card p-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Sell products</h2>
-                <p className="text-sm text-slate-500">Search, scan, and select a variant under each main product.</p>
+                <p className="text-sm text-slate-500">Select a product or variant to add it to the cart.</p>
               </div>
-
-            <form onSubmit={handleBarcodeSearch} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-              <div className="relative">
-                <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Scan barcode or enter code"
-                  value={barcodeInput}
-                  onChange={e => setBarcodeInput(e.target.value)}
-                  className="input pl-9 w-full"
-                />
-              </div>
-              <button type="submit" className="btn-primary px-4 py-3">Add</button>
-            </form>
-
-            <div className="mt-4 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search products..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="input pl-9 w-full"
-              />
-            </div>
-
-            <form onSubmit={handleQuickAddSubmit} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="flex-1">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</label>
-                  <input
-                    type="text"
-                    value={quickAddValue}
-                    onChange={e => setQuickAddValue(e.target.value)}
-                    placeholder="Enter barcode or product name"
-                    className="input mt-1 w-full"
-                  />
-                </div>
-                <button type="submit" className="btn-primary px-4 py-3 sm:self-end">
-                  Quick add
-                </button>
-              </div>
-            </form>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -813,20 +729,21 @@ export default function SellPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[560px] overflow-y-auto pr-1">
-            {filteredParentProducts.length === 0 ? (
+            {parentProducts.length === 0 ? (
               <div className="card p-6 col-span-full text-center text-sm text-slate-500">
                 No products match this filter.
               </div>
             ) : (
-              filteredParentProducts.map(product => {
+              parentProducts.map(product => {
                 const variants = getProductVariants(product.id)
                 const hasVariants = variants.length > 0
+                const outOfStock = isProductOutOfStock(product)
                 return (
-                  <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
+                  <div key={product.id} className={`card p-4 transition-shadow ${outOfStock ? 'opacity-60 border-slate-200' : 'hover:shadow-lg'}`}>
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${hasVariants ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : 'Product'}
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${outOfStock ? 'bg-red-100 text-red-700' : hasVariants ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {outOfStock ? 'Out of stock' : hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : 'Product'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
@@ -847,18 +764,26 @@ export default function SellPage() {
                       <div className="mb-3">
                         <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Variants</p>
                         <div className="flex flex-wrap gap-2">
-                          {variants.map(variant => (
-                            <button
-                              key={variant.id}
-                              type="button"
-                              onClick={() => addToCart(variant)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand-400 hover:text-brand-700"
-                            >
-                              <Plus className="w-3 h-3" />
-                              {formatProductName(variant)}
-                              <span className="text-slate-400">({formatMoney(variant.price, settings.currency)})</span>
-                            </button>
-                          ))}
+                          {variants.map(variant => {
+                            const variantOutOfStock = Number(variant.stock_qty || 0) === 0
+                            return (
+                              <button
+                                key={variant.id}
+                                type="button"
+                                onClick={() => !variantOutOfStock && addToCart(variant)}
+                                disabled={variantOutOfStock}
+                                className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                                  variantOutOfStock
+                                    ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:text-brand-700'
+                                }`}
+                              >
+                                <Plus className="w-3 h-3" />
+                                {formatProductName(variant)}
+                                <span className="text-slate-400">({formatMoney(variant.price, settings.currency)})</span>
+                              </button>
+                            )
+                          })}
                         </div>
                       </div>
                     )}
@@ -875,7 +800,12 @@ export default function SellPage() {
                                   key={idx}
                                   type="button"
                                   onClick={() => addToCart(product, { qty: Number(tier.qty), price: Number(tier.price) })}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand-400 hover:text-brand-700"
+                                  disabled={outOfStock}
+                                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                                    outOfStock
+                                      ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                      : 'border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:text-brand-700'
+                                  }`}
                                 >
                                   <Plus className="w-3 h-3" />
                                   {tier.qty} for {formatMoney(Number(tier.price), settings.currency)}
@@ -889,7 +819,12 @@ export default function SellPage() {
                         <button
                           type="button"
                           onClick={() => addToCart(product)}
-                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+                          disabled={outOfStock}
+                          className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                            outOfStock
+                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              : 'bg-brand-600 text-white hover:bg-brand-700'
+                          }`}
                         >
                           <Plus className="w-4 h-4" />
                           Add to cart

@@ -495,10 +495,11 @@ export default function ExpensesPage() {
         title={confirm.title}
         description={confirm.description}
         footer={
-          <div className="flex justify-end gap-3">
-            <button onClick={() => setConfirm(null)} className="btn-secondary">{confirm.cancelLabel || 'Cancel'}</button>
-            <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
-          </div>
+          confirm.confirmLabel !== 'Close' ? (
+            <div className="flex justify-end gap-3">
+              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
+            </div>
+          ) : undefined
         }
       >
         <p className="text-sm text-slate-600">{confirm.description}</p>
