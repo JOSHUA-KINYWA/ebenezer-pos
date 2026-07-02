@@ -3,14 +3,15 @@
   "/api/sales-by-payment/route": "app/api/sales-by-payment/route.js",
   "/login/page": "app/login/page.js",
   "/page": "app/page.js",
+  "/request-account/page": "app/request-account/page.js",
+  "/dashboard/drawer/page": "app/dashboard/drawer/page.js",
+  "/dashboard/categories/page": "app/dashboard/categories/page.js",
   "/dashboard/products/page": "app/dashboard/products/page.js",
+  "/dashboard/expenses/page": "app/dashboard/expenses/page.js",
   "/dashboard/sell/page": "app/dashboard/sell/page.js",
   "/dashboard/page": "app/dashboard/page.js",
-  "/dashboard/categories/page": "app/dashboard/categories/page.js",
-  "/dashboard/reports/page": "app/dashboard/reports/page.js",
   "/dashboard/stock/page": "app/dashboard/stock/page.js",
-  "/dashboard/drawer/page": "app/dashboard/drawer/page.js",
-  "/dashboard/expenses/page": "app/dashboard/expenses/page.js",
-  "/dashboard/staff/page": "app/dashboard/staff/page.js",
-  "/dashboard/settings/page": "app/dashboard/settings/page.js"
+  "/dashboard/reports/page": "app/dashboard/reports/page.js",
+  "/dashboard/settings/page": "app/dashboard/settings/page.js",
+  "/dashboard/staff/page": "app/dashboard/staff/page.js"
 }

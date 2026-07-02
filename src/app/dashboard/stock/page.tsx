@@ -5,23 +5,27 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatProductName, formatDateTime } from '@/lib/format'
+import { formatMoney, formatProductName } from '@/lib/format'
+import { format } from 'date-fns'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { RoleGuard } from '@/components/RoleGuard'
+import { Modal } from '@/components/Modal'
 import { Search, Plus, X, Package, TrendingUp, TrendingDown, History, RefreshCw } from 'lucide-react'
 
 export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [products, setProducts] = useState<Product[]>([])
-  const [stockLog, setStockLog] = useState<{ product_id: string; change_qty: number }[]>([])
+  const [stockLog, setStockLog] = useState<{ product_id: string; change_qty: number; reason?: string; note?: string; created_at?: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [stockFilter, setStockFilter] = useState('all')
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [stockHistory, setStockHistory] = useState<any[]>([])
   const supabase = createClient()
   const { settings } = useShopSettings()
   const toast = useToast()
@@ -50,8 +54,9 @@ export default function StockPage() {
           .order('name'),
         supabase
           .from('stock_log')
-          .select('product_id, change_qty')
-          .eq('reason', 'sale')
+          .select('product_id, change_qty, reason, note, created_at')
+          .order('created_at', { ascending: false })
+          .limit(500)
       ])
 
       if (productData) {
@@ -166,13 +171,19 @@ export default function StockPage() {
   // Calculate restocked amount (positive changes in stock_log)
   function getRestockedQty(productId: string): number {
     return stockLog
-      .filter(l => l.product_id === productId)
+      .filter(l => l.product_id === productId && (l.reason === 'restock' || l.change_qty > 0))
       .reduce((sum, l) => sum + Math.max(0, Number(l.change_qty || 0)), 0)
   }
 
   // Get full stock log for a product (for history view)
   function getProductStockLog(productId: string) {
     return stockLog.filter(l => l.product_id === productId)
+  }
+
+  async function viewStockHistory(productId: string) {
+    const history = getProductStockLog(productId)
+    setStockHistory(history)
+    setSelectedProductId(productId)
   }
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>
@@ -308,15 +319,63 @@ export default function StockPage() {
                     )}
                   </div>
                 )}
-                <p className="text-xs text-slate-400 mt-2">
-                  Value: {formatMoney(aggregateStock * product.price, settings.currency)}
-                </p>
-              </div>
-            )
-          })
-          )}
-        </div>
-      </div>
-    </RoleGuard>
-  )
-}
+<p className="text-xs text-slate-400 mt-2">
+                   Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                 </p>
+<button
+                   type="button"
+                   onClick={() => viewStockHistory(product.id)}
+                   className="mt-2 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand-600"
+                 >
+                   <History className="w-3 h-3" /> View movement
+                 </button>
+               </div>
+             )
+           })
+           )}
+         </div>
+
+         {/* Stock History Modal */}
+         {selectedProductId && (
+           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedProductId(null)}>
+             <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+               <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                 <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                   <History className="w-4 h-4" /> Stock Movement
+                 </h3>
+                 <button onClick={() => setSelectedProductId(null)} className="text-slate-400 hover:text-slate-600">
+                   <X className="w-4 h-4" />
+                 </button>
+               </div>
+               <div className="p-4 space-y-2">
+                 {stockHistory.length > 0 ? (
+                   stockHistory.map((h, idx) => (
+                     <div key={idx} className="flex items-center justify-between text-sm p-2 rounded bg-slate-50">
+                       <div className="flex items-center gap-2">
+                         {Number(h.change_qty) > 0 ? (
+                           <TrendingUp className="w-3 h-3 text-emerald-600" />
+                         ) : (
+                           <TrendingDown className="w-3 h-3 text-red-600" />
+                         )}
+                         <span className="text-slate-600 capitalize">{h.reason || 'adjustment'}</span>
+                       </div>
+                       <div className="text-right">
+                         <span className={Number(h.change_qty) > 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+                           {Number(h.change_qty) > 0 ? '+' : ''}{Number(h.change_qty)}
+                         </span>
+                         {h.note && <p className="text-xs text-slate-400">{h.note}</p>}
+                         <span className="text-xs text-slate-400">{h.created_at && format(new Date(h.created_at), 'dd MMM HH:mm')}</span>
+                       </div>
+                     </div>
+                   ))
+                 ) : (
+                   <p className="text-sm text-slate-500 text-center py-4">No stock movements recorded</p>
+                 )}
+               </div>
+             </div>
+           </div>
+         )}
+       </div>
+     </RoleGuard>
+   )
+ }
