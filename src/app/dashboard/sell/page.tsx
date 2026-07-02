@@ -8,6 +8,7 @@ import { formatMoney, formatProductName } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { Modal } from '@/components/Modal'
 import { PageHeader } from '@/components/PageHeader'
 import { CheckCircle, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
 
@@ -32,6 +33,7 @@ export default function SellPage() {
   const [submitting, setSubmitting] = useState(false)
   const [completedSale, setCompletedSale] = useState<{ id: string; total: number; items: CartItem[]; customer: string } | null>(null)
   const [cartHighlight, setCartHighlight] = useState(false)
+  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const cartRef = useRef<HTMLDivElement | null>(null)
 
   const supabase = createClient()
@@ -340,16 +342,25 @@ export default function SellPage() {
 
     const totalAmount = cart.reduce((sum, item) => sum + item.subtotal, 0)
     
-    // Warn for large transactions
     if (totalAmount > 50000) {
-      const confirm = window.confirm(`⚠️ Large transaction detected (${formatMoney(totalAmount, settings.currency)}). Are you sure?`)
-      if (!confirm) {
-        toast.info('Sale cancelled')
-        return
-      }
+      setConfirm({
+        title: 'Large transaction',
+        description: `Large transaction detected (${formatMoney(totalAmount, settings.currency)}). Are you sure?`,
+        confirmLabel: 'Confirm',
+        cancelLabel: 'Cancel',
+        tone: 'danger',
+        onConfirm: async () => {
+          setConfirm(null)
+          await processCompletion(totalAmount)
+        },
+      })
+      return
     }
 
-    setSubmitting(true)
+    await processCompletion(totalAmount)
+  }
+
+  async function processCompletion(totalAmount: number) {
 
     const stockChecks = await Promise.all(
       cart.map(async item => {
@@ -372,7 +383,7 @@ export default function SellPage() {
       const { data: sale, error: saleErr } = await supabase
         .from('sales')
         .insert({
-          user_id: user.id,
+          user_id: user!.id,
           shift_id: null,
           customer_id: customerId || null,
           subtotal: totalAmount,
@@ -1008,6 +1019,23 @@ export default function SellPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {confirm && (
+        <Modal
+          isOpen={!!confirm}
+          onClose={() => setConfirm(null)}
+          title={confirm.title}
+          description={confirm.description}
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
+              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
+            </div>
+          }
+        >
+          <p className="text-sm text-slate-600">{confirm.description}</p>
+        </Modal>
       )}
     </div>
   )

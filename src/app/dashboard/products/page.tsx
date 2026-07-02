@@ -61,6 +61,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'instock' | 'outofstock'>('all')
+  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const toast = useToast()
   const supabase = createClient()
 
@@ -332,20 +333,26 @@ export default function ProductsPage() {
       return
     }
 
-    const confirmed = window.confirm(`Delete "${product.name}"? This will remove the product and any attached variants.`)
-    if (!confirmed) return
-
-    try {
-      const { error } = await supabase.from('products').delete().eq('id', product.id)
-      if (error) throw error
-      toast.success('Product deleted successfully')
-      setSelectedProduct(current => (current?.id === product.id ? null : current))
-      fetchProducts()
-    } catch (error) {
-      const message = getSupabaseErrorMessage(error)
-      toast.error(`❌ ${message}`)
-      console.error(error)
-    }
+    setConfirm({
+      title: 'Delete product',
+      description: `Delete "${product.name}"? This will remove the product and any attached variants.`,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          const { error } = await supabase.from('products').delete().eq('id', product.id)
+          if (error) throw error
+          toast.success('Product deleted successfully')
+          setSelectedProduct(current => (current?.id === product.id ? null : current))
+          fetchProducts()
+        } catch (error) {
+          const message = getSupabaseErrorMessage(error)
+          toast.error(`❌ ${message}`)
+          console.error(error)
+        }
+      },
+    })
   }
 
   function getAggregateStock(product: Product): number {
@@ -1018,8 +1025,25 @@ export default function ProductsPage() {
               <span className="text-sm text-slate-700">Mark as active</span>
             </label>
           </div>
-        </Modal>
+         </Modal>
       </div>
+
+      {confirm && (
+        <Modal
+          isOpen={!!confirm}
+          onClose={() => setConfirm(null)}
+          title={confirm.title}
+          description={confirm.description}
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
+              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
+            </div>
+          }
+        >
+          <p className="text-sm text-slate-600">{confirm.description}</p>
+        </Modal>
+      )}
     </RoleGuard>
   )
 }
