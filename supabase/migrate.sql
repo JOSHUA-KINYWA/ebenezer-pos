@@ -147,7 +147,7 @@ CREATE VIEW product_sales_summary AS
 SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
-  sum(si.quantity)::integer AS units_sold,
+  sum(si.quantity)::numeric AS units_sold,
   coalesce(sum(si.subtotal), 0) AS total_revenue
 FROM sale_items si
 JOIN sales s ON s.id = si.sale_id AND s.is_voided = false
