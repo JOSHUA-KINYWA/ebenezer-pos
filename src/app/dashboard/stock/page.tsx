@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatProductName } from '@/lib/format'
+import { formatMoney, formatProductName, formatDateTime } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { RoleGuard } from '@/components/RoleGuard'
-import { Search, Plus, X, Package, TrendingUp, TrendingDown, History } from 'lucide-react'
+import { Search, Plus, X, Package, TrendingUp, TrendingDown, History, RefreshCw } from 'lucide-react'
 
 export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
@@ -163,6 +163,18 @@ export default function StockPage() {
 
   const filteredProducts = useMemo(() => groupedProducts, [groupedProducts])
 
+  // Calculate restocked amount (positive changes in stock_log)
+  function getRestockedQty(productId: string): number {
+    return stockLog
+      .filter(l => l.product_id === productId)
+      .reduce((sum, l) => sum + Math.max(0, Number(l.change_qty || 0)), 0)
+  }
+
+  // Get full stock log for a product (for history view)
+  function getProductStockLog(productId: string) {
+    return stockLog.filter(l => l.product_id === productId)
+  }
+
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>
   if (error) return <div className="flex items-center justify-center py-20 text-center text-sm text-red-600">{error}</div>
 
@@ -243,11 +255,15 @@ export default function StockPage() {
                 {aggregateInitial > 0 && (
                   <div className="mb-2">
                     <div className="flex justify-between text-xs text-slate-500 mb-1">
-                      <span>Initial: {aggregateInitial.toLocaleString()} • Sold: {totalSold.toLocaleString()}</span>
-                      <span>{Math.round(progress)}%</span>
+                      <span className="font-medium">Initial: {aggregateInitial.toLocaleString()}</span>
+                      <span className="font-medium">Current: {aggregateStock.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                      <span>Sold: {totalSold.toLocaleString()}</span>
+                      <span>Remaining: {(aggregateInitial - totalSold).toLocaleString()}</span>
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-1.5">
-                      <div className="bg-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                      <div className="bg-gradient-to-r from-slate-400 to-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
                     </div>
                   </div>
                 )}
@@ -267,12 +283,12 @@ export default function StockPage() {
                           </div>
                           {vInitial > 0 && (
                             <>
-                              <div className="flex justify-between text-[10px] text-slate-500 mb-0.5">
+                              <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
                                 <span>Init: {vInitial.toLocaleString()} • Sold: {vSold.toLocaleString()}</span>
-                                <span>{Math.round(vProgress)}%</span>
+                                <span>Rem: {(vInitial - vSold).toLocaleString()}</span>
                               </div>
                               <div className="w-full bg-slate-200 rounded-full h-1">
-                                <div className="bg-emerald-500 h-1 rounded-full transition-all" style={{ width: `${vProgress}%` }}></div>
+                                <div className="bg-gradient-to-r from-slate-300 to-emerald-500 h-1 rounded-full transition-all" style={{ width: `${vProgress}%` }}></div>
                               </div>
                             </>
                           )}
@@ -283,10 +299,10 @@ export default function StockPage() {
                       <div className="pt-1 border-t border-slate-200">
                         <div className="flex justify-between text-xs text-slate-500 mb-1">
                           <span>Total • Sold: {totalSold.toLocaleString()} / {aggregateInitial.toLocaleString()}</span>
-                          <span>{Math.round(progress)}%</span>
+                          <span>Progress</span>
                         </div>
                         <div className="w-full bg-slate-200 rounded-full h-1.5">
-                          <div className="bg-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                          <div className="bg-gradient-to-r from-slate-400 to-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
                         </div>
                       </div>
                     )}
