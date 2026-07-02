@@ -27,3 +27,7 @@ export function canManageStaff(role?: Role) {
 export function canVoidSales(role?: Role) {
   return role === 'owner'
 }
+
+export function canEditSales(role?: Role) {
+  return role === 'owner'
+}

@@ -11,7 +11,7 @@ import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
-import { canVoidSales } from '@/lib/permissions'
+import { canVoidSales, canEditSales } from '@/lib/permissions'
 import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
@@ -39,6 +39,8 @@ export default function ReportsPage() {
   const [cashiers, setCashiers] = useState<SessionUser[]>([])
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
+  const [editingNote, setEditingNote] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
   const { settings } = useShopSettings()
   const toast = useToast()
   const supabase = createClient()
@@ -169,6 +171,20 @@ export default function ReportsPage() {
         }
       },
     })
+  }
+
+  async function updateSaleNote(saleId: string, note: string) {
+    if (!canEditSales(user?.role)) return
+    try {
+      const { error } = await supabase.from('sales').update({ note }).eq('id', saleId)
+      if (error) throw error
+      toast.success('Note updated')
+      fetchAll()
+    } catch (error) {
+      toast.error('Failed to update note')
+    }
+    setEditingNote(null)
+    setNoteDraft('')
   }
 
   function exportDaily() {
@@ -355,16 +371,37 @@ export default function ReportsPage() {
                         <span className="text-sm text-slate-400">{formatDateTime(t.created_at)}</span>
                         {t.is_voided && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Cancelled</span>}
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-base font-bold text-slate-900">{formatMoney(Number(t.total_amount), settings.currency)}</span>
-                         {canVoidSales(user?.role) && !t.is_voided && (
-                           <button onClick={() => cancelSale(t)} className="text-xs text-red-600 hover:text-red-700">Cancel Sale</button>
+<div className="flex items-center gap-3">
+                         <span className="text-base font-bold text-slate-900">{formatMoney(Number(t.total_amount), settings.currency)}</span>
+                          {canVoidSales(user?.role) && !t.is_voided && (
+                            <button onClick={() => cancelSale(t)} className="text-xs text-red-600 hover:text-red-700">Cancel Sale</button>
+                          )}
+                       </div>
+                     </div>
+                     {t.customer?.name && <p className="text-xs text-slate-500 mb-2">Customer: {t.customer.name}</p>}
+                     {editingNote === t.id ? (
+                       <div className="mb-2">
+                         <input
+                           type="text"
+                           value={noteDraft}
+                           onChange={e => setNoteDraft(e.target.value)}
+                           placeholder="Add note..."
+                           className="input text-xs w-full mb-1"
+                         />
+                         <div className="flex gap-2">
+                           <button onClick={() => updateSaleNote(t.id, noteDraft)} className="text-xs btn-primary py-1 px-2">Save</button>
+                           <button onClick={() => { setEditingNote(null); setNoteDraft('') }} className="text-xs btn-secondary py-1 px-2">Cancel</button>
+                         </div>
+                       </div>
+                     ) : (
+                       <div className="text-xs text-slate-500 mb-2 flex items-center gap-2">
+                         <span>Note: {t.note || '—'}</span>
+                         {canEditSales(user?.role) && !t.is_voided && (
+                           <button onClick={() => { setEditingNote(t.id); setNoteDraft(t.note || '') }} className="text-slate-400 hover:text-brand-600">✏️</button>
                          )}
-                      </div>
-                    </div>
-                    {t.customer?.name && <p className="text-xs text-slate-500 mb-2">Customer: {t.customer.name}</p>}
-                    {t.note && <p className="text-xs text-slate-500 mb-2">Note: {t.note}</p>}
-                    <div className="space-y-1">
+                       </div>
+                     )}
+                     <div className="space-y-1">
                       {(t.sale_items || []).map((item, idx) => (
                         <div key={idx} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
                           <div className="flex items-center gap-2">
