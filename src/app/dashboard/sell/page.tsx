@@ -89,14 +89,14 @@ export default function SellPage() {
     setLoading(false)
   }
 
-  const categories = useMemo(
-    () => Array.from(new Set(products.map(product => (product.category as { name?: string })?.name ?? 'Uncategorized'))),
-    [products]
-  )
-
   const parentProducts = useMemo(
     () => products.filter(product => !product.parent_product_id),
     [products]
+  )
+
+  const categories = useMemo(
+    () => Array.from(new Set(parentProducts.map(product => (product.category as { name?: string })?.name ?? 'Uncategorized'))),
+    [parentProducts]
   )
 
   function getProductVariants(productId: string) {
@@ -132,7 +132,7 @@ export default function SellPage() {
         (product.variety ?? '').toLowerCase().includes(query)
       const matchesCategory =
         categoryFilter === 'all' ||
-        (product.category as { name?: string })?.name === categoryFilter
+        ((product.category as { name?: string })?.name ?? 'Uncategorized') === categoryFilter
       return matchesSearch && matchesCategory
     })
   }, [parentProducts, search, categoryFilter])
@@ -771,7 +771,7 @@ export default function SellPage() {
                 No products match this filter.
               </div>
             ) : (
-              parentProducts.map(product => {
+              filteredParentProducts.map(product => {
                 const variants = getProductVariants(product.id)
                 const hasVariants = variants.length > 0
                 const outOfStock = isProductOutOfStock(product)
