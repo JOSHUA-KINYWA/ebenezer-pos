@@ -97,6 +97,8 @@ CREATE POLICY "pos_public_expenses" ON expenses FOR ALL USING (true) WITH CHECK 
 ALTER TABLE products ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode text;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS initial_stock numeric(12,2) DEFAULT 0;
+UPDATE products SET initial_stock = stock_qty WHERE initial_stock = 0 OR initial_stock IS NULL;
 
 -- Staff account support
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin text;
