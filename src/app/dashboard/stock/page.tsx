@@ -252,15 +252,44 @@ export default function StockPage() {
                   </div>
                 )}
                 {variants.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {variants.map(v => (
-                      <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
-                        <span className="text-slate-600">{formatProductName(v)}</span>
-                        <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
-                          {v.stock_qty} {v.unit}
-                        </span>
+                  <div className="mt-2 space-y-2">
+                    {variants.map(v => {
+                      const vInitial = v.initial_stock || 0
+                      const vSold = getSoldQty(v.id)
+                      const vProgress = vInitial > 0 ? Math.min(100, Math.max(0, ((vInitial - v.stock_qty) / vInitial) * 100)) : 0
+                      return (
+                        <div key={v.id} className="text-xs bg-slate-50 rounded px-2 py-1.5">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium text-slate-700">{formatProductName(v)}</span>
+                            <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
+                              {v.stock_qty} {v.unit}
+                            </span>
+                          </div>
+                          {vInitial > 0 && (
+                            <>
+                              <div className="flex justify-between text-[10px] text-slate-500 mb-0.5">
+                                <span>Init: {vInitial.toLocaleString()} • Sold: {vSold.toLocaleString()}</span>
+                                <span>{Math.round(vProgress)}%</span>
+                              </div>
+                              <div className="w-full bg-slate-200 rounded-full h-1">
+                                <div className="bg-emerald-500 h-1 rounded-full transition-all" style={{ width: `${vProgress}%` }}></div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {aggregateInitial > 0 && (
+                      <div className="pt-1 border-t border-slate-200">
+                        <div className="flex justify-between text-xs text-slate-500 mb-1">
+                          <span>Total • Sold: {totalSold.toLocaleString()} / {aggregateInitial.toLocaleString()}</span>
+                          <span>{Math.round(progress)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5">
+                          <div className="bg-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                        </div>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
                 <p className="text-xs text-slate-400 mt-2">
