@@ -47,10 +47,15 @@ export default function DrawerPage() {
       if (error) throw error
       const current = data && data.length > 0 ? data[0] : null
       if (current) {
-        setCash(current.cash?.toString() || '0')
-        setCoin(current.coin?.toString() || '0')
-        setTill(current.till?.toString() || '0')
+        setCash(Number(current.cash || 0).toString())
+        setCoin(Number(current.coin || 0).toString())
+        setTill(Number(current.till || 0).toString())
         setNote(current.note?.toString() || '')
+      } else {
+        setCash('0')
+        setCoin('0')
+        setTill('0')
+        setNote('')
       }
       setHistory(data || [])
       setError(null)
@@ -299,7 +304,10 @@ export default function DrawerPage() {
             
             <div className="space-y-3">
               {history.map((h, idx) => {
-                const hTotal = (h.cash || 0) + (h.coin || 0) + (h.till || 0)
+                const hCash = Number(h.cash || 0)
+                const hCoin = Number(h.coin || 0)
+                const hTill = Number(h.till || 0)
+                const hTotal = hCash + hCoin + hTill
                 return (
                   <div key={h.id} className="grid grid-cols-1 sm:grid-cols-5 gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-slate-300 transition-all hover:shadow-sm">
                     <div>
@@ -310,19 +318,19 @@ export default function DrawerPage() {
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                         <Wallet className="w-3 h-3 text-amber-600" />Cash
                       </p>
-                      <p className="font-medium text-slate-900">{formatMoney(h.cash || 0, settings.currency)}</p>
+                      <p className="font-medium text-slate-900">{formatMoney(hCash, settings.currency)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                         <Coins className="w-3 h-3 text-blue-600" />Coins
                       </p>
-                      <p className="font-medium text-slate-900">{formatMoney(h.coin || 0, settings.currency)}</p>
+                      <p className="font-medium text-slate-900">{formatMoney(hCoin, settings.currency)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                         <CreditCard className="w-3 h-3 text-emerald-600" />Till
                       </p>
-                      <p className="font-medium text-slate-900">{formatMoney(h.till || 0, settings.currency)}</p>
+                      <p className="font-medium text-slate-900">{formatMoney(hTill, settings.currency)}</p>
                     </div>
                     <div className="border-l border-slate-200 pl-4">
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total</p>
