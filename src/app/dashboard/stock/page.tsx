@@ -54,8 +54,16 @@ export default function StockPage() {
       } else {
         setProducts(data || [])
         if (data && data.length > 0) {
-          const lowStockItems = data.filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0)
-          const outOfStock = data.filter(p => p.stock_qty === 0)
+          const lowStockItems = data.filter(p => {
+            const variants = getVariants(p.id)
+            const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
+            return aggregateStock > 0 && aggregateStock <= p.stock_alert
+          })
+          const outOfStock = data.filter(p => {
+            const variants = getVariants(p.id)
+            const aggregateStock = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
+            return aggregateStock === 0
+          })
           if (lowStockItems.length > 0 || outOfStock.length > 0) {
             toast.warning(`⚠️ ${lowStockItems.length} low stock, ${outOfStock.length} out of stock`)
           }
@@ -142,10 +150,11 @@ export default function StockPage() {
         <PageHeader title="Inventory" description="Manage stock and products" />
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
           <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
           <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Out of Stock</p><p className="text-xl font-bold text-red-600">{outOfStock.length}</p></div>
           <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</p></div>
         </div>
 
