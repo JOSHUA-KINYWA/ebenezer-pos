@@ -375,8 +375,7 @@ export default function SellPage() {
     await processCompletion(totalAmount)
   }
 
-  async function processCompletion(totalAmount: number) {
-
+async function processCompletion(totalAmount: number) {
     const stockChecks = await Promise.all(
       cart.map(async item => {
         const { data: product, error } = await supabase.from('products').select('id, stock_qty').eq('id', item.product.id).single()
@@ -432,35 +431,6 @@ export default function SellPage() {
       const { error: itemsErr } = await supabase.from('sale_items').insert(saleItems)
       if (itemsErr) {
         throw new Error(itemsErr.message)
-      }
-
-      const preSaleStock = new Map<string, number>()
-      stockChecks.forEach((product: any) => {
-        preSaleStock.set(product.id, Number(product.stock_qty))
-      })
-
-      const stockAdjustments = await Promise.all(
-        cart.map(async item => {
-          const { data: product, error } = await supabase.from('products').select('stock_qty').eq('id', item.product.id).single()
-          if (error || !product) return null
-          const expected = Math.max(0, (preSaleStock.get(item.product.id) ?? Number(product.stock_qty)) - item.quantity)
-          if (Number(product.stock_qty) !== expected) {
-            const { error: updateErr } = await supabase.from('products').update({ stock_qty: expected }).eq('id', item.product.id)
-            if (updateErr) console.error('Stock adjust failed', item.product.id, updateErr)
-          }
-          return { productId: item.product.id, name: item.product.name, deducted: item.quantity, nextStock: expected }
-        })
-      )
-
-      console.log('Sale completed', {
-        cart,
-        saleItems,
-        stockAdjustments,
-        preSaleStock: Object.fromEntries(preSaleStock),
-      })
-
-      if (stockAdjustments.some(item => item && item.deducted > 0 && Number(item.nextStock) !== (preSaleStock.get(item.productId) ?? 0) - item.deducted)) {
-        console.warn('Stock adjustments applied after sale:', stockAdjustments)
       }
 
       if (paymentType === 'cash') {
