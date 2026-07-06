@@ -10,7 +10,7 @@ import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { Modal } from '@/components/Modal'
 import { PageHeader } from '@/components/PageHeader'
-import { CheckCircle, Plus, Minus, X, ArrowLeftRight, Search } from 'lucide-react'
+import { CheckCircle, Plus, Minus, X, ArrowLeftRight, Search, Mail } from 'lucide-react'
 
 type POSPaymentType = 'cash'
 type CashMethod = 'cash' | 'coin' | 'till'
@@ -32,7 +32,7 @@ export default function SellPage() {
   const [customer, setCustomer] = useState('')
   const [customerId, setCustomerId] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [completedSale, setCompletedSale] = useState<{ id: string; total: number; items: CartItem[]; customer: string } | null>(null)
+  const [completedSale, setCompletedSale] = useState<{ id: string; total: number; items: CartItem[]; customer: string; customerEmail?: string } | null>(null)
   const [cartHighlight, setCartHighlight] = useState(false)
   const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const cartRef = useRef<HTMLDivElement | null>(null)
@@ -467,7 +467,13 @@ async function processCompletion(totalAmount: number) {
 
       window.dispatchEvent(new Event('drawer-update'))
 
-      setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer })
+      let customerEmail = ''
+      if (customerId) {
+        const { data: custData } = await supabase.from('customers').select('email').eq('id', customerId).single()
+        customerEmail = custData?.email || ''
+      }
+
+      setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer, customerEmail })
       setCart([])
       setCustomer('')
       setPaymentType('cash')
@@ -1008,7 +1014,43 @@ async function processCompletion(totalAmount: number) {
           <div className="card w-full max-w-md mx-4 p-6 text-center">
             <CheckCircle className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-slate-900 mb-2">Sale Complete!</h3>
-            <p className="text-slate-600 mb-4">Sale #{completedSale.id} for {formatMoney(completedSale.total, settings.currency)}</p>
+            <p className="text-slate-600 mb-4">Sale #{completedSale.id.slice(0, 8).toUpperCase()} for {formatMoney(completedSale.total, settings.currency)}</p>
+            {completedSale.customerEmail && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/send-receipt', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        saleId: completedSale.id,
+                        customerEmail: completedSale.customerEmail,
+                        items: completedSale.items.map(i => ({
+                          name: formatProductName(i.product),
+                          quantity: i.quantity,
+                          price: i.product.price,
+                          total: i.subtotal,
+                        })),
+                        subtotal: completedSale.total,
+                        total: completedSale.total,
+                        date: new Date().toISOString(),
+                      }),
+                    })
+                    if (res.ok) {
+                      toast.success('Receipt emailed!')
+                    } else {
+                      toast.error('Failed to send email')
+                    }
+                  } catch (e) {
+                    toast.error('Failed to send email')
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 mb-4"
+              >
+                <Mail className="w-4 h-4" /> Email receipt
+              </button>
+            )}
             <div className="flex gap-2">
               <button type="button" onClick={() => { setCompletedSale(null); window.print() }} className="btn-secondary flex-1">Print</button>
               <button type="button" onClick={startNewSale} className="btn-primary flex-1">New Sale</button>
