@@ -15,7 +15,7 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { Search, TrendingUp, TrendingDown, History, Package, BarChart3 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
-type Tab = 'products' | 'history' | 'movements'
+type Tab = 'products' | 'history' | 'movements' | 'profit'
 
 export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
@@ -194,6 +194,20 @@ export default function StockPage() {
     return sum + variants.reduce((vSum, v) => vSum + v.stock_qty * v.price, 0)
   }, 0)
 
+  const totalBuyingCost = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0)
+    const cost = variants.length === 0 ? (p.cost_price || 0) : p.cost_price || 0
+    return sum + initial * cost
+  }, 0)
+
+  const totalProfit = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((vSum, v) => vSum + getSoldQty(v.id), 0)
+    const costPrice = p.cost_price || 0
+    return sum + sold * (p.price - costPrice)
+  }, 0)
+
   const categoryValues = parentProducts.reduce((acc: Record<string, { qty: number; value: number }>, p) => {
     const variants = getVariants(p.id)
     const qty = variants.length === 0 ? p.stock_qty : variants.reduce((sum, v) => sum + v.stock_qty, 0)
@@ -243,13 +257,13 @@ export default function StockPage() {
 
         {/* Tabs */}
         <div className="flex border-b border-slate-200 mb-4">
-          {(['products', 'history', 'movements'] as Tab[]).map(tab => (
+          {(['products', 'history', 'movements', 'profit'] as Tab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTab === tab ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}
             >
-              {tab === 'products' ? 'Products' : tab === 'history' ? 'Stock Analytics' : 'Product Movements'}
+              {tab === 'products' ? 'Products' : tab === 'history' ? 'Stock Analytics' : tab === 'movements' ? 'Product Movements' : 'Profit'}
             </button>
           ))}
         </div>
@@ -257,12 +271,14 @@ export default function StockPage() {
         {activeTab === 'products' && (
           <>
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Out of Stock</p><p className="text-xl font-bold text-red-600">{outOfStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Buying Cost</p><p className="text-xl font-bold text-amber-600">{formatMoney(totalBuyingCost, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Inventory Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
             </div>
 
             {/* Category Values */}
@@ -593,6 +609,42 @@ export default function StockPage() {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+        {activeTab === 'profit' && (
+          <div className="card p-5">
+            <h3 className="font-bold text-slate-900 mb-4">Profit per Product</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-500">
+                    <th className="py-2 text-left pl-4">Product</th>
+                    <th className="py-2 text-right">Buying price</th>
+                    <th className="py-2 text-right">Selling price</th>
+                    <th className="py-2 text-right">Sold</th>
+                    <th className="py-2 text-right">Profit/unit</th>
+                    <th className="py-2 text-right">Total profit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parentProducts.map(p => {
+                    const variants = getVariants(p.id)
+                    const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((sum, v) => sum + getSoldQty(v.id), 0)
+                    const profit = sold * (p.price - (p.cost_price || 0))
+                    return (
+                      <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
+                        <td className="py-2 pl-4 font-medium text-slate-900">{formatProductName(p)}</td>
+                        <td className="py-2 pr-4 text-right">{formatMoney(p.cost_price || 0, settings.currency)}</td>
+                        <td className="py-2 pr-4 text-right">{formatMoney(p.price, settings.currency)}</td>
+                        <td className="py-2 pr-4 text-right">{sold.toLocaleString()}</td>
+                        <td className="py-2 pr-4 text-right">{formatMoney(p.price - (p.cost_price || 0), settings.currency)}</td>
+                        <td className={`py-2 pr-4 text-right font-medium ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(profit, settings.currency)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
