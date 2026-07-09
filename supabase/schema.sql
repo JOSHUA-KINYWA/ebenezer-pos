@@ -102,9 +102,7 @@ LEFT JOIN products p ON p.id = si.product_id
 GROUP BY si.product_name, p.unit
 ORDER BY total_revenue DESC;
 
--- ============================================================
--- END OF MIGRATION
--- ============================================================
+-- RLS policies
 
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
