@@ -29,6 +29,9 @@ export default function StockPage() {
   const [stockFilter, setStockFilter] = useState('all')
   const [activeTab, setActiveTab] = useState<Tab>('products')
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null)
+  const [profitSearch, setProfitSearch] = useState('')
+  const [profitCategoryFilter, setProfitCategoryFilter] = useState('all')
+  const [profitSort, setProfitSort] = useState<'desc' | 'asc'>('desc')
   const supabase = createClient()
   const { settings } = useShopSettings()
   const toast = useToast()
@@ -504,12 +507,12 @@ export default function StockPage() {
 
         {activeTab === 'history' && (
           <div className="space-y-6">
-            {/* Stock Summary */}
+            {/* Stock Summary in amounts */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Initial Stock</p><p className="text-xl font-bold text-slate-900">{totalInitialStock.toLocaleString()} units</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Current Stock</p><p className="text-xl font-bold text-emerald-600">{totalCurrentStock.toLocaleString()} units</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Sold</p><p className="text-xl font-bold text-red-600">{totalSoldUnits.toLocaleString()} units</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Restocked</p><p className="text-xl font-bold text-amber-600">{totalRestocked.toLocaleString()} units</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Initial Value</p><p className="text-xl font-bold text-slate-900">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0); return sum + initial * p.price; }, 0), settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Current Value</p><p className="text-xl font-bold text-emerald-600">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const current = variants.length === 0 ? p.stock_qty : variants.reduce((vSum, v) => vSum + v.stock_qty, 0); return sum + current * p.price; }, 0), settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Sold Value</p><p className="text-xl font-bold text-red-600">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((vSum, v) => vSum + getSoldQty(v.id), 0); return sum + sold * p.price; }, 0), settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Cost Value</p><p className="text-xl font-bold text-amber-600">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0); return sum + initial * (p.cost_price || 0); }, 0), settings.currency)}</p></div>
             </div>
 
             {/* Stock Reduction Chart */}
@@ -615,6 +618,26 @@ export default function StockPage() {
         {activeTab === 'profit' && (
           <div className="card p-5">
             <h3 className="font-bold text-slate-900 mb-4">Profit per Product</h3>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={profitSearch}
+                  onChange={e => setProfitSearch(e.target.value)}
+                  className="input pl-9 w-full"
+                />
+              </div>
+              <select className="input w-auto" value={profitCategoryFilter} onChange={e => setProfitCategoryFilter(e.target.value)}>
+                <option value="all">All Categories</option>
+                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+              <select className="input w-auto" value={profitSort} onChange={e => setProfitSort(e.target.value as 'desc' | 'asc')}>
+                <option value="desc">Highest profit first</option>
+                <option value="asc">Lowest profit first</option>
+              </select>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -628,21 +651,29 @@ export default function StockPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {parentProducts.map(p => {
-                    const variants = getVariants(p.id)
-                    const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((sum, v) => sum + getSoldQty(v.id), 0)
-                    const profit = sold * (p.price - (p.cost_price || 0))
-                    return (
+                  {parentProducts
+                    .map(p => {
+                      const variants = getVariants(p.id)
+                      const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((sum, v) => sum + getSoldQty(v.id), 0)
+                      const profit = sold * (p.price - (p.cost_price || 0))
+                      return { ...p, sold, profit }
+                    })
+                    .filter(p => {
+                      const matchesSearch = !profitSearch || p.name.toLowerCase().includes(profitSearch.toLowerCase()) || ((p.category as { name?: string })?.name || '').toLowerCase().includes(profitSearch.toLowerCase())
+                      const matchesCategory = profitCategoryFilter === 'all' || ((p.category as { name?: string })?.name || 'Uncategorized') === profitCategoryFilter
+                      return matchesSearch && matchesCategory
+                    })
+                    .sort((a, b) => profitSort === 'desc' ? b.profit - a.profit : a.profit - b.profit)
+                    .map(p => (
                       <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                         <td className="py-2 pl-4 font-medium text-slate-900">{formatProductName(p)}</td>
                         <td className="py-2 pr-4 text-right">{formatMoney(p.cost_price || 0, settings.currency)}</td>
                         <td className="py-2 pr-4 text-right">{formatMoney(p.price, settings.currency)}</td>
-                        <td className="py-2 pr-4 text-right">{sold.toLocaleString()}</td>
+                        <td className="py-2 pr-4 text-right">{p.sold.toLocaleString()}</td>
                         <td className="py-2 pr-4 text-right">{formatMoney(p.price - (p.cost_price || 0), settings.currency)}</td>
-                        <td className={`py-2 pr-4 text-right font-medium ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(profit, settings.currency)}</td>
+                        <td className={`py-2 pr-4 text-right font-medium ${p.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(p.profit, settings.currency)}</td>
                       </tr>
-                    )
-                  })}
+                    ))}
                 </tbody>
               </table>
             </div>
