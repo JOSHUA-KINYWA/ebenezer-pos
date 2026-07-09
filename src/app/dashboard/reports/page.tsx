@@ -145,20 +145,27 @@ export default function ReportsPage() {
 
           const { data: existing } = await supabase
             .from('drawer_balances')
-            .select('cash, coin, till')
+            .select('id, cash, coin, till')
             .eq('date', today)
-            .or(sale.shift_id ? `shift_id.eq.${sale.shift_id}` : 'shift_id.is.null')
+            .is('shift_id', sale.shift_id || null)
             .maybeSingle()
-          const curr = existing || { cash: 0, coin: 0, till: 0 }
-          const updated: any = { date: today, shift_id: sale.shift_id || null }
-          if (sale.payment_method === 'cash') updated.cash = curr.cash - sale.total_amount
-          else if (sale.payment_method === 'coin') updated.coin = curr.coin - sale.total_amount
-          else updated.till = curr.till - sale.total_amount
-          updated.cash = updated.cash ?? curr.cash
-          updated.coin = updated.coin ?? curr.coin
-          updated.till = updated.till ?? curr.till
-          const { error: drawerError } = await supabase.from('drawer_balances').upsert(updated)
-          if (drawerError) throw drawerError
+          if (existing) {
+            const nextCash = Number(existing.cash || 0) - (sale.payment_method === 'cash' ? sale.total_amount : 0)
+            const nextCoin = Number(existing.coin || 0) - (sale.payment_method === 'coin' ? sale.total_amount : 0)
+            const nextTill = Number(existing.till || 0) - (sale.payment_method === 'till' ? sale.total_amount : 0)
+            const { error: drawerError } = await supabase
+              .from('drawer_balances')
+              .update({ cash: nextCash, coin: nextCoin, till: nextTill })
+              .eq('id', existing.id)
+            if (drawerError) throw drawerError
+          } else {
+            const insertData: any = { date: today, shift_id: sale.shift_id || null }
+            if (sale.payment_method === 'cash') insertData.cash = -Number(sale.total_amount)
+            else if (sale.payment_method === 'coin') insertData.coin = -Number(sale.total_amount)
+            else insertData.till = -Number(sale.total_amount)
+            const { error: drawerError } = await supabase.from('drawer_balances').insert(insertData)
+            if (drawerError) throw drawerError
+          }
 
           const { error: saleError } = await supabase.from('sales').update({ is_voided: true, voided_by: user?.id, voided_at: new Date().toISOString() }).eq('id', sale.id)
           if (saleError) throw saleError
