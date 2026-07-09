@@ -290,30 +290,6 @@ export default function StockPage() {
               </div>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Out of Stock</p><p className="text-xl font-bold text-red-600">{outOfStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Buying Cost</p><p className="text-xl font-bold text-amber-600">{formatMoney(totalBuyingCost, settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Inventory Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
-            </div>
-
-            {/* Category Values */}
-            <div className="card p-5">
-              <h3 className="font-bold text-slate-900 mb-3">Value by Category</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {Object.entries(categoryValues).map(([cat, data]) => (
-                  <div key={cat} className="bg-slate-50 rounded-xl p-3 flex items-center justify-between">
-                    <div><p className="text-sm font-medium text-slate-700">{cat}</p><p className="text-xs text-slate-400">{data.qty} units</p></div>
-                    <p className="text-sm font-bold text-slate-900">{formatMoney(data.value, settings.currency)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Products Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {groupedProducts.length === 0 ? (
@@ -413,6 +389,30 @@ export default function StockPage() {
                   )
                 })
               )}
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Out of Stock</p><p className="text-xl font-bold text-red-600">{outOfStock.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Buying Cost</p><p className="text-xl font-bold text-amber-600">{formatMoney(totalBuyingCost, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Inventory Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
+            </div>
+
+            {/* Category Values */}
+            <div className="card p-5">
+              <h3 className="font-bold text-slate-900 mb-3">Value by Category</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {Object.entries(categoryValues).map(([cat, data]) => (
+                  <div key={cat} className="bg-slate-50 rounded-xl p-3 flex items-center justify-between">
+                    <div><p className="text-sm font-medium text-slate-700">{cat}</p><p className="text-xs text-slate-400">{data.qty} units</p></div>
+                    <p className="text-sm font-bold text-slate-900">{formatMoney(data.value, settings.currency)}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </>
         )}
