@@ -118,8 +118,9 @@ export default function SellPage() {
 
   function getItemProfit(item: CartItem): number {
     const cost = Number(item.product.cost_price || 0)
-    const sellPrice = item.selectedTier ? item.selectedTier.price : item.product.price
-    return (sellPrice - cost) * item.quantity
+    const revenue = Number(item.subtotal || 0)
+    const totalCost = cost * Number(item.quantity || 0)
+    return revenue - totalCost
   }
 
   function getAggregateStock(product: Product): number {
@@ -170,7 +171,7 @@ export default function SellPage() {
               ? { ...item, quantity: item.quantity + quantity, subtotal: item.subtotal + subtotal, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount', selectedTier: item.selectedTier || selectedTier }
               : item
           )
-        : [...prev, { product, quantity, subtotal, saleMode: 'amount' as const, selectedTier }]
+        : [...prev, { product, quantity, subtotal, saleMode: 'quantity' as const, selectedTier }]
 
       if (existing) {
         toast.info(`Added another ${formatProductName(product)}`)
@@ -232,7 +233,9 @@ export default function SellPage() {
 
     const finalQty = Math.round((qty ?? item.quantity) * 100) / 100
     const finalSubtotal = Math.round((amount ?? item.subtotal) * 100) / 100
-    return { ...item, quantity: finalQty, subtotal: finalSubtotal }
+    const price = item.product.price || 0
+    const qtyFromAmount = amount !== undefined && price > 0 ? Math.round((amount / price) * 1000) / 1000 : finalQty
+    return { ...item, quantity: qtyFromAmount, subtotal: finalSubtotal }
   }
 
   function updateQty(productId: string, qty: number) {
@@ -302,7 +305,7 @@ export default function SellPage() {
           return { ...item, saleMode, quantity, subtotal: Math.round(subtotal * 100) / 100 }
         }
 
-        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
+        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 1000) / 1000 : 0
         return { ...item, saleMode, quantity, subtotal: Math.round(amount * 100) / 100 }
       })
     )
