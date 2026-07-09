@@ -15,7 +15,7 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { Search, TrendingUp, TrendingDown, History, Package, BarChart3 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
-type Tab = 'products' | 'history' | 'movements' | 'profit'
+type Tab = 'products' | 'history' | 'movements' | 'profit' | 'stats'
 
 export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
@@ -260,13 +260,13 @@ export default function StockPage() {
 
         {/* Tabs */}
         <div className="flex border-b border-slate-200 mb-4">
-          {(['products', 'history', 'movements', 'profit'] as Tab[]).map(tab => (
+          {(['products', 'history', 'movements', 'profit', 'stats'] as Tab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTab === tab ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}
             >
-              {tab === 'products' ? 'Products' : tab === 'history' ? 'Stock Analytics' : tab === 'movements' ? 'Product Movements' : 'Profit'}
+              {tab === 'products' ? 'Products' : tab === 'history' ? 'Stock Analytics' : tab === 'movements' ? 'Product Movements' : tab === 'profit' ? 'Profit' : 'Stats'}
             </button>
           ))}
         </div>
@@ -332,9 +332,85 @@ export default function StockPage() {
                           </div>
                           <div className="w-full bg-slate-200 rounded-full h-1.5">
                             <div className="bg-gradient-to-r from-slate-400 to-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
-                          </div>
-                        </div>
-                      )}
+            </div>
+          </div>
+        )}
+        {(activeTab as Tab) === 'stats' && (
+          <div className="space-y-6">
+            {/* Stats Overview */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Categories</p><p className="text-xl font-bold text-slate-900">{categories.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Initial Stock</p><p className="text-xl font-bold text-slate-900">{parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0); return sum + initial; }, 0).toLocaleString()}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Current Stock</p><p className="text-xl font-bold text-emerald-600">{parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const current = variants.length === 0 ? p.stock_qty : variants.reduce((vSum, v) => vSum + v.stock_qty, 0); return sum + current; }, 0).toLocaleString()}</p></div>
+            </div>
+
+            {/* Value by Category */}
+            <div className="card p-5">
+              <h3 className="font-bold text-slate-900 mb-3">Value by Category</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {Object.entries(categoryValues).map(([cat, data]) => (
+                  <div key={cat} className="bg-slate-50 rounded-xl p-3 flex items-center justify-between">
+                    <div><p className="text-sm font-medium text-slate-700">{cat}</p><p className="text-xs text-slate-400">{data.qty} units</p></div>
+                    <p className="text-sm font-bold text-slate-900">{formatMoney(data.value, settings.currency)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Stock Health */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="card p-5">
+                <h3 className="font-bold text-slate-900 mb-3">Stock Health</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">In Stock</span>
+                    <span className="text-sm font-bold text-emerald-600">{inStock.length} products</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${products.length ? (inStock.length / products.length) * 100 : 0}%` }}></div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Low Stock</span>
+                    <span className="text-sm font-bold text-amber-600">{lowStock.length} products</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div className="bg-amber-500 h-2 rounded-full" style={{ width: `${products.length ? (lowStock.length / products.length) * 100 : 0}%` }}></div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Out of Stock</span>
+                    <span className="text-sm font-bold text-red-600">{outOfStock.length} products</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div className="bg-red-500 h-2 rounded-full" style={{ width: `${products.length ? (outOfStock.length / products.length) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card p-5">
+                <h3 className="font-bold text-slate-900 mb-3">Financial Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Total Buying Cost</span>
+                    <span className="text-sm font-bold text-amber-600">{formatMoney(totalBuyingCost, settings.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Inventory Value</span>
+                    <span className="text-sm font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Total Profit</span>
+                    <span className={`text-sm font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Potential Profit</span>
+                    <span className="text-sm font-bold text-emerald-600">{formatMoney(totalValue - totalBuyingCost, settings.currency)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
                       {variants.length > 0 && (
                         <div className="mt-2 space-y-2">
                           {variants.map(v => {
