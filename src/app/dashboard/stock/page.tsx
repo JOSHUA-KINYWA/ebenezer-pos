@@ -109,6 +109,7 @@ export default function StockPage() {
     stock_qty: Number(p.stock_qty) || 0,
     initial_stock: Number(p.initial_stock) || 0,
     price: Number(p.price) || 0,
+    cost_price: Number(p.cost_price) || 0,
   })), [products])
 
   const categories = Array.from(new Set(inventoryProducts.map(p => (p.category as { name?: string })?.name || 'Uncategorized')))
@@ -220,7 +221,7 @@ export default function StockPage() {
         if (prod && l.change_qty) {
           const month = format(new Date(l.created_at || new Date()), 'yyyy-MM')
           if (!monthly[month]) monthly[month] = { revenue: 0, cost: 0, profit: 0 }
-          monthly[month].cost += Math.abs(Number(l.change_qty)) * Number(prod.price)
+          monthly[month].cost += Math.abs(Number(l.change_qty)) * Number(prod.cost_price || prod.price || 0)
         }
       })
     Object.keys(monthly).forEach(m => {
@@ -321,7 +322,7 @@ export default function StockPage() {
                       </div>
                       <h3 className="font-semibold text-slate-900 text-sm mb-1">{formatProductName(product)}</h3>
                       <p className="text-xs text-slate-500 mb-1">
-                        {formatMoney(product.price, settings.currency)} • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
+                        {formatMoney(product.price, settings.currency)} sell • {formatMoney(product.cost_price || 0, settings.currency)} buy • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
                         {variants.length > 0 && <span className="text-slate-400"> total</span>}
                       </p>
                       {aggregateInitial > 0 && (

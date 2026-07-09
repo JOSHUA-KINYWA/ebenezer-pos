@@ -22,6 +22,7 @@ interface ProductForm {
   category_id: string
   parent_product_id: string
   price: string
+  cost_price: string
   unit: string
   stock_qty: string
   stock_alert: string
@@ -38,6 +39,7 @@ const initialForm: ProductForm = {
   category_id: '',
   parent_product_id: '',
   price: '0.00',
+  cost_price: '0.00',
   unit: 'piece',
   stock_qty: '0',
   stock_alert: '10',
@@ -129,6 +131,7 @@ export default function ProductsPage() {
       category_id: (parentCategoryId || categories[0]?.id) ?? '',
       parent_product_id: parentId || '',
       price: parent?.price?.toString() || initialForm.price,
+      cost_price: parent?.cost_price?.toString() || initialForm.cost_price,
       unit: parent?.unit || initialForm.unit,
       stock_qty: '0',
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
@@ -155,6 +158,7 @@ export default function ProductsPage() {
       category_id: product.category_id || categories[0]?.id || '',
       parent_product_id: product.parent_product_id || '',
       price: product.price?.toString() || '0.00',
+      cost_price: product.cost_price?.toString() || '0.00',
       unit: product.unit || 'piece',
       stock_qty: product.stock_qty?.toString() || '0',
       stock_alert: product.stock_alert?.toString() || '10',
@@ -179,6 +183,7 @@ export default function ProductsPage() {
         category_id: form.category_id,
         parent_product_id: parentId,
         price: form.price,
+        cost_price: form.cost_price,
         unit: form.unit,
         stock_qty: '0',
         stock_alert: form.stock_alert,
@@ -230,6 +235,7 @@ export default function ProductsPage() {
       variety: form.variety.trim() || null,
       description: form.description.trim() || null,
       price: parseFloat(form.price),
+      cost_price: parseFloat(form.cost_price || '0'),
       unit: form.unit.trim(),
       stock_qty: parseFloat(form.stock_qty),
       stock_alert: parseInt(form.stock_alert, 10),
@@ -259,6 +265,7 @@ export default function ProductsPage() {
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
               price: parseFloat(v.price),
+              cost_price: parseFloat(v.cost_price || '0'),
               unit: v.unit.trim(),
               stock_qty: parseFloat(v.stock_qty),
               stock_alert: parseInt(v.stock_alert, 10),
@@ -288,6 +295,7 @@ export default function ProductsPage() {
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
               price: parseFloat(v.price),
+              cost_price: parseFloat(v.cost_price || '0'),
               unit: v.unit.trim(),
               stock_qty: parseFloat(v.stock_qty),
               stock_alert: parseInt(v.stock_alert, 10),
@@ -491,6 +499,7 @@ export default function ProductsPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Category</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Buying price</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Price</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
@@ -500,7 +509,7 @@ export default function ProductsPage() {
             <tbody className="divide-y divide-slate-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">No products found.</td>
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">No products found.</td>
                 </tr>
               ) : (
                 filteredProducts.map(product => {
@@ -508,20 +517,21 @@ export default function ProductsPage() {
                     ? products.find(p => p.id === product.parent_product_id)?.name
                     : null
                   return (
-                    <tr key={product.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedProduct(product)}>
-                      <td className="px-4 py-4 text-sm font-medium text-slate-900">
-                        {product.name}
-                        {product.parent_product_id ? (
-                          <span className="ml-2 inline-block text-xs rounded-full bg-slate-100 text-slate-700 px-2 py-0.5">Variant</span>
-                        ) : products.some(p => p.parent_product_id === product.id) ? (
-                          <span className="ml-2 inline-block text-xs rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">Parent</span>
-                        ) : null}
-                        {parentName && (
-                          <div className="mt-1 text-xs text-slate-500">Variant of {parentName}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.price, 'KSh')}</td>
+                <tr key={product.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedProduct(product)}>
+                  <td className="px-4 py-4 text-sm font-medium text-slate-900">
+                    {product.name}
+                    {product.parent_product_id ? (
+                      <span className="ml-2 inline-block text-xs rounded-full bg-slate-100 text-slate-700 px-2 py-0.5">Variant</span>
+                    ) : products.some(p => p.parent_product_id === product.id) ? (
+                      <span className="ml-2 inline-block text-xs rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">Parent</span>
+                    ) : null}
+                    {parentName && (
+                      <div className="mt-1 text-xs text-slate-500">Variant of {parentName}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
+                  <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.cost_price || 0, 'KSh')}</td>
+                  <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.price, 'KSh')}</td>
                       <td className="px-4 py-4 text-sm text-slate-600">
                         {product.parent_product_id
                           ? `${product.stock_qty} ${product.unit}`
@@ -595,6 +605,14 @@ export default function ProductsPage() {
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Unit</p>
                 <p className="text-sm text-slate-900">{selectedProduct.unit}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Buying price</p>
+                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.cost_price || 0, 'KSh')}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Selling price</p>
+                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.price, 'KSh')}</p>
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Quantity</p>
@@ -796,6 +814,20 @@ export default function ProductsPage() {
               {errors.price && <p className="text-xs text-red-600">{errors.price}</p>}
             </label>
 
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Buying price</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.cost_price}
+                onChange={e => setForm({ ...form, cost_price: e.target.value })}
+                className="input w-full"
+                placeholder="Cost per unit"
+              />
+              {errors.cost_price && <p className="text-xs text-red-600">{errors.cost_price}</p>}
+            </label>
+
             <div className="sm:col-span-2">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-slate-700">Pricing tiers</span>
@@ -985,14 +1017,18 @@ export default function ProductsPage() {
                                 ))}
                               </select>
                             </label>
-                            <label className="space-y-2">
-                              <span className="text-xs text-slate-500">Price</span>
-                              <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
-                            </label>
-                            <label className="space-y-2">
-                              <span className="text-xs text-slate-500">Quantity</span>
-                              <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
-                            </label>
+                              <label className="space-y-2">
+                                <span className="text-xs text-slate-500">Price</span>
+                                <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
+                              </label>
+                              <label className="space-y-2">
+                                <span className="text-xs text-slate-500">Buying price</span>
+                                <input type="number" step="0.01" min="0" value={v.cost_price} onChange={e => updateVariantDraft(i, 'cost_price', e.target.value)} className="input w-full" />
+                              </label>
+                              <label className="space-y-2">
+                                <span className="text-xs text-slate-500">Quantity</span>
+                                <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
+                              </label>
                             <label className="space-y-2">
                               <span className="text-xs text-slate-500">Unit</span>
                               <input value={v.unit} onChange={e => updateVariantDraft(i, 'unit', e.target.value)} className="input w-full" />

@@ -42,6 +42,7 @@ export interface Product {
   variety?: string
   description?: string
   price: number
+  cost_price: number
   unit: string
   initial_stock?: number
   stock_qty: number
@@ -140,6 +141,7 @@ export interface ProductSalesSummary {
   unit: string
   units_sold: number
   total_revenue: number
+  total_cost: number
 }
 
 export interface ShopSettings {

@@ -98,6 +98,7 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode text;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS initial_stock numeric(12,2) DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price numeric(12,2) NOT NULL DEFAULT 0;
 UPDATE products SET initial_stock = stock_qty WHERE initial_stock = 0 OR initial_stock IS NULL;
 
 -- Staff account support
@@ -148,7 +149,8 @@ SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
   sum(si.quantity)::numeric AS units_sold,
-  coalesce(sum(si.subtotal), 0) AS total_revenue
+  coalesce(sum(si.subtotal), 0) AS total_revenue,
+  coalesce(sum(si.quantity * p.cost_price), 0) AS total_cost
 FROM sale_items si
 JOIN sales s ON s.id = si.sale_id AND s.is_voided = false
 LEFT JOIN products p ON p.id = si.product_id

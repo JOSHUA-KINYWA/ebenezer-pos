@@ -94,7 +94,8 @@ SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
   sum(si.quantity)::numeric(12,2) AS units_sold,
-  coalesce(sum(si.subtotal), 0) AS total_revenue
+  coalesce(sum(si.subtotal), 0) AS total_revenue,
+  coalesce(sum(si.quantity * p.cost_price), 0) AS total_cost
 FROM sale_items si
 JOIN sales s ON s.id = si.sale_id AND s.is_voided = false
 LEFT JOIN products p ON p.id = si.product_id
@@ -155,6 +156,7 @@ CREATE TABLE IF NOT EXISTS products (
   category_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE,
   price numeric(12,2) NOT NULL DEFAULT 0,
+  cost_price numeric(12,2) NOT NULL DEFAULT 0,
   unit text NOT NULL DEFAULT 'piece',
   initial_stock numeric(12,2) NOT NULL DEFAULT 0,
   stock_qty numeric(12,2) NOT NULL DEFAULT 0,
@@ -364,7 +366,8 @@ SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
   sum(si.quantity)::numeric(12,2) AS units_sold,
-  coalesce(sum(si.subtotal), 0) AS total_revenue
+  coalesce(sum(si.subtotal), 0) AS total_revenue,
+  coalesce(sum(si.quantity * p.cost_price), 0) AS total_cost
 FROM sale_items si
 JOIN sales s ON s.id = si.sale_id AND s.is_voided = false
 LEFT JOIN products p ON p.id = si.product_id

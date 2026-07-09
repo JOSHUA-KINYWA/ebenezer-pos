@@ -68,6 +68,7 @@ export function isBetween(value: number, min: number, max: number): boolean {
 export function validateProductForm(data: {
   name: string
   price: string
+  cost_price?: string
   unit: string
   stock_qty?: string
   stock_alert?: string
@@ -85,6 +86,11 @@ export function validateProductForm(data: {
     result.addError('price', 'Valid price is required')
   } else if (!isNonNegativeNumber(price)) {
     result.addError('price', 'Price must be positive')
+  }
+
+  const costPrice = parseFloat((data.cost_price || '0').trim())
+  if (!isNonNegativeNumber(costPrice)) {
+    result.addError('cost_price', 'Buying price must be a valid positive number')
   }
 
   if (isEmpty(data.unit)) {

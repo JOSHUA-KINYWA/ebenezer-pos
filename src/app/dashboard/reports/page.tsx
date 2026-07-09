@@ -212,6 +212,7 @@ export default function ReportsPage() {
   const totalTxns = daily.reduce((s, d) => s + Number(d.total_transactions), 0)
   const avgTxnValue = activeSales.length > 0 ? activeSales.reduce((s, t) => s + Number(t.total_amount), 0) / activeSales.length : 0
   const topProduct = products.length > 0 ? products[0] : null
+  const topProductProfit = topProduct ? topProduct.total_revenue - topProduct.total_cost : 0
   const busiestDay = daily.length > 0 ? daily.reduce((max, d) => Number(d.total_transactions) > Number(max.total_transactions) ? d : max) : null
   const voidRate = totalTxns > 0 ? ((voidedSales.length / totalTxns) * 100).toFixed(1) : '0'
 
@@ -264,7 +265,7 @@ export default function ReportsPage() {
             { label: 'Avg Per Sale', value: formatMoney(avgTxnValue, settings.currency), icon: CreditCard, color: 'text-blue-600 bg-blue-50' },
             { label: 'Cancel Rate', value: `${voidRate}%`, icon: Ban, color: 'text-red-600 bg-red-50' },
             { label: 'Cash Received', value: formatMoney(totalCash, settings.currency), icon: Banknote, color: 'text-amber-600 bg-amber-50' },
-            { label: 'Top Product', value: topProduct?.name || '—', icon: Percent, color: 'text-emerald-600 bg-emerald-50', subtext: topProduct ? formatMoney(topProduct.total_revenue, settings.currency) : '' },
+            { label: 'Top Product', value: topProduct?.name || '—', icon: Percent, color: 'text-emerald-600 bg-emerald-50', subtext: topProduct ? `${formatMoney(topProduct.total_revenue, settings.currency)} revenue • ${formatMoney(topProductProfit, settings.currency)} profit` : '' },
             { label: 'Busiest Day', value: busiestDay ? format(new Date(busiestDay.sale_date), 'dd MMM') : '—', icon: UserIcon, color: 'text-purple-600 bg-purple-50', subtext: busiestDay ? `${busiestDay.total_transactions} sales` : '' },
             { label: 'Cancelled Txns', value: voidedSales.length.toString(), icon: Ban, color: 'text-orange-600 bg-orange-50' },
           ].map(({ label, value, icon: Icon, color, subtext }) => (
@@ -343,13 +344,15 @@ export default function ReportsPage() {
             <div className="overflow-x-auto">
               {products.length === 0 ? <EmptyState icon={TrendingUp} title="No product data" description="Sales data will appear here" /> : (
                 <table className="w-full">
-                  <thead><tr className="border-b border-slate-100 text-slate-500 text-sm"><th className="py-2 text-left">Product</th><th className="py-2 text-left">Unit</th><th className="py-2 text-right">Units sold</th><th className="py-2 text-right">Revenue</th></tr></thead>
+                  <thead><tr className="border-b border-slate-100 text-slate-500 text-sm"><th className="py-2 text-left">Product</th><th className="py-2 text-left">Unit</th><th className="py-2 text-right">Units sold</th><th className="py-2 text-right">Revenue</th><th className="py-2 text-right">Cost</th><th className="py-2 text-right">Profit</th></tr></thead>
                   <tbody>{products.map(p => (
                     <tr key={p.name} className="border-b border-slate-50">
                       <td className="py-2 text-sm font-medium text-slate-900">{p.name}</td>
                       <td className="py-2 text-sm text-slate-500">{p.unit}</td>
                       <td className="py-2 text-sm text-right">{p.units_sold}</td>
                       <td className="py-2 text-sm font-semibold text-right">{formatMoney(p.total_revenue, settings.currency)}</td>
+                      <td className="py-2 text-sm text-right text-amber-600">{formatMoney(p.total_cost, settings.currency)}</td>
+                      <td className="py-2 text-sm font-semibold text-right text-emerald-600">{formatMoney(p.total_revenue - p.total_cost, settings.currency)}</td>
                     </tr>
                   ))}</tbody>
                 </table>

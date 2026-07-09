@@ -116,6 +116,12 @@ export default function SellPage() {
     return Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
   }
 
+  function getItemProfit(item: CartItem): number {
+    const cost = Number(item.product.cost_price || 0)
+    const sellPrice = item.selectedTier ? item.selectedTier.price : item.product.price
+    return (sellPrice - cost) * item.quantity
+  }
+
   function getAggregateStock(product: Product): number {
     if (product.parent_product_id) return product.stock_qty
     const variants = getProductVariants(product.id)
@@ -503,6 +509,7 @@ async function processCompletion(totalAmount: number) {
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0)
   const total = subtotal
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0)
+  const totalProfit = cart.reduce((sum, item) => sum + getItemProfit(item), 0)
 
   return (
     <div>
@@ -762,8 +769,16 @@ async function processCompletion(totalAmount: number) {
                     <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
                     <div className="grid gap-2 text-sm text-slate-600 mb-3">
                       <div className="flex items-center justify-between">
-                        <span>Price</span>
+                        <span>Buying</span>
+                        <span className="font-semibold text-slate-900">{formatMoney(product.cost_price || 0, settings.currency)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Selling</span>
                         <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Profit/unit</span>
+                        <span className="font-semibold text-emerald-600">{formatMoney((product.price - (product.cost_price || 0)), settings.currency)}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Stock</span>
@@ -899,6 +914,7 @@ async function processCompletion(totalAmount: number) {
                           {item.selectedTier
                             ? `${item.selectedTier.qty} for ${formatMoney(item.selectedTier.price, settings.currency)}`
                             : `${formatMoney(item.product.price, settings.currency)} per unit`}
+                          <span className="ml-2 text-emerald-600">Profit: {formatMoney(getItemProfit(item), settings.currency)}</span>
                         </p>
                       </div>
                       <button
@@ -988,6 +1004,10 @@ async function processCompletion(totalAmount: number) {
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                   <span className="font-semibold">Total due</span>
                   <span className="font-semibold text-slate-900">{formatMoney(total, settings.currency)}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-emerald-50 px-4 py-3 text-sm text-slate-600">
+                  <span className="font-semibold text-emerald-700">Profit</span>
+                  <span className="font-semibold text-emerald-700">{formatMoney(totalProfit, settings.currency)}</span>
                 </div>
               </div>
             )}
