@@ -273,6 +273,23 @@ export default function StockPage() {
 
         {activeTab === 'products' && (
           <>
+            {/* Filters */}
+            <div className="card p-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} className="input pl-9 w-full" /></div>
+                <select className="input w-auto" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                  <option value="all">All Categories</option>
+                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+                <select className="input w-auto" value={stockFilter} onChange={e => setStockFilter(e.target.value)}>
+                  <option value="all">All Stock</option>
+                  <option value="in_stock">In Stock</option>
+                  <option value="low_stock">Low Stock</option>
+                  <option value="out_of_stock">Out of Stock</option>
+                </select>
+              </div>
+            </div>
+
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
@@ -294,23 +311,6 @@ export default function StockPage() {
                     <p className="text-sm font-bold text-slate-900">{formatMoney(data.value, settings.currency)}</p>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* Filters */}
-            <div className="card p-4">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} className="input pl-9 w-full" /></div>
-                <select className="input w-auto" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-                  <option value="all">All Categories</option>
-                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-                <select className="input w-auto" value={stockFilter} onChange={e => setStockFilter(e.target.value)}>
-                  <option value="all">All Stock</option>
-                  <option value="in_stock">In Stock</option>
-                  <option value="low_stock">Low Stock</option>
-                  <option value="out_of_stock">Out of Stock</option>
-                </select>
               </div>
             </div>
 
