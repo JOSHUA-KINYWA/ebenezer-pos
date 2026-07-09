@@ -333,8 +333,66 @@ export default function StockPage() {
                           <div className="w-full bg-slate-200 rounded-full h-1.5">
                             <div className="bg-gradient-to-r from-slate-400 to-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
             </div>
-          </div>
+                         </div>
+                       )}
+                       {variants.length > 0 && (
+                        <div className="mt-2 space-y-2">
+                          {variants.map(v => {
+                            const vInitial = v.initial_stock || 0
+                            const vSold = getSoldQty(v.id)
+                            const vProgress = vInitial > 0 ? Math.min(100, Math.max(0, ((vInitial - v.stock_qty) / vInitial) * 100)) : 0
+                            return (
+                              <div key={v.id} className="text-xs bg-slate-50 rounded px-2 py-1.5">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium text-slate-700">{formatProductName(v)}</span>
+                                  <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
+                                    {v.stock_qty} {v.unit}
+                                  </span>
+                                </div>
+                                {vInitial > 0 && (
+                                  <>
+                                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                                      <span>Init: {vInitial.toLocaleString()} • Sold: {vSold.toLocaleString()}</span>
+                                      <span>Rem: {(vInitial - vSold).toLocaleString()}</span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-1">
+                                      <div className="bg-gradient-to-r from-slate-300 to-emerald-500 h-1 rounded-full transition-all" style={{ width: `${vProgress}%` }}></div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })}
+                          {aggregateInitial > 0 && (
+                            <div className="pt-1 border-t border-slate-200">
+                              <div className="flex justify-between text-xs text-slate-500 mb-1">
+                                <span>Total • Sold: {totalSold.toLocaleString()} / {aggregateInitial.toLocaleString()}</span>
+                                <span>Progress</span>
+                              </div>
+                              <div className="w-full bg-slate-200 rounded-full h-1.5">
+                                <div className="bg-gradient-to-r from-slate-400 to-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                              </div>
+                            </div>
+                          )}
+                         </div>
+                       )}
+                       <p className="text-xs text-slate-400 mt-2">
+                         Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                       </p>
+                       <button
+                         onClick={() => { setSelectedProduct(product.id); setActiveTab('movements') }}
+                         className="mt-2 inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
+                       >
+                         <History className="w-3 h-3" /> View movements
+                       </button>
+                     </div>
+                   )
+                 })
+               )}
+             </div>
+          </>
         )}
+
         {(activeTab as Tab) === 'stats' && (
           <div className="space-y-6">
             {/* Stats Overview */}
@@ -410,74 +468,6 @@ export default function StockPage() {
               </div>
             </div>
           </div>
-        )}
-                      {variants.length > 0 && (
-                        <div className="mt-2 space-y-2">
-                          {variants.map(v => {
-                            const vInitial = v.initial_stock || 0
-                            const vSold = getSoldQty(v.id)
-                            const vProgress = vInitial > 0 ? Math.min(100, Math.max(0, ((vInitial - v.stock_qty) / vInitial) * 100)) : 0
-                            return (
-                              <div key={v.id} className="text-xs bg-slate-50 rounded px-2 py-1.5">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="font-medium text-slate-700">{formatProductName(v)}</span>
-                                  <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
-                                    {v.stock_qty} {v.unit}
-                                  </span>
-                                </div>
-                                {vInitial > 0 && (
-                                  <>
-                                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                                      <span>Init: {vInitial.toLocaleString()} • Sold: {vSold.toLocaleString()}</span>
-                                      <span>Rem: {(vInitial - vSold).toLocaleString()}</span>
-                                    </div>
-                                    <div className="w-full bg-slate-200 rounded-full h-1">
-                                      <div className="bg-gradient-to-r from-slate-300 to-emerald-500 h-1 rounded-full transition-all" style={{ width: `${vProgress}%` }}></div>
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            )
-                          })}
-                          {aggregateInitial > 0 && (
-                            <div className="pt-1 border-t border-slate-200">
-                              <div className="flex justify-between text-xs text-slate-500 mb-1">
-                                <span>Total • Sold: {totalSold.toLocaleString()} / {aggregateInitial.toLocaleString()}</span>
-                                <span>Progress</span>
-                              </div>
-                              <div className="w-full bg-slate-200 rounded-full h-1.5">
-                                <div className="bg-gradient-to-r from-slate-400 to-brand-600 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <p className="text-xs text-slate-400 mt-2">
-                        Value: {formatMoney(aggregateStock * product.price, settings.currency)}
-                      </p>
-                      <button
-                        onClick={() => { setSelectedProduct(product.id); setActiveTab('movements') }}
-                        className="mt-2 inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
-                      >
-                        <History className="w-3 h-3" /> View movements
-                      </button>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Out of Stock</p><p className="text-xl font-bold text-red-600">{outOfStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Buying Cost</p><p className="text-xl font-bold text-amber-600">{formatMoney(totalBuyingCost, settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Inventory Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
-            </div>
-          </>
         )}
 
         {activeTab === 'movements' && (
