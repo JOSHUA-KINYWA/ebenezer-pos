@@ -500,7 +500,7 @@ export default function ProductsPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Category</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Buying price</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Price</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Selling price</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
@@ -649,7 +649,8 @@ export default function ProductsPage() {
                         <th className="table-head">Name</th>
                         <th className="table-head">Unit</th>
                         <th className="table-head">Qty</th>
-                        <th className="table-head">Price</th>
+                        <th className="table-head">Selling price</th>
+                        <th className="table-head">Buying price</th>
                         <th className="table-head text-right">Actions</th>
                       </tr>
                     </thead>
@@ -660,6 +661,7 @@ export default function ProductsPage() {
                           <td className="table-cell">{variant.unit}</td>
                           <td className="table-cell">{variant.stock_qty}</td>
                           <td className="table-cell">{formatMoney(variant.price, 'KSh')}</td>
+                          <td className="table-cell">{formatMoney(variant.cost_price || 0, 'KSh')}</td>
                           <td className="table-cell text-right">
                             <button onClick={() => openEditProduct(variant)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
                           </td>
@@ -802,7 +804,7 @@ export default function ProductsPage() {
             </label>
 
             <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Price</span>
+              <span className="text-sm font-medium text-slate-700">Selling price</span>
               <input
                 type="number"
                 step="0.01"
@@ -868,7 +870,7 @@ export default function ProductsPage() {
                           setForm({ ...form, pricing_tiers: next })
                         }}
                       />
-                      <span className="text-xs text-slate-500 w-12">Price</span>
+                      <span className="text-xs text-slate-500 w-12">Selling</span>
                       <input
                         type="number"
                         min="0"
@@ -960,7 +962,8 @@ export default function ProductsPage() {
                               <th className="table-head">Name</th>
                               <th className="table-head">Unit</th>
                               <th className="table-head">Qty</th>
-                              <th className="table-head">Price</th>
+                              <th className="table-head">Selling price</th>
+                              <th className="table-head">Buying price</th>
                               <th className="table-head text-right">Actions</th>
                             </tr>
                           </thead>
@@ -971,6 +974,7 @@ export default function ProductsPage() {
                                 <td className="px-3 py-2 text-sm text-slate-600">{v.unit}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600">{v.stock_qty}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.price, 'KSh')}</td>
+                                <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.cost_price || 0, 'KSh')}</td>
                                 <td className="px-3 py-2 text-right"><button onClick={() => openEditProduct(v)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button></td>
                               </tr>
                             ))}
@@ -1018,7 +1022,7 @@ export default function ProductsPage() {
                               </select>
                             </label>
                               <label className="space-y-2">
-                                <span className="text-xs text-slate-500">Price</span>
+                                <span className="text-xs text-slate-500">Selling price</span>
                                 <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
                               </label>
                               <label className="space-y-2">
