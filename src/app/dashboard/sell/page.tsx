@@ -439,7 +439,7 @@ async function processCompletion(totalAmount: number) {
         throw new Error(itemsErr.message)
       }
 
-      if (paymentType === 'cash') {
+      if (paymentMethod === 'cash' || paymentMethod === 'coin' || paymentMethod === 'till') {
         const today = new Date().toISOString().split('T')[0]
         const { data: existing } = await supabase
           .from('drawer_balances')
