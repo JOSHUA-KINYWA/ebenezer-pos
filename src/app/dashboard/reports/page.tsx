@@ -37,7 +37,7 @@ export default function ReportsPage() {
   const [products, setProducts] = useState<ProductSalesSummary[]>([])
   const [transactions, setTransactions] = useState<Sale[]>([])
   const [cashiers, setCashiers] = useState<SessionUser[]>([])
-  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [selectedDate, setSelectedDate] = useState<string>('')
   const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const [editingNote, setEditingNote] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
@@ -77,12 +77,14 @@ export default function ReportsPage() {
       const fromDate = since ? since.split('T')[0] : '2000-01-01'
       const todayDate = new Date().toISOString().split('T')[0]
 
-      const [{ data: d }, { data: p }, { data: txns, error: txnError }] = await Promise.all([
+      const [{ data: d, error: dailyError }, { data: p, error: productError }, { data: txns, error: txnError }] = await Promise.all([
         supabase.from('daily_sales_summary').select('*').gte('sale_date', fromDate).lte('sale_date', todayDate).order('sale_date', { ascending: false }).limit(range === 'all' ? 365 : parseInt(range)),
         supabase.from('product_sales_summary').select('*').limit(50),
         salesQuery,
       ])
 
+      if (dailyError) throw new Error(`Failed to load daily summary: ${dailyError.message}`)
+      if (productError) throw new Error(`Failed to load product summary: ${productError.message}`)
       if (txnError) throw txnError
 
       const { data: cashierData, error: cashierErr } = await supabase.from('users').select('id, full_name').eq('is_active', true).order('full_name')
@@ -243,6 +245,15 @@ export default function ReportsPage() {
               value={selectedDate}
               onChange={e => setSelectedDate(e.target.value)}
             />
+            {selectedDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+              >
+                ✕
+              </button>
+            )}
           </div>
           <select className="input w-auto py-2" value={range} onChange={e => setRange(e.target.value as Range)}>
             <option value="7">Last 7 days</option>
