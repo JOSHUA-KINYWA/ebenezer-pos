@@ -223,16 +223,16 @@ export default function ReportsPage() {
 
   const activeSales = transactions.filter(s => !s.is_voided)
   const voidedSales = transactions.filter(s => s.is_voided)
-  const totalRevenue = daily.reduce((s, d) => s + Number(d.total_revenue), 0)
-  const totalCash = daily.reduce((s, d) => s + Number(d.cash_total), 0)
-  const totalTxns = daily.reduce((s, d) => s + Number(d.total_transactions), 0)
-  const avgTxnValue = activeSales.length > 0 ? activeSales.reduce((s, t) => s + Number(t.total_amount), 0) / activeSales.length : 0
+  const totalRevenue = activeSales.reduce((s, t) => s + Number(t.total_amount), 0)
+  const totalCash = activeSales.filter(t => t.payment_type === 'cash').reduce((s, t) => s + Number(t.total_amount), 0)
+  const totalTxns = activeSales.length
+  const avgTxnValue = totalTxns > 0 ? totalRevenue / totalTxns : 0
   const topProduct = products.length > 0 ? products[0] : null
   const topProductProfit = topProduct ? topProduct.total_revenue - topProduct.total_cost : 0
-  const busiestDay = daily.length > 0 ? daily.reduce((max, d) => Number(d.total_transactions) > Number(max.total_transactions) ? d : max) : null
+  const busiestDay = selectedDate ? { sale_date: selectedDate, total_transactions: totalTxns } : (daily.length > 0 ? daily.reduce((max, d) => Number(d.total_transactions) > Number(max.total_transactions) ? d : max) : null)
   const voidRate = totalTxns > 0 ? ((voidedSales.length / totalTxns) * 100).toFixed(1) : '0'
 
-  const chartData = [...daily].reverse().map(d => ({
+  const chartData = selectedDate ? [] : [...daily].reverse().map(d => ({
     date: format(new Date(d.sale_date), 'dd MMM'),
     Revenue: Number(d.cash_total),
   }))
@@ -338,12 +338,21 @@ export default function ReportsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-slate-50 rounded-xl p-4">
                 <h3 className="text-sm font-semibold text-slate-900 mb-3">Daily breakdown</h3>
-                {daily.length === 0 ? <p className="text-sm text-slate-400">No data</p> : daily.slice(0, 7).map(d => (
-                  <div key={d.sale_date} className="flex justify-between py-2 border-b border-slate-100 last:border-0">
-                    <span className="text-sm text-slate-600">{format(new Date(d.sale_date), 'dd MMM yyyy')}</span>
-                    <span className="text-sm font-semibold text-slate-900">{formatMoney(Number(d.total_revenue), settings.currency)}</span>
+                {selectedDate ? (
+                  <div className="flex justify-between py-2 border-b border-slate-100">
+                    <span className="text-sm text-slate-600">{format(new Date(selectedDate), 'dd MMM yyyy')}</span>
+                    <span className="text-sm font-semibold text-slate-900">{formatMoney(totalRevenue, settings.currency)}</span>
                   </div>
-                ))}
+                ) : daily.length === 0 ? (
+                  <p className="text-sm text-slate-400">No data</p>
+                ) : (
+                  daily.slice(0, 7).map(d => (
+                    <div key={d.sale_date} className="flex justify-between py-2 border-b border-slate-100 last:border-0">
+                      <span className="text-sm text-slate-600">{format(new Date(d.sale_date), 'dd MMM yyyy')}</span>
+                      <span className="text-sm font-semibold text-slate-900">{formatMoney(Number(d.total_revenue), settings.currency)}</span>
+                    </div>
+                  ))
+                )}
               </div>
               <div className="bg-slate-50 rounded-xl p-4">
                 <h3 className="text-sm font-semibold text-slate-900 mb-3">Cash Summary</h3>
