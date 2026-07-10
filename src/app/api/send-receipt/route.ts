@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
+import { withAuth } from '@/lib/api-auth'
 
-export async function POST(request: Request) {
+async function handler(request: Request, userId: string) {
   try {
     const body = await request.json()
     const { saleId, customerEmail, items, subtotal, total, date } = body
@@ -11,8 +12,9 @@ export async function POST(request: Request) {
     }
 
     const smtpKey = process.env.BREVO_SMTP_KEY
-    if (!smtpKey) {
-      return NextResponse.json({ success: false, error: 'BREVO_SMTP_KEY not configured' }, { status: 500 })
+    const smtpUser = process.env.BREVO_SMTP_USER
+    if (!smtpKey || !smtpUser) {
+      return NextResponse.json({ success: false, error: 'BREVO_SMTP_KEY and BREVO_SMTP_USER must be configured' }, { status: 500 })
     }
 
     const transporter = nodemailer.createTransport({
@@ -20,14 +22,22 @@ export async function POST(request: Request) {
       port: 587,
       secure: false,
       auth: {
-        user: 'b0bbe0001@smtp-brevo.com',
+        user: smtpUser,
         pass: smtpKey,
       },
     })
 
+    const escapeHtml = (text: string) =>
+      text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+
     const itemsHtml = (items || []).map((i: any) => `
       <tr>
-        <td style="padding: 8px; border-bottom: 1px solid #eee;">${i.name}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee;">${escapeHtml(String(i.name || ''))}</td>
         <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${Number(i.quantity)}</td>
         <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${Number(i.price).toLocaleString()}</td>
         <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${Number(i.total).toLocaleString()}</td>
@@ -55,7 +65,7 @@ export async function POST(request: Request) {
       </div>`
 
     const info = await transporter.sendMail({
-      from: '"Ebenezar POS" <b0bbe0001@smtp-brevo.com>',
+      from: `"Ebenezar POS" <${smtpUser}>`,
       to: customerEmail,
       subject: `Receipt ${saleId ? saleId.slice(0, 8).toUpperCase() : ''}`,
       html,
@@ -74,3 +84,5 @@ export async function POST(request: Request) {
     }, { status: 500 })
   }
 }
+
+export const POST = withAuth(handler)

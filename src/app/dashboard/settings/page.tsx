@@ -14,6 +14,7 @@ import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Store, Trash2, Search, Plus, Edit3, Save, RefreshCw, AlertTriangle } from 'lucide-react'
 import { validateCategoryForm, validateProductForm, validateStaffForm } from '@/lib/validators'
+import { hashPin, verifyPin } from '@/lib/pin-hash'
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -269,7 +270,8 @@ export default function SettingsPage() {
       }
 
       if (!editingStaff || staffForm.pin.trim()) {
-        Object.assign(payload, { pin: staffForm.pin.trim() })
+        const pinHash = await hashPin(staffForm.pin.trim() || '0000')
+        Object.assign(payload, { pin: pinHash })
       }
 
       if (editingStaff) {
@@ -816,17 +818,19 @@ export default function SettingsPage() {
                 }
                 setSavingPin(true)
                 try {
+                  const currentPinHash = await hashPin(currentPin.trim())
                   const { data: existing } = await supabase
                     .from('users')
                     .select('pin')
                     .eq('id', user.id)
                     .maybeSingle()
-                  if (!existing || existing.pin !== currentPin.trim()) {
+                  if (!existing || existing.pin !== currentPinHash) {
                     setPinError('Current PIN is incorrect')
                     setSavingPin(false)
                     return
                   }
-                  const { error } = await supabase.from('users').update({ pin: newPin.trim() }).eq('id', user.id)
+                  const newPinHash = await hashPin(newPin.trim())
+                  const { error } = await supabase.from('users').update({ pin: newPinHash }).eq('id', user.id)
                   if (error) throw error
                   toast.success('PIN updated successfully')
                   setCurrentPin('')

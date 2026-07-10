@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
+import { withAuth } from '@/lib/api-auth'
 
-export async function GET(request: NextRequest) {
+async function handler(request: NextRequest, userId: string) {
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date')
 
@@ -45,3 +46,5 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(result)
 }
+
+export const GET = withAuth(handler)

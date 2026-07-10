@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { setSession, toSessionUser } from '@/lib/auth'
+import { hashPin } from '@/lib/pin-hash'
 import { ShoppingBag, Loader2, Shield } from 'lucide-react'
 
 export default function LoginPage() {
@@ -20,11 +21,12 @@ export default function LoginPage() {
     setError('')
 
     const supabase = createClient()
+    const pinHash = await hashPin(pin.trim())
     const { data, error: dbError } = await supabase
       .from('users')
       .select('id, full_name, email, role, pin, is_active')
       .eq('email', email.trim().toLowerCase())
-      .eq('pin', pin.trim())
+      .eq('pin', pinHash)
       .eq('is_active', true)
       .single()
 

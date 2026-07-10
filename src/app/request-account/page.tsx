@@ -148,18 +148,17 @@ export default function RequestAccountPage() {
                 />
               </div>
 
-              <div>
-                <label className="label">Requested role</label>
-                <select
-                  className="input"
-                  value={role}
-                  onChange={e => setRole(e.target.value)}
-                >
-                  <option value="cashier">Cashier</option>
-                  <option value="owner">Owner</option>
-                </select>
-                <p className="text-xs text-slate-500 mt-1">Owner requests require extra verification</p>
-              </div>
+               <div>
+                 <label className="label">Requested role</label>
+                 <select
+                   className="input"
+                   value={role}
+                   onChange={e => setRole(e.target.value)}
+                 >
+                   <option value="cashier">Cashier</option>
+                 </select>
+                 <p className="text-xs text-slate-500 mt-1">Owner accounts can only be created by existing owners in Settings.</p>
+               </div>
 
               {error && (
                 <div className="bg-red-50 border border-red-100 text-red-700 text-sm rounded-xl px-4 py-3">

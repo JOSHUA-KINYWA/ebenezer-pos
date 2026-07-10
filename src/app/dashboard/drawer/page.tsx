@@ -96,15 +96,16 @@ export default function DrawerPage() {
             .maybeSingle()
 
           if (existing) {
-            await supabase.from('drawer_balances').update({
+            const { error: updateError } = await supabase.from('drawer_balances').update({
               cash: newCash,
               coin: newCoin,
               till: newTill,
               note: note || null,
               updated_at: new Date().toISOString(),
             }).eq('id', existing.id)
+            if (updateError) throw updateError
           } else {
-            await supabase.from('drawer_balances').insert({
+            const { error: insertError } = await supabase.from('drawer_balances').insert({
               date: today,
               shift_id: null,
               cash: newCash,
@@ -112,6 +113,7 @@ export default function DrawerPage() {
               till: newTill,
               note: note || null,
             })
+            if (insertError) throw insertError
           }
 
           toast.success('✓ Balance saved successfully')

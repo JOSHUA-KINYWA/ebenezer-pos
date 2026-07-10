@@ -13,6 +13,7 @@ import { getSession } from '@/lib/auth'
 import { formatDate } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
 import { validateStaffForm } from '@/lib/validators'
+import { hashPin } from '@/lib/pin-hash'
 import { Search, Users, CheckCircle2, Slash, Plus, Edit3, Trash2, Save, Clock, XCircle, UserPlus } from 'lucide-react'
 
 export default function StaffPage() {
@@ -92,7 +93,8 @@ export default function StaffPage() {
       }
 
       if (!editingStaff || staffForm.pin.trim()) {
-        Object.assign(payload, { pin: staffForm.pin.trim() })
+        const pinHash = await hashPin(staffForm.pin.trim() || '0000')
+        Object.assign(payload, { pin: pinHash })
       }
 
       if (editingStaff) {
@@ -135,12 +137,13 @@ export default function StaffPage() {
     }
 
     try {
+      const pinHash = await hashPin(newPin.trim())
       const { error: userError } = await supabase.from('users').insert([
         {
           full_name: request.full_name,
           email: request.email,
           role: request.requested_role,
-          pin: newPin.trim(),
+          pin: pinHash,
           is_active: true,
         },
       ])

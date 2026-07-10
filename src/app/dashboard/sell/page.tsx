@@ -1046,7 +1046,10 @@ async function processCompletion(totalAmount: number) {
                   try {
                     const res = await fetch('/api/send-receipt', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'x-user-id': user?.id || '',
+                      },
                       body: JSON.stringify({
                         saleId: completedSale.id,
                         customerEmail: completedSale.customerEmail,
