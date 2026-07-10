@@ -52,33 +52,33 @@ export default function StockPage() {
     setError('')
 
     try {
-      const [{ data: productData }, { data: logData }, { data: salesData }] = await Promise.all([
-        supabase
-          .from('products')
-          .select('*, category:categories(name)')
-          .eq('is_active', true)
-          .order('name'),
-        supabase
-          .from('stock_log')
-          .select('*, product:products(name, variety, unit)')
-          .order('created_at', { ascending: false })
-          .limit(500),
-        supabase
-          .from('sales')
-          .select('total_amount, created_at')
-          .order('created_at', { ascending: false })
-          .limit(500)
-      ])
+      const productRes = await supabase
+        .from('products')
+        .select('*, category:categories(name)')
+        .eq('is_active', true)
+        .order('name')
+      if (productRes.error) throw productRes.error
+      const productData = productRes.data || []
 
-      if (productData) {
-        setProducts(productData)
-        setStockLog(logData || [])
-        setSales(salesData || [])
-      } else {
-        setProducts([])
-        setStockLog([])
-        setSales([])
-      }
+      const logRes = await supabase
+        .from('stock_log')
+        .select('*, product:products(name, variety, unit)')
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (logRes.error) throw logRes.error
+      const logData = logRes.data || []
+
+      const salesRes = await supabase
+        .from('sales')
+        .select('total_amount, created_at')
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (salesRes.error) throw salesRes.error
+      const salesData = salesRes.data || []
+
+      setProducts(productData)
+      setStockLog(logData)
+      setSales(salesData)
       if (productData && productData.length > 0) {
         const parentData = productData.filter(p => !p.parent_product_id)
         const lowStockItems = parentData.filter(p => {

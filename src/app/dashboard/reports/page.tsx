@@ -77,15 +77,21 @@ export default function ReportsPage() {
       const fromDate = since ? since.split('T')[0] : '2000-01-01'
       const todayDate = new Date().toISOString().split('T')[0]
 
-      const [{ data: d, error: dailyError }, { data: p, error: productError }, { data: txns, error: txnError }] = await Promise.all([
-        supabase.from('daily_sales_summary').select('*').gte('sale_date', fromDate).lte('sale_date', todayDate).order('sale_date', { ascending: false }).limit(range === 'all' ? 365 : parseInt(range)),
-        supabase.from('product_sales_summary').select('*').limit(50),
-        salesQuery,
-      ])
+      let d: DailySalesSummary[] = []
+      let p: ProductSalesSummary[] = []
+      let txns: Sale[] = []
 
-      if (dailyError) throw new Error(`Failed to load daily summary: ${dailyError.message}`)
-      if (productError) throw new Error(`Failed to load product summary: ${productError.message}`)
-      if (txnError) throw txnError
+      const dailyRes = await supabase.from('daily_sales_summary').select('*').gte('sale_date', fromDate).lte('sale_date', todayDate).order('sale_date', { ascending: false }).limit(range === 'all' ? 365 : parseInt(range))
+      if (dailyRes.error) throw new Error(`Failed to load daily summary: ${dailyRes.error.message}`)
+      d = dailyRes.data || []
+
+      const productRes = await supabase.from('product_sales_summary').select('*').limit(50)
+      if (productRes.error) throw new Error(`Failed to load product summary: ${productRes.error.message}`)
+      p = productRes.data || []
+
+      const txnRes = await salesQuery
+      if (txnRes.error) throw txnRes.error
+      txns = txnRes.data ?? []
 
       const { data: cashierData, error: cashierErr } = await supabase.from('users').select('id, full_name').eq('is_active', true).order('full_name')
       if (cashierErr) throw cashierErr

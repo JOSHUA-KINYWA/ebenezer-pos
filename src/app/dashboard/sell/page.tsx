@@ -79,13 +79,13 @@ export default function SellPage() {
   }, [cart])
 
   async function fetchProducts() {
-    const [{ data: productData }, { data: customerData }] = await Promise.all([
-      supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name'),
-      supabase.from('customers').select('*').eq('is_active', true).order('name'),
-    ])
+    const productRes = await supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name')
+    if (productRes.error) throw productRes.error
+    const customerRes = await supabase.from('customers').select('*').eq('is_active', true).order('name')
+    if (customerRes.error) throw customerRes.error
 
-    setProducts(productData ?? [])
-    setCustomers(customerData ?? [])
+    setProducts(productRes.data ?? [])
+    setCustomers(customerRes.data ?? [])
     setLoading(false)
   }
 
