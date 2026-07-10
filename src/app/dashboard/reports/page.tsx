@@ -61,7 +61,7 @@ export default function ReportsPage() {
 
       let salesQuery = supabase
         .from('sales')
-        .select('*, sale_items(*), user:users(full_name)')
+        .select('*, sale_items(*)')
         .order('created_at', { ascending: false })
         .limit(500)
 
@@ -97,6 +97,7 @@ export default function ReportsPage() {
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load reports'
+      console.error('Reports fetchAll error:', err)
       setError(message)
       toast.error(message)
     } finally {
@@ -384,14 +385,13 @@ export default function ReportsPage() {
               ) : (
                 transactions.map(t => (
                   <div key={t.id} className={`rounded-2xl border p-4 ${t.is_voided ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-sm font-mono font-semibold text-slate-900">#{t.id.slice(0, 8)}</span>
-                        <span className="text-sm text-slate-600">{(t.user as any)?.full_name || '—'}</span>
-                        <span className="text-sm text-slate-500 capitalize">{t.payment_type}</span>
-                        <span className="text-sm text-slate-400">{formatDateTime(t.created_at)}</span>
-                        {t.is_voided && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Cancelled</span>}
-                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-sm font-mono font-semibold text-slate-900">#{t.id.slice(0, 8)}</span>
+                          <span className="text-sm text-slate-500 capitalize">{t.payment_type}</span>
+                          <span className="text-sm text-slate-400">{formatDateTime(t.created_at)}</span>
+                          {t.is_voided && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Cancelled</span>}
+                        </div>
 <div className="flex items-center gap-3">
                          <span className="text-base font-bold text-slate-900">{formatMoney(Number(t.total_amount), settings.currency)}</span>
                           {canVoidSales(user?.role) && !t.is_voided && (
