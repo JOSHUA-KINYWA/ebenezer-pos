@@ -45,7 +45,12 @@ export default function DrawerPage() {
       const today = new Date().toISOString().split('T')[0]
       const { data, error } = await supabase.from('drawer_balances').select('*').eq('date', today).order('updated_at', { ascending: false })
       if (error) throw error
-      const current = data && data.length > 0 ? data[0] : null
+      let current = data && data.length > 0 ? data[0] : null
+      if (!current) {
+        const { data: latest, error: latestError } = await supabase.from('drawer_balances').select('*').order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(1)
+        if (latestError) throw latestError
+        current = latest && latest.length > 0 ? latest[0] : null
+      }
       if (current) {
         setCash(Number(current.cash || 0).toString())
         setCoin(Number(current.coin || 0).toString())
