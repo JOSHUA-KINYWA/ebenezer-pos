@@ -21,19 +21,30 @@ export default function LoginPage() {
     setError('')
 
     const supabase = createClient()
-    const pinHash = await hashPin(pin.trim())
+    const trimmedPin = pin.trim()
+    const pinHash = await hashPin(trimmedPin)
     const { data, error: dbError } = await supabase
       .from('users')
       .select('id, full_name, email, role, pin, is_active')
       .eq('email', email.trim().toLowerCase())
-      .eq('pin', pinHash)
       .eq('is_active', true)
-      .single()
+      .or(`pin.eq.${pinHash},pin.eq.${trimmedPin}`)
+      .maybeSingle()
 
     if (dbError || !data) {
       setError('Incorrect email or PIN. Please try again.')
       setLoading(false)
       return
+    }
+
+    if (data.pin !== pinHash) {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ pin: pinHash })
+        .eq('id', data.id)
+      if (updateError) {
+        console.error('Failed to migrate PIN to hash', updateError)
+      }
     }
 
     setSession(toSessionUser(data))

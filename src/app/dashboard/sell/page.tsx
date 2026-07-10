@@ -335,18 +335,14 @@ export default function SellPage() {
       await supabase.from('sales').delete().eq('id', saleId)
       await Promise.all(
         items.map(async item => {
-          const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product.id).single()
-          if (productError || !product) return
-
-          const nextStock = Number(product.stock_qty) + Number(item.quantity)
-          await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product.id)
-          await supabase.from('stock_log').insert({
-            product_id: item.product.id,
-            user_id: userId ?? null,
-            change_qty: Number(item.quantity),
-            reason: 'adjustment',
-            note: `Rollback sale ${saleId.slice(0, 8).toUpperCase()}`,
+          const { error } = await supabase.rpc('adjust_product_stock', {
+            p_product_id: item.product.id,
+            p_change_qty: Number(item.quantity),
+            p_reason: 'adjustment',
+            p_note: `Rollback sale ${saleId.slice(0, 8).toUpperCase()}`,
+            p_user_id: userId ?? null,
           })
+          if (error) console.error('Failed to rollback stock:', error)
         })
       )
     } catch (error) {

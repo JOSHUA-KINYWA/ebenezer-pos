@@ -124,33 +124,26 @@ export default function ReportsPage() {
       description: `Cancel receipt ${sale.receipt_no}? Stock will be restored.`,
       tone: 'danger',
       confirmLabel: 'Cancel sale',
-      onConfirm: async () => {
-        setConfirm(null)
-        try {
-          const today = new Date().toISOString().split('T')[0]
-          if (sale.sale_items) {
-            await Promise.all(
-              (sale.sale_items || [])
-                .filter((item): item is NonNullable<Sale['sale_items']>[0] & { product_id: string } => !!item.product_id)
-                .map(async item => {
-                  const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product_id).single()
-                  if (productError || !product) throw new Error(`Unable to restore stock for ${item.product_name || item.product_id}`)
-
-                  const nextStock = Number(product.stock_qty) + Number(item.quantity)
-                  const { error: updateError } = await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product_id)
-                  if (updateError) throw updateError
-
-                  const { error: logError } = await supabase.from('stock_log').insert({
-                    product_id: item.product_id,
-                    user_id: user?.id ?? null,
-                    change_qty: Number(item.quantity),
-                    reason: 'adjustment',
-                    note: `Cancel sale ${sale.receipt_no}`,
+        onConfirm: async () => {
+          setConfirm(null)
+          try {
+            const today = new Date().toISOString().split('T')[0]
+            if (sale.sale_items) {
+              await Promise.all(
+                (sale.sale_items || [])
+                  .filter((item): item is NonNullable<Sale['sale_items']>[0] & { product_id: string } => !!item.product_id)
+                  .map(async item => {
+                    const { error } = await supabase.rpc('adjust_product_stock', {
+                      p_product_id: item.product_id,
+                      p_change_qty: Number(item.quantity),
+                      p_reason: 'adjustment',
+                      p_note: `Cancel sale ${sale.receipt_no}`,
+                      p_user_id: user?.id ?? null,
+                    })
+                    if (error) throw error
                   })
-                  if (logError) throw logError
-                })
-            )
-          }
+              )
+            }
 
           const { data: existing } = await supabase
             .from('drawer_balances')

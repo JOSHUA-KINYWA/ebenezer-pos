@@ -351,3 +351,31 @@ BEGIN
   END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Atomically adjust product stock and log the change
+CREATE OR REPLACE FUNCTION adjust_product_stock(
+  p_product_id uuid,
+  p_change_qty numeric,
+  p_reason text DEFAULT 'adjustment',
+  p_note text DEFAULT '',
+  p_user_id uuid DEFAULT NULL
+)
+RETURNS numeric AS $$
+DECLARE
+  v_new_stock numeric;
+BEGIN
+  UPDATE products
+  SET stock_qty = stock_qty + p_change_qty, updated_at = now()
+  WHERE id = p_product_id
+  RETURNING stock_qty INTO v_new_stock;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Product % not found', p_product_id;
+  END IF;
+
+  INSERT INTO stock_log(product_id, user_id, change_qty, reason, note, created_at)
+  VALUES (p_product_id, p_user_id, p_change_qty, p_reason, p_note, now());
+
+  RETURN v_new_stock;
+END;
+$$ LANGUAGE plpgsql;
