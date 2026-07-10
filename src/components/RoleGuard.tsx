@@ -19,7 +19,7 @@ export function RoleGuard({ allowed, children }: RoleGuardProps) {
           <ShieldAlert className="w-7 h-7 text-amber-600" />
         </div>
         <h2 className="text-lg font-semibold text-slate-900 mb-1">Access restricted</h2>
-        <p className="text-sm text-slate-500">Only owners can access this section.</p>
+        <p className="text-sm text-slate-500">You do not have permissions to view this page. Only owners can access this section.</p>
       </div>
     )
   }

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { SessionUser, ShopSettings, Product, Category } from '@/types'
+import { SessionUser, ShopSettings, Product, Category, User } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatMoney } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
@@ -13,7 +13,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Store, Trash2, Search, Plus, Edit3, Save, RefreshCw, AlertTriangle } from 'lucide-react'
-import { validateCategoryForm, validateProductForm } from '@/lib/validators'
+import { validateCategoryForm, validateProductForm, validateStaffForm } from '@/lib/validators'
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -36,7 +36,7 @@ export default function SettingsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  type SettingsTab = 'general' | 'categories' | 'account'
+  type SettingsTab = 'general' | 'categories' | 'staff' | 'account'
   const [currentPin, setCurrentPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
@@ -63,6 +63,13 @@ export default function SettingsPage() {
   const [productSearch, setProductSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [staff, setStaff] = useState<User[]>([])
+  const [staffSearch, setStaffSearch] = useState('')
+  const [staffModalOpen, setStaffModalOpen] = useState(false)
+  const [editingStaff, setEditingStaff] = useState<User | null>(null)
+  const [staffForm, setStaffForm] = useState({ full_name: '', email: '', role: 'cashier' as 'owner' | 'cashier', pin: '', is_active: true })
+  const [staffErrors, setStaffErrors] = useState<Record<string, string>>({})
+  const [savingStaff, setSavingStaff] = useState(false)
   const toast = useToast()
   const supabase = createClient()
 
@@ -97,6 +104,12 @@ export default function SettingsPage() {
 
     loadCatalog()
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'staff') {
+      fetchStaff()
+    }
+  }, [activeTab])
 
   useEffect(() => {
     if (categories.length && productModalOpen && !productForm.category_id) {
@@ -215,6 +228,79 @@ export default function SettingsPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to load categories'
       setError(message)
+      toast.error(message)
+    }
+  }
+
+  async function fetchStaff() {
+    try {
+      const { data, error } = await supabase.from('users').select('id, full_name, email, role, is_active, last_login, created_at').order('full_name')
+      if (error) throw error
+      setStaff((data || []) as User[])
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to load staff'
+      toast.error(message)
+    }
+  }
+
+  function resetStaffForm() {
+    setStaffForm({ full_name: '', email: '', role: 'cashier', pin: '', is_active: true })
+    setStaffErrors({})
+    setEditingStaff(null)
+  }
+
+  async function handleSaveStaff() {
+    const validation = editingStaff || staffForm.pin.trim()
+      ? validateStaffForm({ full_name: staffForm.full_name, email: staffForm.email, pin: editingStaff ? staffForm.pin || '0000' : staffForm.pin })
+      : validateStaffForm({ full_name: staffForm.full_name, email: staffForm.email, pin: staffForm.pin })
+
+    if (!validation.isValid) {
+      setStaffErrors(Object.fromEntries(validation.errors.map(error => [error.field, error.message])))
+      return
+    }
+
+    setSavingStaff(true)
+    try {
+      const payload = {
+        full_name: staffForm.full_name.trim(),
+        email: staffForm.email.trim(),
+        role: staffForm.role,
+        is_active: staffForm.is_active,
+      }
+
+      if (!editingStaff || staffForm.pin.trim()) {
+        Object.assign(payload, { pin: staffForm.pin.trim() })
+      }
+
+      if (editingStaff) {
+        const { error } = await supabase.from('users').update(payload).eq('id', editingStaff.id).single()
+        if (error) throw error
+        toast.success('Staff updated successfully')
+      } else {
+        const { error } = await supabase.from('users').insert([payload])
+        if (error) throw error
+        toast.success('Staff added successfully')
+      }
+
+      setStaffModalOpen(false)
+      resetStaffForm()
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to save staff'
+      toast.error(message)
+    } finally {
+      setSavingStaff(false)
+    }
+  }
+
+  async function toggleStaffStatus(member: User) {
+    try {
+      const { error } = await supabase.from('users').update({ is_active: !member.is_active }).eq('id', member.id)
+      if (error) throw error
+      toast.success(`${member.is_active ? 'Deactivated' : 'Activated'} staff member`)
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to update staff status'
       toast.error(message)
     }
   }
@@ -435,6 +521,7 @@ export default function SettingsPage() {
           {[
             { id: 'general', label: 'Shop' },
             { id: 'categories', label: 'Categories' },
+            { id: 'staff', label: 'Staff' },
             { id: 'account', label: 'Account' },
           ].map(tab => (
             <button
@@ -575,6 +662,100 @@ export default function SettingsPage() {
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Description</span>
               <textarea value={categoryForm.description} onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} className="input h-28 w-full resize-none" />
+            </label>
+          </div>
+        </Modal>
+
+        {activeTab === 'staff' && (
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-slate-900">Staff</h3>
+                <p className="text-sm text-slate-500">Create and manage cashier accounts.</p>
+              </div>
+              <button onClick={() => { resetStaffForm(); setStaffModalOpen(true) }} className="btn-primary inline-flex items-center gap-2 text-sm">
+                <Plus className="w-4 h-4" /> Add Cashier
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="table-head">Name</th>
+                    <th className="table-head">Email</th>
+                    <th className="table-head">Role</th>
+                    <th className="table-head">Status</th>
+                    <th className="table-head text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {staff.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No staff found.</td></tr>
+                  ) : (
+                    staff.map(member => (
+                      <tr key={member.id} className="table-row-hover">
+                        <td className="table-cell font-medium text-slate-900">{member.full_name}</td>
+                        <td className="table-cell text-slate-500">{member.email || '—'}</td>
+                        <td className="table-cell capitalize">{member.role}</td>
+                        <td className="table-cell">
+                          <span className={member.is_active ? 'badge badge-active' : 'badge badge-inactive'}>
+                            {member.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="table-cell text-right space-x-2">
+                          <button onClick={() => { setEditingStaff(member); setStaffForm({ full_name: member.full_name || '', email: member.email || '', role: (member.role as 'owner' | 'cashier') || 'cashier', pin: '', is_active: member.is_active }); setStaffModalOpen(true) }} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
+                          <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600"><Trash2 className="inline w-4 h-4" /></button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <Modal
+          isOpen={staffModalOpen}
+          onClose={() => { setStaffModalOpen(false); resetStaffForm() }}
+          title={editingStaff ? 'Edit Cashier' : 'Add Cashier'}
+          description="Create or update a cashier account."
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setStaffModalOpen(false); resetStaffForm() }} className="btn-secondary">Cancel</button>
+              <button onClick={handleSaveStaff} disabled={savingStaff} className="btn-primary inline-flex items-center gap-2">
+                <Save className="w-4 h-4" /> {savingStaff ? 'Saving...' : editingStaff ? 'Update' : 'Save'}
+              </button>
+            </div>
+          }
+          size="md"
+        >
+          <div className="grid gap-4">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Full name</span>
+              <input value={staffForm.full_name} onChange={e => setStaffForm({ ...staffForm, full_name: e.target.value })} className="input w-full" />
+              {staffErrors.full_name && <p className="text-xs text-red-600">{staffErrors.full_name}</p>}
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Email</span>
+              <input value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} className="input w-full" />
+              {staffErrors.email && <p className="text-xs text-red-600">{staffErrors.email}</p>}
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Role</span>
+              <select value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value as 'owner' | 'cashier' })} className="input w-full">
+                <option value="cashier">Cashier</option>
+                <option value="owner">Owner</option>
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">PIN</span>
+              <input type="password" value={staffForm.pin} onChange={e => setStaffForm({ ...staffForm, pin: e.target.value })} className="input w-full" placeholder={editingStaff ? 'Leave blank to keep current PIN' : 'Enter a 4-digit PIN'} />
+              {staffErrors.pin && <p className="text-xs text-red-600">{staffErrors.pin}</p>}
+            </label>
+            <label className="flex items-center gap-3">
+              <input type="checkbox" checked={staffForm.is_active} onChange={e => setStaffForm({ ...staffForm, is_active: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+              <span className="text-sm text-slate-700">Active account</span>
             </label>
           </div>
         </Modal>
