@@ -119,8 +119,9 @@ export default function SellPage() {
   function getItemProfit(item: CartItem): number {
     const cost = Number(item.product.cost_price || 0)
     const revenue = Number(item.subtotal || 0)
-    const totalCost = cost * Number(item.quantity || 0)
-    return revenue - totalCost
+    const qty = Number(item.quantity || 0)
+    const totalCost = Math.round(cost * qty * 100) / 100
+    return Math.round((revenue - totalCost) * 100) / 100
   }
 
   function getAggregateStock(product: Product): number {
@@ -234,7 +235,7 @@ export default function SellPage() {
     const finalQty = Math.round((qty ?? item.quantity) * 100) / 100
     const finalSubtotal = Math.round((amount ?? item.subtotal) * 100) / 100
     const price = item.product.price || 0
-    const qtyFromAmount = amount !== undefined && price > 0 ? Math.round((amount / price) * 1000) / 1000 : finalQty
+    const qtyFromAmount = amount !== undefined && price > 0 ? Math.round((amount / price) * 100) / 100 : finalQty
     return { ...item, quantity: qtyFromAmount, subtotal: finalSubtotal }
   }
 
@@ -305,7 +306,7 @@ export default function SellPage() {
           return { ...item, saleMode, quantity, subtotal: Math.round(subtotal * 100) / 100 }
         }
 
-        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 1000) / 1000 : 0
+        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
         return { ...item, saleMode, quantity, subtotal: Math.round(amount * 100) / 100 }
       })
     )
