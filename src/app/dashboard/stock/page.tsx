@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { createClient, withRetry } from '@/lib/supabase'
 import { Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatMoney, formatProductName } from '@/lib/format'
@@ -52,27 +52,30 @@ export default function StockPage() {
     setError('')
 
     try {
-      const productRes = await supabase
+      const productRes = await withRetry(async () => await supabase
         .from('products')
         .select('*, category:categories(name)')
         .eq('is_active', true)
         .order('name')
+      )
       if (productRes.error) throw productRes.error
       const productData = productRes.data || []
 
-      const logRes = await supabase
+      const logRes = await withRetry(async () => await supabase
         .from('stock_log')
         .select('*, product:products(name, variety, unit)')
         .order('created_at', { ascending: false })
         .limit(500)
+      )
       if (logRes.error) throw logRes.error
       const logData = logRes.data || []
 
-      const salesRes = await supabase
+      const salesRes = await withRetry(async () => await supabase
         .from('sales')
         .select('total_amount, created_at')
         .order('created_at', { ascending: false })
         .limit(500)
+      )
       if (salesRes.error) throw salesRes.error
       const salesData = salesRes.data || []
 

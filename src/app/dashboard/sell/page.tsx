@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createClient } from '@/lib/supabase'
+import { createClient, withRetry } from '@/lib/supabase'
 import { CartItem, Customer, Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatMoney, formatProductName } from '@/lib/format'
@@ -79,9 +79,9 @@ export default function SellPage() {
   }, [cart])
 
   async function fetchProducts() {
-    const productRes = await supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name')
+    const productRes = await withRetry(async () => await supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name'))
     if (productRes.error) throw productRes.error
-    const customerRes = await supabase.from('customers').select('*').eq('is_active', true).order('name')
+    const customerRes = await withRetry(async () => await supabase.from('customers').select('*').eq('is_active', true).order('name'))
     if (customerRes.error) throw customerRes.error
 
     setProducts(productRes.data ?? [])

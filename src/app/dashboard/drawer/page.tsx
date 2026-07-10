@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { createClient, withRetry } from '@/lib/supabase'
 import { SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatMoney, formatDateTime } from '@/lib/format'
@@ -43,11 +43,11 @@ export default function DrawerPage() {
   async function fetchData() {
     try {
       const today = new Date().toISOString().split('T')[0]
-      const { data, error } = await supabase.from('drawer_balances').select('*').eq('date', today).order('updated_at', { ascending: false })
+      const { data, error } = await withRetry(async () => await supabase.from('drawer_balances').select('*').eq('date', today).order('updated_at', { ascending: false }))
       if (error) throw error
       let current = data && data.length > 0 ? data[0] : null
       if (!current) {
-        const { data: latest, error: latestError } = await supabase.from('drawer_balances').select('*').order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(1)
+        const { data: latest, error: latestError } = await withRetry(async () => await supabase.from('drawer_balances').select('*').order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(1))
         if (latestError) throw latestError
         current = latest && latest.length > 0 ? latest[0] : null
       }
