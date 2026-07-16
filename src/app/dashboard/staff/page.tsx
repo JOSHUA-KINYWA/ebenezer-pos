@@ -10,7 +10,6 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { Modal } from '@/components/Modal'
 import { CashierDeviceApproval, SessionUser, User, PendingAccount } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatDate } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
 import { validateStaffForm } from '@/lib/validators'
 import { hashPin } from '@/lib/pin-hash'
@@ -254,7 +253,7 @@ export default function StaffPage() {
     setLoading(true)
     try {
       const [{ data: staffData, error: staffError }, { data: pendingData, error: pendingError }, { data: deviceData, error: deviceError }] = await Promise.all([
-        supabase.from('users').select('id, full_name, email, role, is_active, last_login, created_at').order('full_name'),
+        supabase.from('users').select('id, full_name, email, role, is_active, created_at').order('full_name'),
         supabase.from('pending_accounts').select('*').eq('status', 'pending').order('created_at'),
         supabase
           .from('cashier_device_approvals')
@@ -431,14 +430,14 @@ export default function StaffPage() {
         )}
 
         <div className="card overflow-x-auto">
-          <table className="w-full min-w-[700px]">
+          <table className="w-full min-w-[650px]">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
               <tr>
                 <th className="table-head">Name</th>
                 <th className="table-head">Email</th>
                 <th className="table-head">Role</th>
                 <th className="table-head">Status</th>
-                <th className="table-head">Last login</th>
+                <th className="table-head text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -457,7 +456,6 @@ export default function StaffPage() {
                         {member.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="table-cell text-slate-500">{member.last_login ? formatDate(member.last_login) : '—'}</td>
                     <td className="table-cell text-right space-x-2">
                       <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
                       <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Trash2 className="inline w-4 h-4" /></button>

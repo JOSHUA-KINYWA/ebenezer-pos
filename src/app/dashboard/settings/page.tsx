@@ -236,7 +236,7 @@ export default function SettingsPage() {
 
   async function fetchStaff() {
     try {
-      const { data, error } = await supabase.from('users').select('id, full_name, email, role, is_active, last_login, created_at').order('full_name')
+      const { data, error } = await supabase.from('users').select('id, full_name, email, role, is_active, created_at').order('full_name')
       if (error) throw error
       setStaff((data || []) as User[])
     } catch (err) {

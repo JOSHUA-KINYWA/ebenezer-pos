@@ -3,6 +3,14 @@
 --
 -- Run once in the Supabase SQL Editor for existing databases.
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+
+ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
+ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS note text;
+
 CREATE TABLE IF NOT EXISTS drawer_balance_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   drawer_balance_id uuid REFERENCES drawer_balances(id) ON DELETE SET NULL,

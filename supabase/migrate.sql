@@ -103,6 +103,13 @@ UPDATE products SET initial_stock = stock_qty WHERE initial_stock = 0 OR initial
 
 -- Staff account support
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+
+ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
+ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS note text;
 
 -- Support decimal quantities for items sold by weight/volume (drop views first)
 DROP VIEW IF EXISTS daily_sales_summary;
