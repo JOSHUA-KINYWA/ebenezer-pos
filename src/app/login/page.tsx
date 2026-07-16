@@ -77,6 +77,14 @@ export default function LoginPage() {
       }
     }
 
+    const { error: loginUpdateError } = await supabase
+      .from('users')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', data.id)
+    if (loginUpdateError) {
+      console.error('Failed to update last login', loginUpdateError)
+    }
+
     setSession(toSessionUser(data))
     router.push('/dashboard')
   }

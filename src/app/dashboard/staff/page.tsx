@@ -10,7 +10,7 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { Modal } from '@/components/Modal'
 import { CashierDeviceApproval, SessionUser, User, PendingAccount } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
 import { validateStaffForm } from '@/lib/validators'
 import { hashPin } from '@/lib/pin-hash'
@@ -254,7 +254,7 @@ export default function StaffPage() {
     setLoading(true)
     try {
       const [{ data: staffData, error: staffError }, { data: pendingData, error: pendingError }, { data: deviceData, error: deviceError }] = await Promise.all([
-        supabase.from('users').select('id, full_name, email, role, is_active, created_at').order('full_name'),
+        supabase.from('users').select('id, full_name, email, role, is_active, last_login, created_at').order('full_name'),
         supabase.from('pending_accounts').select('*').eq('status', 'pending').order('created_at'),
         supabase
           .from('cashier_device_approvals')
@@ -299,6 +299,16 @@ export default function StaffPage() {
     ),
     [staff, search]
   )
+
+  const deviceAccessByUser = useMemo(() => {
+    const map = new Map<string, CashierDeviceApproval[]>()
+    deviceApprovals.forEach(item => {
+      const existing = map.get(item.user_id) || []
+      existing.push(item)
+      map.set(item.user_id, existing)
+    })
+    return map
+  }, [deviceApprovals])
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading staff..." /></div>
 
@@ -371,17 +381,54 @@ export default function StaffPage() {
           </div>
         </div>
 
-        {deviceApprovals.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-2">
           <div className="card p-4">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Cashier Device Access</h3>
-                <p className="text-sm text-slate-500">Approve a cashier browser/device for a limited duration.</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-amber-50 p-2 text-amber-700">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Account Approvals</h3>
+                  <p className="text-sm text-slate-500">Review cashier signup requests.</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowPending(true)} className="btn-primary text-sm">
+                Review {pendingRequests.length ? `(${pendingRequests.length})` : ''}
+              </button>
+            </div>
+          </div>
+
+          <div className="card p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-blue-50 p-2 text-blue-700">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Device Access</h3>
+                  <p className="text-sm text-slate-500">Approve cashier browsers/devices for limited time.</p>
+                </div>
               </div>
               <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
                 {deviceApprovals.filter(item => item.status === 'pending').length} pending
               </span>
             </div>
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Cashier Device Access</h3>
+              <p className="text-sm text-slate-500">Devices appear here after a cashier tries to log in from a browser.</p>
+            </div>
+          </div>
+          {deviceApprovals.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+              No cashier device requests yet.
+            </div>
+          ) : (
             <div className="space-y-3">
               {deviceApprovals.map(item => {
                 const cashier = item.user as User | undefined
@@ -427,42 +474,59 @@ export default function StaffPage() {
                 )
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="card overflow-x-auto">
-          <table className="w-full min-w-[650px]">
+          <table className="w-full min-w-[900px]">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
               <tr>
                 <th className="table-head">Name</th>
                 <th className="table-head">Email</th>
                 <th className="table-head">Role</th>
                 <th className="table-head">Status</th>
+                <th className="table-head">Last login</th>
+                <th className="table-head">Device access</th>
                 <th className="table-head text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500">No matching staff found.</td>
+                  <td colSpan={7} className="p-8 text-center text-slate-500">No matching staff found.</td>
                 </tr>
               ) : (
-                filtered.map(member => (
-                  <tr key={member.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                    <td className="table-cell font-medium text-slate-900">{member.full_name}</td>
-                    <td className="table-cell text-slate-500">{member.email || '—'}</td>
-                    <td className="table-cell capitalize">{member.role}</td>
-                    <td className="table-cell">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${member.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                        {member.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="table-cell text-right space-x-2">
-                      <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
-                      <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Trash2 className="inline w-4 h-4" /></button>
-                    </td>
-                  </tr>
-                ))
+                filtered.map(member => {
+                  const memberDevices = deviceAccessByUser.get(member.id) || []
+                  const pendingDevices = memberDevices.filter(item => item.status === 'pending').length
+                  const approvedDevices = memberDevices.filter(item => item.status === 'approved' && (!item.expires_at || new Date(item.expires_at).getTime() > Date.now())).length
+                  return (
+                    <tr key={member.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                      <td className="table-cell font-medium text-slate-900">{member.full_name}</td>
+                      <td className="table-cell text-slate-500">{member.email || '—'}</td>
+                      <td className="table-cell capitalize">{member.role}</td>
+                      <td className="table-cell">
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${member.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                          {member.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="table-cell text-slate-500">{member.last_login ? formatDateTime(member.last_login) : 'Never'}</td>
+                      <td className="table-cell">
+                        {member.role === 'cashier' ? (
+                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${pendingDevices ? 'bg-amber-100 text-amber-700' : approvedDevices ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                            {pendingDevices ? `${pendingDevices} pending` : approvedDevices ? `${approvedDevices} approved` : 'No device'}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">Owner</span>
+                        )}
+                      </td>
+                      <td className="table-cell text-right space-x-2">
+                        <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
+                        <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Trash2 className="inline w-4 h-4" /></button>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>

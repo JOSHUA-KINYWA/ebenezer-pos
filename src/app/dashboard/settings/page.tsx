@@ -674,11 +674,16 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-bold text-slate-900">Staff</h3>
-                <p className="text-sm text-slate-500">Create and manage cashier accounts.</p>
+                <p className="text-sm text-slate-500">Quick account list. Use Staff Management for approvals and device access.</p>
               </div>
-              <button onClick={() => { resetStaffForm(); setStaffModalOpen(true) }} className="btn-primary inline-flex items-center gap-2 text-sm">
-                <Plus className="w-4 h-4" /> Add Cashier
-              </button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button onClick={() => router.push('/dashboard/staff')} className="btn-secondary inline-flex items-center gap-2 text-sm">
+                  Staff Management
+                </button>
+                <button onClick={() => { resetStaffForm(); setStaffModalOpen(true) }} className="btn-primary inline-flex items-center gap-2 text-sm">
+                  <Plus className="w-4 h-4" /> Add Cashier
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200">
