@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient, withRetry } from '@/lib/supabase'
 import { SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatDateTime } from '@/lib/format'
+import { formatMoney, formatDateTime, getLocalDateString } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -26,6 +26,7 @@ export default function DrawerPage() {
   const [saving, setSaving] = useState(false)
   const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const [history, setHistory] = useState<any[]>([])
+  const [balanceId, setBalanceId] = useState<string | null>(null)
   const { settings } = useShopSettings()
   const toast = useToast()
   const supabase = createClient()
@@ -42,7 +43,7 @@ export default function DrawerPage() {
 
   async function fetchData() {
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const today = getLocalDateString()
       const { data, error } = await withRetry(async () => await supabase.from('drawer_balances').select('*').eq('date', today).order('updated_at', { ascending: false }))
       if (error) throw error
       let current = data && data.length > 0 ? data[0] : null
@@ -52,17 +53,25 @@ export default function DrawerPage() {
         current = latest && latest.length > 0 ? latest[0] : null
       }
       if (current) {
+        setBalanceId(current.id)
         setCash(Number(current.cash || 0).toString())
         setCoin(Number(current.coin || 0).toString())
         setTill(Number(current.till || 0).toString())
         setNote(current.note?.toString() || '')
       } else {
+        setBalanceId(null)
         setCash('0')
         setCoin('0')
         setTill('0')
         setNote('')
       }
-      setHistory(data || [])
+      const { data: logs } = await supabase
+        .from('drawer_balance_logs')
+        .select('*')
+        .eq('date', today)
+        .order('created_at', { ascending: false })
+        .limit(100)
+      setHistory(logs && logs.length > 0 ? logs : data || [])
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load drawer data'
@@ -83,7 +92,7 @@ export default function DrawerPage() {
         setConfirm(null)
         setSaving(true)
         try {
-          const today = new Date().toISOString().split('T')[0]
+          const today = getLocalDateString()
           const newCash = parseFloat(cash) || 0
           const newCoin = parseFloat(coin) || 0
           const newTill = parseFloat(till) || 0
@@ -95,6 +104,11 @@ export default function DrawerPage() {
             .is('shift_id', null)
             .maybeSingle()
 
+          const previousCash = existing ? Number(existing.cash || 0) : 0
+          const previousCoin = existing ? Number(existing.coin || 0) : 0
+          const previousTill = existing ? Number(existing.till || 0) : 0
+          let drawerBalanceId = existing?.id || balanceId
+
           if (existing) {
             const { error: updateError } = await supabase.from('drawer_balances').update({
               cash: newCash,
@@ -105,16 +119,35 @@ export default function DrawerPage() {
             }).eq('id', existing.id)
             if (updateError) throw updateError
           } else {
-            const { error: insertError } = await supabase.from('drawer_balances').insert({
+            const { data: inserted, error: insertError } = await supabase.from('drawer_balances').insert({
               date: today,
               shift_id: null,
               cash: newCash,
               coin: newCoin,
               till: newTill,
               note: note || null,
-            })
+            }).select('id').single()
             if (insertError) throw insertError
+            drawerBalanceId = inserted?.id || null
           }
+
+          await supabase.from('drawer_balance_logs').insert({
+            drawer_balance_id: drawerBalanceId,
+            date: today,
+            shift_id: null,
+            action: 'manual_count',
+            cash_before: previousCash,
+            coin_before: previousCoin,
+            till_before: previousTill,
+            cash_after: newCash,
+            coin_after: newCoin,
+            till_after: newTill,
+            cash_delta: newCash - previousCash,
+            coin_delta: newCoin - previousCoin,
+            till_delta: newTill - previousTill,
+            note: note || null,
+            user_id: user?.id || null,
+          })
 
           toast.success('✓ Balance saved successfully')
           setError(null)
@@ -311,33 +344,40 @@ export default function DrawerPage() {
             
             <div className="space-y-3">
               {history.map((h, idx) => {
-                const hCash = Number(h.cash || 0)
-                const hCoin = Number(h.coin || 0)
-                const hTill = Number(h.till || 0)
+                const hCash = Number(h.cash_after ?? h.cash ?? 0)
+                const hCoin = Number(h.coin_after ?? h.coin ?? 0)
+                const hTill = Number(h.till_after ?? h.till ?? 0)
                 const hTotal = hCash + hCoin + hTill
+                const cashDelta = Number(h.cash_delta || 0)
+                const coinDelta = Number(h.coin_delta || 0)
+                const tillDelta = Number(h.till_delta || 0)
                 return (
                   <div key={h.id} className="grid grid-cols-1 sm:grid-cols-5 gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-slate-300 transition-all hover:shadow-sm">
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Time</p>
-                      <p className="font-medium text-slate-900">{formatDateTime(h.updated_at)}</p>
+                      <p className="font-medium text-slate-900">{formatDateTime(h.created_at || h.updated_at)}</p>
+                      {h.action && <p className="text-xs text-slate-400 capitalize">{String(h.action).replace('_', ' ')}</p>}
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                         <Wallet className="w-3 h-3 text-amber-600" />Cash
                       </p>
                       <p className="font-medium text-slate-900">{formatMoney(hCash, settings.currency)}</p>
+                      {cashDelta !== 0 && <p className="text-xs text-slate-400">{cashDelta > 0 ? '+' : ''}{formatMoney(cashDelta, settings.currency)}</p>}
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                         <Coins className="w-3 h-3 text-blue-600" />Coins
                       </p>
                       <p className="font-medium text-slate-900">{formatMoney(hCoin, settings.currency)}</p>
+                      {coinDelta !== 0 && <p className="text-xs text-slate-400">{coinDelta > 0 ? '+' : ''}{formatMoney(coinDelta, settings.currency)}</p>}
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                         <CreditCard className="w-3 h-3 text-emerald-600" />Till
                       </p>
                       <p className="font-medium text-slate-900">{formatMoney(hTill, settings.currency)}</p>
+                      {tillDelta !== 0 && <p className="text-xs text-slate-400">{tillDelta > 0 ? '+' : ''}{formatMoney(tillDelta, settings.currency)}</p>}
                     </div>
                     <div className="border-l border-slate-200 pl-4">
                       <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total</p>

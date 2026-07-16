@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
 import { ShoppingBag, Loader2, CheckCircle2 } from 'lucide-react'
 
 export default function RequestAccountPage() {
@@ -20,35 +19,27 @@ export default function RequestAccountPage() {
     setLoading(true)
     setError('')
 
-    const supabase = createClient()
     const trimmedEmail = email.trim().toLowerCase()
 
-    const { data: existing } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', trimmedEmail)
-      .maybeSingle()
-
-    if (existing) {
-      setError('This email is already registered. Contact the owner for access.')
-      setLoading(false)
-      return
-    }
-
-    const { error: insertError } = await supabase
-      .from('pending_accounts')
-      .insert([{
-        full_name: fullName.trim(),
-        email: trimmedEmail,
-        requested_role: role,
-        status: 'pending',
-      }])
-
-    if (insertError) {
-      setError('Unable to submit request. Please try again.')
-      console.error(insertError)
-    } else {
+    try {
+      const res = await fetch('/api/account-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: trimmedEmail,
+          requestedRole: role,
+        }),
+      })
+      const result = await res.json()
+      if (!res.ok) {
+        setError(result.error || 'Unable to submit request. Please try again.')
+        setLoading(false)
+        return
+      }
       setSuccess(true)
+    } catch (requestError) {
+      setError('Unable to submit request. Please try again.')
     }
 
     setLoading(false)

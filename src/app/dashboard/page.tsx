@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { SessionUser, Sale, DailySalesSummary, User, Expense } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatDate } from '@/lib/format'
+import { formatMoney, formatDate, getLocalDateString } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -67,7 +67,7 @@ export default function DashboardPage() {
     try {
       setLoading(true)
       const now = new Date()
-      const today = now.toISOString().split('T')[0]
+      const today = getLocalDateString(now)
       const since = range === 'today' ? today : new Date(Date.now() - (parseInt(range) * 24 * 60 * 60 * 1000)).toISOString()
 
       const { data: salesData } = await supabase

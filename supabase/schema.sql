@@ -432,3 +432,55 @@ CREATE TABLE IF NOT EXISTS drawer_balances (
 
 CREATE INDEX IF NOT EXISTS idx_drawer_balances_date ON drawer_balances(date);
 CREATE INDEX IF NOT EXISTS idx_drawer_balances_shift_id ON drawer_balances(shift_id);
+
+-- Drawer balance history (manual counts and adjustments)
+CREATE TABLE IF NOT EXISTS drawer_balance_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  drawer_balance_id uuid REFERENCES drawer_balances(id) ON DELETE SET NULL,
+  date date NOT NULL DEFAULT CURRENT_DATE,
+  shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
+  action text NOT NULL DEFAULT 'manual_count',
+  cash_before numeric(12,2) NOT NULL DEFAULT 0,
+  coin_before numeric(12,2) NOT NULL DEFAULT 0,
+  till_before numeric(12,2) NOT NULL DEFAULT 0,
+  cash_after numeric(12,2) NOT NULL DEFAULT 0,
+  coin_after numeric(12,2) NOT NULL DEFAULT 0,
+  till_after numeric(12,2) NOT NULL DEFAULT 0,
+  cash_delta numeric(12,2) NOT NULL DEFAULT 0,
+  coin_delta numeric(12,2) NOT NULL DEFAULT 0,
+  till_delta numeric(12,2) NOT NULL DEFAULT 0,
+  note text,
+  user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_drawer_balance_logs_date ON drawer_balance_logs(date);
+CREATE INDEX IF NOT EXISTS idx_drawer_balance_logs_balance_id ON drawer_balance_logs(drawer_balance_id);
+
+ALTER TABLE drawer_balance_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "pos_public_drawer_balance_logs" ON drawer_balance_logs;
+CREATE POLICY "pos_public_drawer_balance_logs" ON drawer_balance_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- Cashier device login approvals
+CREATE TABLE IF NOT EXISTS cashier_device_approvals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_id text NOT NULL,
+  device_name text,
+  status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'revoked')) DEFAULT 'pending',
+  requested_duration_hours integer NOT NULL DEFAULT 12,
+  approved_duration_hours integer,
+  expires_at timestamptz,
+  reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_status ON cashier_device_approvals(status);
+CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_user_id ON cashier_device_approvals(user_id);
+
+ALTER TABLE cashier_device_approvals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "pos_public_cashier_device_approvals" ON cashier_device_approvals;
+CREATE POLICY "pos_public_cashier_device_approvals" ON cashier_device_approvals FOR ALL USING (true) WITH CHECK (true);

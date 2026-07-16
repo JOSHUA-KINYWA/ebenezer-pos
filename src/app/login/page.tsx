@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { setSession, toSessionUser } from '@/lib/auth'
+import { getDeviceId, getDeviceName, setSession, toSessionUser } from '@/lib/auth'
 import { hashPin } from '@/lib/pin-hash'
 import { ShoppingBag, Loader2, Shield } from 'lucide-react'
 
@@ -44,6 +44,36 @@ export default function LoginPage() {
         .eq('id', data.id)
       if (updateError) {
         console.error('Failed to migrate PIN to hash', updateError)
+      }
+    }
+
+    if (data.role === 'cashier') {
+      const deviceId = getDeviceId()
+      const now = new Date().toISOString()
+      const { data: approval } = await supabase
+        .from('cashier_device_approvals')
+        .select('id, expires_at')
+        .eq('user_id', data.id)
+        .eq('device_id', deviceId)
+        .eq('status', 'approved')
+        .gt('expires_at', now)
+        .maybeSingle()
+
+      if (!approval) {
+        const deviceName = getDeviceName()
+        await supabase
+          .from('cashier_device_approvals')
+          .upsert({
+            user_id: data.id,
+            device_id: deviceId,
+            device_name: deviceName,
+            status: 'pending',
+            requested_duration_hours: 12,
+            updated_at: now,
+          }, { onConflict: 'user_id,device_id' })
+        setError('This cashier device is waiting for owner approval. Ask the owner to approve it from Staff.')
+        setLoading(false)
+        return
       }
     }
 

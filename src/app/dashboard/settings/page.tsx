@@ -182,6 +182,7 @@ export default function SettingsPage() {
       onConfirm: async () => {
         setConfirm(null)
         try {
+          await clearTable('drawer_balance_logs')
           await clearTable('drawer_balances')
           toast.success('All drawer balances reset')
           refresh()
@@ -201,7 +202,7 @@ export default function SettingsPage() {
       onConfirm: async () => {
         setConfirm(null)
         try {
-          const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balances', 'stock_log', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
+          const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balance_logs', 'drawer_balances', 'stock_log', 'cashier_device_approvals', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
 
           for (const tableName of tablesToClear) {
             await clearTable(tableName)

@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Modal } from '@/components/Modal'
-import { SessionUser, User, PendingAccount } from '@/types'
+import { CashierDeviceApproval, SessionUser, User, PendingAccount } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatDate } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
@@ -29,6 +29,7 @@ export default function StaffPage() {
   const [staffErrors, setStaffErrors] = useState<Record<string, string>>({})
   const [savingStaff, setSavingStaff] = useState(false)
   const [pendingRequests, setPendingRequests] = useState<PendingAccount[]>([])
+  const [deviceApprovals, setDeviceApprovals] = useState<CashierDeviceApproval[]>([])
   const [showPending, setShowPending] = useState(false)
   const [reviewingRequest, setReviewingRequest] = useState<PendingAccount | null>(null)
   const [reviewNote, setReviewNote] = useState('')
@@ -130,6 +131,69 @@ export default function StaffPage() {
     }
   }
 
+  async function sendReviewNotice(request: PendingAccount, status: 'approved' | 'rejected') {
+    try {
+      const res = await fetch('/api/account-request/review-notice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+        },
+        body: JSON.stringify({
+          email: request.email,
+          fullName: request.full_name,
+          status,
+          note: reviewNote,
+        }),
+      })
+      if (!res.ok) {
+        toast.info('Account updated, but email notification was not sent.')
+      }
+    } catch {
+      toast.info('Account updated, but email notification was not sent.')
+    }
+  }
+
+  async function approveDevice(request: CashierDeviceApproval, hours: number) {
+    try {
+      const now = new Date()
+      const expiresAt = new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString()
+      const { error } = await supabase
+        .from('cashier_device_approvals')
+        .update({
+          status: 'approved',
+          approved_duration_hours: hours,
+          expires_at: expiresAt,
+          reviewed_by: user?.id,
+          reviewed_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        })
+        .eq('id', request.id)
+      if (error) throw error
+      toast.success('Cashier device approved')
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to approve device'
+      toast.error(message)
+    }
+  }
+
+  async function updateDeviceStatus(request: CashierDeviceApproval, status: 'rejected' | 'revoked') {
+    try {
+      const now = new Date().toISOString()
+      const { error } = await supabase
+        .from('cashier_device_approvals')
+        .update({ status, reviewed_by: user?.id, reviewed_at: now, updated_at: now })
+        .eq('id', request.id)
+      if (error) throw error
+      toast.success(status === 'rejected' ? 'Device request rejected' : 'Device access revoked')
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to update device'
+      toast.error(message)
+    }
+  }
+
   async function handleApproveRequest(request: PendingAccount) {
     if (!newPin.trim() || newPin.trim().length < 4) {
       toast.error('Set a PIN (at least 4 characters) for the new account')
@@ -156,6 +220,7 @@ export default function StaffPage() {
       if (updateError) throw updateError
 
       toast.success(`Account created for ${request.full_name}`)
+      await sendReviewNotice(request, 'approved')
       setReviewingRequest(null)
       setReviewNote('')
       setNewPin('')
@@ -175,6 +240,7 @@ export default function StaffPage() {
       if (error) throw error
 
       toast.success(`Request from ${request.full_name} rejected`)
+      await sendReviewNotice(request, 'rejected')
       setReviewingRequest(null)
       setReviewNote('')
       fetchStaff()
@@ -187,16 +253,23 @@ export default function StaffPage() {
   async function fetchStaff() {
     setLoading(true)
     try {
-      const [{ data: staffData, error: staffError }, { data: pendingData, error: pendingError }] = await Promise.all([
+      const [{ data: staffData, error: staffError }, { data: pendingData, error: pendingError }, { data: deviceData, error: deviceError }] = await Promise.all([
         supabase.from('users').select('id, full_name, email, role, is_active, last_login, created_at').order('full_name'),
         supabase.from('pending_accounts').select('*').eq('status', 'pending').order('created_at'),
+        supabase
+          .from('cashier_device_approvals')
+          .select('*, user:users(id, full_name, email, role, is_active, created_at)')
+          .in('status', ['pending', 'approved'])
+          .order('updated_at', { ascending: false }),
       ])
 
       if (staffError) throw staffError
       if (pendingError) console.error('Failed to load pending requests', pendingError)
+      if (deviceError) console.error('Failed to load device approvals', deviceError)
 
       setStaff((staffData || []) as User[])
       setPendingRequests((pendingData || []) as PendingAccount[])
+      setDeviceApprovals((deviceData || []) as CashierDeviceApproval[])
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load staff'
@@ -297,6 +370,65 @@ export default function StaffPage() {
             <p className="text-sm text-slate-500">{filtered.length} of {staff.length} members</p>
           </div>
         </div>
+
+        {deviceApprovals.length > 0 && (
+          <div className="card p-4">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Cashier Device Access</h3>
+                <p className="text-sm text-slate-500">Approve a cashier browser/device for a limited duration.</p>
+              </div>
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                {deviceApprovals.filter(item => item.status === 'pending').length} pending
+              </span>
+            </div>
+            <div className="space-y-3">
+              {deviceApprovals.map(item => {
+                const cashier = item.user as User | undefined
+                const expired = item.expires_at ? new Date(item.expires_at).getTime() <= Date.now() : false
+                return (
+                  <div key={item.id} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-900">{cashier?.full_name || 'Unknown cashier'}</p>
+                        <p className="text-sm text-slate-500">{cashier?.email}</p>
+                        <p className="text-xs text-slate-400">{item.device_name || 'Unknown device'}</p>
+                        {item.status === 'approved' && item.expires_at && (
+                          <p className={`text-xs ${expired ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {expired ? 'Expired' : 'Approved'} until {new Date(item.expires_at).toLocaleString('en-KE')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {item.status === 'pending' ? (
+                          <>
+                            {[2, 8, 24, 168].map(hours => (
+                              <button
+                                key={hours}
+                                type="button"
+                                onClick={() => approveDevice(item, hours)}
+                                className="btn-secondary text-xs"
+                              >
+                                {hours === 168 ? '7 days' : `${hours}h`}
+                              </button>
+                            ))}
+                            <button type="button" onClick={() => updateDeviceStatus(item, 'rejected')} className="btn-danger text-xs">
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => updateDeviceStatus(item, 'revoked')} className="btn-danger text-xs">
+                            Revoke
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="card overflow-x-auto">
           <table className="w-full min-w-[700px]">

@@ -5,8 +5,9 @@ let transporter: nodemailer.Transporter | null = null
 export function getEmailTransporter() {
   if (transporter) return transporter
   const smtpKey = process.env.BREVO_SMTP_KEY
-  if (!smtpKey) {
-    console.warn('BREVO_SMTP_KEY not configured')
+  const smtpUser = process.env.BREVO_SMTP_USER
+  if (!smtpKey || !smtpUser) {
+    console.warn('BREVO_SMTP_KEY and BREVO_SMTP_USER must be configured')
     return null
   }
   transporter = nodemailer.createTransport({
@@ -14,7 +15,7 @@ export function getEmailTransporter() {
     port: 587,
     secure: false,
     auth: {
-      user: 'b0bbe0001@smtp-brevo.com',
+      user: smtpUser,
       pass: smtpKey,
     },
   })
@@ -24,7 +25,7 @@ export function getEmailTransporter() {
 export async function sendEmail(to: string, subject: string, html: string) {
   const t = getEmailTransporter()
   if (!t) throw new Error('Email not configured')
-  const from = `"Ebenezar POS" <${process.env.SHOP_EMAIL || 'noreply@ebenezer-pos.com'}>`
+  const from = `"Ebenezar POS" <${process.env.SHOP_EMAIL || process.env.BREVO_SMTP_USER}>`
   return t.sendMail({ from, to, subject, html })
 }
 

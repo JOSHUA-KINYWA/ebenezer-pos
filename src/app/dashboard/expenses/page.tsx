@@ -11,7 +11,7 @@ import { Modal } from '@/components/Modal'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { getSession } from '@/lib/auth'
-import { formatDate, formatMoney } from '@/lib/format'
+import { formatDate, formatMoney, getLocalDateString } from '@/lib/format'
 import { Expense, SessionUser } from '@/types'
 import { Search, Filter, Plus, ArrowDownRight, ArrowUpRight, Trash2 } from 'lucide-react'
 
@@ -44,7 +44,7 @@ export default function ExpensesPage() {
     category: '',
     payment_note: '',
   })
-  const today = useRef(new Date().toISOString().split('T')[0])
+  const today = useRef(getLocalDateString())
   const { settings } = useShopSettings()
   const toast = useToast()
   const router = useRouter()
@@ -117,6 +117,10 @@ export default function ExpensesPage() {
   )
 
   async function handleDeleteExpense(expense: Expense) {
+    if (user?.role !== 'owner') {
+      toast.error('Only owners can delete expenses')
+      return
+    }
     setConfirm({
       title: 'Delete expense',
       description: `Delete "${expense.item_name}"?${expense.cash_deducted ? ` Cash ${formatMoney(Number(expense.cash_deducted), settings.currency)} will be restored to cash drawer.` : ''}${expense.coin_deducted ? ` Coin ${formatMoney(Number(expense.coin_deducted), settings.currency)} will be restored to coin drawer.` : ''}${expense.till_deducted ? ` Till ${formatMoney(Number(expense.till_deducted), settings.currency)} will be restored to till drawer.` : ''}`,
@@ -328,7 +332,7 @@ export default function ExpensesPage() {
   if (error) return <div className="flex items-center justify-center py-20 text-center text-sm text-red-600">{error}</div>
 
   return (
-    <RoleGuard allowed={['owner']}>
+    <RoleGuard allowed={['owner', 'cashier']}>
       <div className="space-y-6">
         <PageHeader title="Expenses" description="Record and monitor shop costs" />
 
@@ -460,7 +464,7 @@ export default function ExpensesPage() {
                   <th className="table-head">Category</th>
                   <th className="table-head">Method</th>
                   <th className="table-head text-right">Amount</th>
-                  <th className="table-head text-right">Actions</th>
+                  {user?.role === 'owner' && <th className="table-head text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -472,15 +476,17 @@ export default function ExpensesPage() {
                     <td className="table-cell text-slate-500">{expense.category || '—'}</td>
                     <td className="table-cell capitalize">{expense.payment_method}</td>
                     <td className="table-cell text-right font-semibold text-red-600">-{formatMoney(Number(expense.amount), settings.currency)}</td>
-                    <td className="table-cell text-right">
-                      <button
-                        onClick={() => handleDeleteExpense(expense)}
-                        disabled={deletingExpenseId === expense.id}
-                        className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 disabled:opacity-60"
-                      >
-                        <Trash2 className="w-4 h-4" /> {deletingExpenseId === expense.id ? 'Removing...' : 'Delete'}
-                      </button>
-                    </td>
+                    {user?.role === 'owner' && (
+                      <td className="table-cell text-right">
+                        <button
+                          onClick={() => handleDeleteExpense(expense)}
+                          disabled={deletingExpenseId === expense.id}
+                          className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 disabled:opacity-60"
+                        >
+                          <Trash2 className="w-4 h-4" /> {deletingExpenseId === expense.id ? 'Removing...' : 'Delete'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

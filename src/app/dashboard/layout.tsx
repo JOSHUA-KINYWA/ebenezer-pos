@@ -13,7 +13,7 @@ import { canAccessRoute } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { formatMoney } from '@/lib/format'
+import { formatMoney, getLocalDateString } from '@/lib/format'
 
 const nav = [
   { href: '/dashboard', icon: ShoppingBag, label: 'Dashboard', roles: ['owner', 'cashier'] },
@@ -22,7 +22,7 @@ const nav = [
   { href: '/dashboard/products', icon: Box, label: 'Products', roles: ['owner'] },
   { href: '/dashboard/stock', icon: Package, label: 'Stock', roles: ['owner', 'cashier'] },
   { href: '/dashboard/drawer', icon: Wallet, label: 'Drawer', roles: ['owner', 'cashier'] },
-  { href: '/dashboard/expenses', icon: Package, label: 'Expenses', roles: ['owner'] },
+  { href: '/dashboard/expenses', icon: Package, label: 'Expenses', roles: ['owner', 'cashier'] },
   { href: '/dashboard/staff', icon: Users, label: 'Staff', roles: ['owner'] },
   { href: '/dashboard/settings', icon: Settings, label: 'Settings', roles: ['owner'] },
 ]
@@ -86,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   async function fetchDrawer() {
-    const today = new Date().toISOString().split('T')[0]
+    const today = getLocalDateString()
     const { data } = await supabase
       .from('drawer_balances')
       .select('cash, coin, till')

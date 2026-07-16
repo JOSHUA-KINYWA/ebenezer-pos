@@ -2,6 +2,7 @@ import { SessionUser, User } from '@/types'
 
 const SESSION_KEY = 'pos_user'
 const HELD_CART_KEY = 'pos_held_cart'
+const DEVICE_KEY = 'pos_device_id'
 const SESSION_INACTIVITY_MS = 6 * 60 * 60 * 1000 // 6 hours
 
 type StoredSession = SessionUser & {
@@ -70,4 +71,21 @@ export function refreshSession() {
 export function clearSession() {
   localStorage.removeItem(SESSION_KEY)
   localStorage.removeItem(HELD_CART_KEY)
+}
+
+export function getDeviceId() {
+  if (typeof window === 'undefined') return ''
+  const existing = localStorage.getItem(DEVICE_KEY)
+  if (existing) return existing
+  const id = crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  localStorage.setItem(DEVICE_KEY, id)
+  return id
+}
+
+export function getDeviceName() {
+  if (typeof window === 'undefined') return 'Unknown device'
+  const platform = navigator.platform || 'Device'
+  const width = window.screen?.width
+  const height = window.screen?.height
+  return `${platform}${width && height ? ` ${width}x${height}` : ''}`
 }

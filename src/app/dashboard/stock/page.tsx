@@ -65,7 +65,7 @@ export default function StockPage() {
         .from('stock_log')
         .select('*, product:products(name, variety, unit)')
         .order('created_at', { ascending: false })
-        .limit(500)
+        .limit(5000)
       )
       if (logRes.error) throw logRes.error
       const logData = logRes.data || []
@@ -124,6 +124,15 @@ export default function StockPage() {
 
   function getVariants(parentId: string) {
     return inventoryProducts.filter(p => p.parent_product_id === parentId)
+  }
+
+  function getProductAndVariantIds(productId: string): string[] {
+    return [productId, ...getVariants(productId).map(v => v.id)]
+  }
+
+  function getProductMovements(productId: string) {
+    const ids = new Set(getProductAndVariantIds(productId))
+    return stockLog.filter(l => l.product_id && ids.has(l.product_id))
   }
 
   function getAggregateStock(product: Product & { stock_qty: number }): number {
@@ -202,16 +211,14 @@ export default function StockPage() {
 
   const totalBuyingCost = parentProducts.reduce((sum, p) => {
     const variants = getVariants(p.id)
-    const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0)
-    const cost = variants.length === 0 ? (p.cost_price || 0) : p.cost_price || 0
-    return sum + initial * cost
+    if (variants.length === 0) return sum + (p.initial_stock || 0) * (p.cost_price || 0)
+    return sum + variants.reduce((vSum, v) => vSum + (v.initial_stock || 0) * (v.cost_price || 0), 0)
   }, 0)
 
   const totalProfit = parentProducts.reduce((sum, p) => {
     const variants = getVariants(p.id)
-    const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((vSum, v) => vSum + getSoldQty(v.id), 0)
-    const costPrice = p.cost_price || 0
-    return sum + sold * (p.price - costPrice)
+    if (variants.length === 0) return sum + getSoldQty(p.id) * (p.price - (p.cost_price || 0))
+    return sum + variants.reduce((vSum, v) => vSum + getSoldQty(v.id) * (v.price - (v.cost_price || 0)), 0)
   }, 0)
 
   const categoryValues = parentProducts.reduce((acc: Record<string, { qty: number; value: number }>, p) => {
@@ -224,6 +231,30 @@ export default function StockPage() {
     acc[cat].value += value
     return acc
   }, {})
+
+  function getInitialValue(product: Product & { stock_qty: number; initial_stock?: number; price: number }): number {
+    const variants = getVariants(product.id)
+    if (variants.length === 0) return (product.initial_stock || 0) * product.price
+    return variants.reduce((sum, v) => sum + (v.initial_stock || 0) * v.price, 0)
+  }
+
+  function getCurrentValue(product: Product & { stock_qty: number; price: number }): number {
+    const variants = getVariants(product.id)
+    if (variants.length === 0) return product.stock_qty * product.price
+    return variants.reduce((sum, v) => sum + v.stock_qty * v.price, 0)
+  }
+
+  function getSoldValue(product: Product & { price: number }): number {
+    const variants = getVariants(product.id)
+    if (variants.length === 0) return getSoldQty(product.id) * product.price
+    return variants.reduce((sum, v) => sum + getSoldQty(v.id) * v.price, 0)
+  }
+
+  function getCostValue(product: Product & { initial_stock?: number; cost_price: number }): number {
+    const variants = getVariants(product.id)
+    if (variants.length === 0) return (product.initial_stock || 0) * (product.cost_price || 0)
+    return variants.reduce((sum, v) => sum + (v.initial_stock || 0) * (v.cost_price || 0), 0)
+  }
 
   // Monthly profit analytics
   const monthlyProfits = useMemo(() => {
@@ -487,30 +518,35 @@ export default function StockPage() {
             <div className="p-4">
               {selectedProduct ? (
                 <div className="space-y-4">
-                  {stockLog
-                    .filter(l => l.product_id === selectedProduct)
+                  {getProductMovements(selectedProduct)
                     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-                    .map((entry, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 rounded bg-slate-50">
-                        <div className="flex items-center gap-2">
-                          {Number(entry.change_qty) > 0 ? (
-                            <TrendingUp className="w-4 h-4 text-emerald-600" />
-                          ) : (
-                            <TrendingDown className="w-4 h-4 text-red-600" />
-                          )}
-                          <span className="capitalize text-slate-700">{entry.reason || 'adjustment'}</span>
+                    .map((entry, idx) => {
+                      const product = products.find(p => p.id === entry.product_id)
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded bg-slate-50">
+                          <div className="flex items-center gap-2">
+                            {Number(entry.change_qty) > 0 ? (
+                              <TrendingUp className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <TrendingDown className="w-4 h-4 text-red-600" />
+                            )}
+                            <div>
+                              <span className="capitalize text-slate-700">{entry.reason || 'adjustment'}</span>
+                              {product && <span className="text-xs text-slate-400 block">{formatProductName(product)}</span>}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className={Number(entry.change_qty) > 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+                              {Number(entry.change_qty) > 0 ? '+' : ''}{Number(entry.change_qty)}
+                            </span>
+                            <span className="text-xs text-slate-400 block">
+                              {entry.created_at && format(new Date(entry.created_at), 'dd MMM yyyy HH:mm')}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className={Number(entry.change_qty) > 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
-                            {Number(entry.change_qty) > 0 ? '+' : ''}{Number(entry.change_qty)}
-                          </span>
-                          <span className="text-xs text-slate-400 block">
-                            {entry.created_at && format(new Date(entry.created_at), 'dd MMM yyyy HH:mm')}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  {stockLog.filter(l => l.product_id === selectedProduct).length === 0 && (
+                      )
+                    })}
+                  {getProductMovements(selectedProduct).length === 0 && (
                     <p className="text-center text-slate-500 py-8">No movements for this product</p>
                   )}
                 </div>
@@ -565,10 +601,10 @@ export default function StockPage() {
           <div className="space-y-6">
             {/* Stock Summary in amounts */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Initial Value</p><p className="text-xl font-bold text-slate-900">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0); return sum + initial * p.price; }, 0), settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Current Value</p><p className="text-xl font-bold text-emerald-600">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const current = variants.length === 0 ? p.stock_qty : variants.reduce((vSum, v) => vSum + v.stock_qty, 0); return sum + current * p.price; }, 0), settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Sold Value</p><p className="text-xl font-bold text-red-600">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((vSum, v) => vSum + getSoldQty(v.id), 0); return sum + sold * p.price; }, 0), settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Cost Value</p><p className="text-xl font-bold text-amber-600">{formatMoney(parentProducts.reduce((sum, p) => { const variants = getVariants(p.id); const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0); return sum + initial * (p.cost_price || 0); }, 0), settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Initial Value</p><p className="text-xl font-bold text-slate-900">{formatMoney(parentProducts.reduce((sum, p) => sum + getInitialValue(p), 0), settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Current Value</p><p className="text-xl font-bold text-emerald-600">{formatMoney(parentProducts.reduce((sum, p) => sum + getCurrentValue(p), 0), settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Sold Value</p><p className="text-xl font-bold text-red-600">{formatMoney(parentProducts.reduce((sum, p) => sum + getSoldValue(p), 0), settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Cost Value</p><p className="text-xl font-bold text-amber-600">{formatMoney(parentProducts.reduce((sum, p) => sum + getCostValue(p), 0), settings.currency)}</p></div>
             </div>
 
             {/* Stock Reduction Chart */}
@@ -710,9 +746,16 @@ export default function StockPage() {
                   {parentProducts
                     .map(p => {
                       const variants = getVariants(p.id)
-                      const sold = variants.length === 0 ? getSoldQty(p.id) : variants.reduce((sum, v) => sum + getSoldQty(v.id), 0)
-                      const profit = sold * (p.price - (p.cost_price || 0))
-                      return { ...p, sold, profit }
+                      if (variants.length === 0) {
+                        const sold = getSoldQty(p.id)
+                        const profit = sold * (p.price - (p.cost_price || 0))
+                        return { ...p, sold, profit, profitPerUnit: p.price - (p.cost_price || 0), buyingPrice: p.cost_price || 0, sellingPrice: p.price }
+                      }
+                      const sold = variants.reduce((sum, v) => sum + getSoldQty(v.id), 0)
+                      const profit = variants.reduce((sum, v) => sum + getSoldQty(v.id) * (v.price - (v.cost_price || 0)), 0)
+                      const avgBuying = sold > 0 ? variants.reduce((sum, v) => sum + getSoldQty(v.id) * (v.cost_price || 0), 0) / sold : p.cost_price || 0
+                      const avgSelling = sold > 0 ? variants.reduce((sum, v) => sum + getSoldQty(v.id) * v.price, 0) / sold : p.price
+                      return { ...p, sold, profit, profitPerUnit: sold > 0 ? profit / sold : avgSelling - avgBuying, buyingPrice: avgBuying, sellingPrice: avgSelling }
                     })
                     .filter(p => {
                       const matchesSearch = !profitSearch || p.name.toLowerCase().includes(profitSearch.toLowerCase()) || ((p.category as { name?: string })?.name || '').toLowerCase().includes(profitSearch.toLowerCase())
@@ -723,10 +766,10 @@ export default function StockPage() {
                     .map(p => (
                       <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                         <td className="py-2 pl-4 font-medium text-slate-900">{formatProductName(p)}</td>
-                        <td className="py-2 pr-4 text-right">{formatMoney(p.cost_price || 0, settings.currency)}</td>
-                        <td className="py-2 pr-4 text-right">{formatMoney(p.price, settings.currency)}</td>
+                        <td className="py-2 pr-4 text-right">{formatMoney(p.buyingPrice, settings.currency)}</td>
+                        <td className="py-2 pr-4 text-right">{formatMoney(p.sellingPrice, settings.currency)}</td>
                         <td className="py-2 pr-4 text-right">{p.sold.toLocaleString()}</td>
-                        <td className="py-2 pr-4 text-right">{formatMoney(p.price - (p.cost_price || 0), settings.currency)}</td>
+                        <td className="py-2 pr-4 text-right">{formatMoney(p.profitPerUnit, settings.currency)}</td>
                         <td className={`py-2 pr-4 text-right font-medium ${p.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(p.profit, settings.currency)}</td>
                       </tr>
                     ))}

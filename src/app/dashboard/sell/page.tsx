@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient, withRetry } from '@/lib/supabase'
 import { CartItem, Customer, Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatProductName } from '@/lib/format'
+import { formatMoney, formatProductName, getLocalDateString } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -146,7 +146,9 @@ export default function SellPage() {
   }, [parentProducts, search, categoryFilter])
 
   function addToCart(product: Product, tier?: { qty: number; price: number }) {
-    if (product.stock_qty === 0 && !tier) {
+    const currentStock = Number(product.stock_qty || 0)
+
+    if (currentStock === 0 && !tier) {
       toast.error(`⚠️ ${formatProductName(product)} is out of stock!`)
       return
     }
@@ -157,9 +159,9 @@ export default function SellPage() {
 
     const quantity = selectedTier ? selectedTier.qty : 1
     const subtotal = selectedTier ? selectedTier.price : product.price
-    const effectiveStock = selectedTier ? product.stock_qty : product.stock_qty
+    const effectiveStock = currentStock
 
-    if (effectiveStock < quantity && !tier) {
+    if (effectiveStock < quantity) {
       toast.error(`⚠️ ${formatProductName(product)} only has ${product.stock_qty} available`)
       return
     }
@@ -203,17 +205,43 @@ export default function SellPage() {
     addToCart(product)
   }
 
+  function getNormalizedUnit(unit: string): string {
+    return unit.trim().toLowerCase()
+  }
+
   function isDecimalUnit(unit: string): boolean {
-    const decimalUnits = ['liter', 'litre', 'ml', 'gram', 'kg', 'oz', 'lb', 'gallon', 'pint', 'cup', 'tbsp', 'tsp', 'meter', 'm', 'cm', 'km']
-    return decimalUnits.some(u => unit.toLowerCase().includes(u))
+    const normalized = getNormalizedUnit(unit)
+    const decimalUnits = [
+      'kg', 'kgs', 'kilogram', 'kilograms',
+      'g', 'gram', 'grams',
+      'litre', 'litres', 'liter', 'liters', 'l', 'ltr', 'ltrs', 'ml',
+      'oz', 'lb', 'lbs', 'gallon', 'pint', 'cup', 'tbsp', 'tsp',
+      'meter', 'meters', 'metre', 'metres', 'm', 'cm', 'km',
+    ]
+    return decimalUnits.some(u => normalized === u || (u.length > 1 && normalized.includes(u)))
   }
 
   function getIncrementStep(unit: string): number {
-    return isDecimalUnit(unit) ? 0.5 : 1
+    const normalized = getNormalizedUnit(unit)
+    if (normalized === 'g' || normalized.includes('gram') || normalized === 'ml') return 1
+    return isDecimalUnit(unit) ? 0.1 : 1
+  }
+
+  function getMinimumQty(unit: string): number {
+    return isDecimalUnit(unit) ? 0.01 : 1
+  }
+
+  function roundQty(qty: number, unit: string): number {
+    if (!isDecimalUnit(unit)) return Math.max(1, Math.round(qty))
+    return Math.max(getMinimumQty(unit), Math.round(qty * 100) / 100)
+  }
+
+  function roundMoney(amount: number): number {
+    return Math.round(amount * 100) / 100
   }
 
   function formatQtyDisplay(qty: number, unit: string): string {
-    return isDecimalUnit(unit) ? qty.toFixed(2) : qty.toString()
+    return isDecimalUnit(unit) ? roundQty(qty, unit).toFixed(2) : Math.round(qty).toString()
   }
 
   function recalculateCartItem(item: CartItem, qty?: number, amount?: number): CartItem {
@@ -223,29 +251,32 @@ export default function SellPage() {
         const tierMultiples = Math.max(1, Math.round((amount || 0) / tier.price))
         const newQty = tierMultiples * tier.qty
         const newSubtotal = tierMultiples * tier.price
-        return { ...item, quantity: newQty, subtotal: Math.round(newSubtotal * 100) / 100 }
+        return { ...item, quantity: newQty, subtotal: roundMoney(newSubtotal) }
       }
       const targetQty = qty ?? item.quantity
       const tierMultiples = Math.max(1, Math.round(targetQty / tier.qty))
       const newQty = tierMultiples * tier.qty
       const subtotal = tierMultiples * tier.price
-      return { ...item, quantity: newQty, subtotal: Math.round(subtotal * 100) / 100 }
+      return { ...item, quantity: newQty, subtotal: roundMoney(subtotal) }
     }
 
-    const finalQty = Math.round((qty ?? item.quantity) * 100) / 100
-    const finalSubtotal = Math.round((amount ?? item.subtotal) * 100) / 100
     const price = item.product.price || 0
-    const qtyFromAmount = amount !== undefined && price > 0 ? Math.round((amount / price) * 100) / 100 : finalQty
-    return { ...item, quantity: qtyFromAmount, subtotal: finalSubtotal }
+    if (amount !== undefined) {
+      const finalSubtotal = roundMoney(Math.max(0.01, amount))
+      const qtyFromAmount = price > 0 ? roundQty(finalSubtotal / price, item.product.unit) : getMinimumQty(item.product.unit)
+      return { ...item, quantity: qtyFromAmount, subtotal: finalSubtotal }
+    }
+
+    const finalQty = roundQty(qty ?? item.quantity, item.product.unit)
+    return { ...item, quantity: finalQty, subtotal: roundMoney(finalQty * price) }
   }
 
   function updateQty(productId: string, qty: number) {
     const cartItem = cart.find(item => item.product.id === productId)
     if (!cartItem) return
 
-    const isDecimal = isDecimalUnit(cartItem.product.unit)
-    const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
-    const finalQty = isDecimal ? Math.round(validQty * 100) / 100 : Math.round(validQty)
+    const validQty = isNaN(qty) ? getMinimumQty(cartItem.product.unit) : qty
+    const finalQty = roundQty(validQty, cartItem.product.unit)
 
     setCart(prev =>
       prev.map(item =>
@@ -277,7 +308,7 @@ export default function SellPage() {
     if (!cartItem) return
 
     const step = getIncrementStep(cartItem.product.unit)
-    const newQty = Math.max(0.01, cartItem.quantity - step)
+    const newQty = Math.max(getMinimumQty(cartItem.product.unit), cartItem.quantity - step)
 
     setCart(prev =>
       prev.map(item =>
@@ -294,7 +325,7 @@ export default function SellPage() {
         if (item.product.id !== productId) return item
 
         if (saleMode === 'quantity') {
-          const quantity = Math.max(0.01, item.quantity || 1)
+          const quantity = Math.max(getMinimumQty(item.product.unit), item.quantity || getMinimumQty(item.product.unit))
           return recalculateCartItem(item, quantity)
         }
 
@@ -303,11 +334,11 @@ export default function SellPage() {
           const tierMultiples = Math.max(1, Math.round(amount / item.selectedTier.price))
           const quantity = tierMultiples * item.selectedTier.qty
           const subtotal = tierMultiples * item.selectedTier.price
-          return { ...item, saleMode, quantity, subtotal: Math.round(subtotal * 100) / 100 }
+          return { ...item, saleMode, quantity, subtotal: roundMoney(subtotal) }
         }
 
-        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
-        return { ...item, saleMode, quantity, subtotal: Math.round(amount * 100) / 100 }
+        const quantity = item.product.price > 0 ? roundQty(amount / item.product.price, item.product.unit) : getMinimumQty(item.product.unit)
+        return { ...item, saleMode, quantity, subtotal: roundMoney(amount) }
       })
     )
   }
@@ -382,6 +413,9 @@ export default function SellPage() {
   }
 
 async function processCompletion(totalAmount: number) {
+    if (submitting) return
+    setSubmitting(true)
+
     const stockChecks = await Promise.all(
       cart.map(async item => {
         const { data: product, error } = await supabase.from('products').select('id, stock_qty').eq('id', item.product.id).single()
@@ -391,7 +425,14 @@ async function processCompletion(totalAmount: number) {
         }
         return product
       })
-    )
+    ).catch(error => {
+      const message = error instanceof Error ? error.message : 'Unable to verify stock'
+      toast.error(`Stock check failed: ${message}`)
+      setSubmitting(false)
+      return null
+    })
+
+    if (!stockChecks) return
 
     if (!stockChecks.length) {
       toast.error('❌ No items available for sale')
@@ -440,7 +481,7 @@ async function processCompletion(totalAmount: number) {
       }
 
       if (paymentMethod === 'cash' || paymentMethod === 'coin' || paymentMethod === 'till') {
-        const today = new Date().toISOString().split('T')[0]
+        const today = getLocalDateString()
         const { data: existing } = await supabase
           .from('drawer_balances')
           .select('id, cash, coin, till')
@@ -625,7 +666,7 @@ async function processCompletion(totalAmount: number) {
                               <input
                                 type="number"
                                 min="0.01"
-                                step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
+                                step={getIncrementStep(item.product.unit)}
                                 value={formatQtyDisplay(item.quantity, item.product.unit)}
                                 onChange={e => updateQty(item.product.id, Number(e.target.value) || 0.01)}
                                 className="input w-12 text-center border-0 p-0.5 text-xs"
@@ -970,7 +1011,7 @@ async function processCompletion(totalAmount: number) {
                           <button
                             type="button"
                             onClick={() => decreaseQty(item.product.id)}
-                            disabled={item.quantity <= 1}
+                            disabled={item.quantity <= getMinimumQty(item.product.unit)}
                             className="rounded p-1.5 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Decrease quantity"
                           >
@@ -978,10 +1019,10 @@ async function processCompletion(totalAmount: number) {
                           </button>
                           <input
                             type="number"
-                            min="1"
-                            step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
+                            min={getMinimumQty(item.product.unit)}
+                            step={getIncrementStep(item.product.unit)}
                             value={formatQtyDisplay(item.quantity, item.product.unit)}
-                            onChange={e => updateQty(item.product.id, Number(e.target.value) || 1)}
+                            onChange={e => updateQty(item.product.id, Number(e.target.value) || getMinimumQty(item.product.unit))}
                             className="input w-12 border-0 bg-transparent p-1 text-center"
                           />
                           <button

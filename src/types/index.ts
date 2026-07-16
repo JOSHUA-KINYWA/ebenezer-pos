@@ -178,6 +178,22 @@ export interface PendingAccount {
   created_at: string
 }
 
+export interface CashierDeviceApproval {
+  id: string
+  user_id: string
+  device_id: string
+  device_name?: string
+  status: 'pending' | 'approved' | 'rejected' | 'revoked'
+  requested_duration_hours: number
+  approved_duration_hours?: number
+  expires_at?: string
+  reviewed_by?: string
+  reviewed_at?: string
+  created_at: string
+  updated_at?: string
+  user?: User | SessionUser
+}
+
 export interface Shift {
   id: string
   user_id?: string

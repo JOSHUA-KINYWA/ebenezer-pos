@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { DailySalesSummary, ProductSalesSummary, Sale, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatDateTime } from '@/lib/format'
+import { formatMoney, formatDateTime, getLocalDateString } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -75,7 +75,7 @@ export default function ReportsPage() {
       }
 
       const fromDate = since ? since.split('T')[0] : '2000-01-01'
-      const todayDate = new Date().toISOString().split('T')[0]
+      const todayDate = getLocalDateString()
 
       let d: DailySalesSummary[] = []
       let p: ProductSalesSummary[] = []
@@ -127,7 +127,7 @@ export default function ReportsPage() {
         onConfirm: async () => {
           setConfirm(null)
           try {
-            const today = new Date().toISOString().split('T')[0]
+            const today = getLocalDateString()
             if (sale.sale_items) {
               await Promise.all(
                 (sale.sale_items || [])
@@ -209,7 +209,7 @@ export default function ReportsPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `sales-report-${range}d-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `sales-report-${range}d-${getLocalDateString()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
