@@ -72,6 +72,7 @@ export default function SettingsPage() {
   const [staffForm, setStaffForm] = useState({ full_name: '', email: '', role: 'cashier' as 'owner' | 'cashier', pin: '', is_active: true })
   const [staffErrors, setStaffErrors] = useState<Record<string, string>>({})
   const [savingStaff, setSavingStaff] = useState(false)
+  const [deletingStaff, setDeletingStaff] = useState<User | null>(null)
   const [backupData, setBackupData] = useState<FactoryResetBackup | null>(null)
   const [exportingBackup, setExportingBackup] = useState(false)
   const [factoryResetPin, setFactoryResetPin] = useState('')
@@ -371,6 +372,23 @@ export default function SettingsPage() {
       fetchStaff()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to update staff status'
+      toast.error(message)
+    }
+  }
+
+  async function deleteStaff(member: User) {
+    if (member.id === user?.id) {
+      toast.error('You cannot delete your own account')
+      return
+    }
+    try {
+      const { error } = await supabase.from('users').delete().eq('id', member.id)
+      if (error) throw error
+      toast.success(`Deleted ${member.full_name}`)
+      setDeletingStaff(null)
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to delete staff'
       toast.error(message)
     }
   }
@@ -800,6 +818,9 @@ export default function SettingsPage() {
                           <button onClick={() => toggleStaffStatus(member)} className={member.is_active ? 'text-slate-600 hover:text-amber-600' : 'text-slate-600 hover:text-emerald-600'} title={member.is_active ? 'Deactivate' : 'Activate'}>
                             {member.is_active ? <Slash className="inline w-4 h-4" /> : <CheckCircle2 className="inline w-4 h-4" />}
                           </button>
+                          {member.id !== user?.id && (
+                            <button onClick={() => setDeletingStaff(member)} className="text-slate-600 hover:text-red-600" title="Delete staff"><Trash2 className="inline w-4 h-4" /></button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -960,6 +981,26 @@ export default function SettingsPage() {
           }
         >
           <p className="text-sm text-slate-600">{confirm.description}</p>
+        </Modal>
+      )}
+
+      {deletingStaff && (
+        <Modal
+          isOpen={!!deletingStaff}
+          onClose={() => setDeletingStaff(null)}
+          title="Delete Staff Account"
+          description={`This will permanently remove ${deletingStaff.full_name}.`}
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeletingStaff(null)} className="btn-secondary">Cancel</button>
+              <button onClick={() => deleteStaff(deletingStaff)} className="btn-danger inline-flex items-center gap-2">
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
+            </div>
+          }
+          size="md"
+        >
+          <p className="text-sm text-slate-600">This action cannot be undone. All associated device approvals will also be removed.</p>
         </Modal>
       )}
 
