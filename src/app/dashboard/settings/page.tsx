@@ -15,6 +15,7 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { Store, Trash2, Search, Plus, Edit3, Save, RefreshCw, AlertTriangle } from 'lucide-react'
 import { validateCategoryForm, validateProductForm, validateStaffForm } from '@/lib/validators'
 import { hashPin, verifyPin } from '@/lib/pin-hash'
+import { exportFactoryResetBackup, downloadBackupFile, downloadCsvFile, type FactoryResetBackup } from '@/lib/factory-reset-backup'
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -71,6 +72,10 @@ export default function SettingsPage() {
   const [staffForm, setStaffForm] = useState({ full_name: '', email: '', role: 'cashier' as 'owner' | 'cashier', pin: '', is_active: true })
   const [staffErrors, setStaffErrors] = useState<Record<string, string>>({})
   const [savingStaff, setSavingStaff] = useState(false)
+  const [backupData, setBackupData] = useState<FactoryResetBackup | null>(null)
+  const [exportingBackup, setExportingBackup] = useState(false)
+  const [factoryResetPin, setFactoryResetPin] = useState('')
+  const [factoryResetStep, setFactoryResetStep] = useState<'idle' | 'backup' | 'confirm' | 'pin'>('idle')
   const toast = useToast()
   const supabase = createClient()
 
@@ -194,31 +199,72 @@ export default function SettingsPage() {
   }
 
   async function resetFactoryData() {
-    setConfirm({
-      title: 'Factory reset',
-      description: 'Factory reset will remove sales, inventory, expenses, customers, and catalog data. This cannot be undone.',
-      tone: 'danger',
-      confirmLabel: 'Reset everything',
-      onConfirm: async () => {
-        setConfirm(null)
-        try {
-          const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balance_logs', 'drawer_balances', 'stock_log', 'cashier_device_approvals', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
+    setFactoryResetStep('backup')
+    setBackupData(null)
+    setFactoryResetPin('')
+  }
 
-          for (const tableName of tablesToClear) {
-            await clearTable(tableName)
-          }
+  async function handleBackupExport() {
+    setExportingBackup(true)
+    try {
+      const backup = await exportFactoryResetBackup()
+      setBackupData(backup)
+      downloadBackupFile(backup)
+      setFactoryResetStep('confirm')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to export backup'
+      toast.error(message)
+      setFactoryResetStep('idle')
+    } finally {
+      setExportingBackup(false)
+    }
+  }
 
-          setProducts([])
-          setCategories([])
-          setSelectedProduct(null)
-          toast.success('Factory reset complete')
-          refresh()
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Failed to reset factory data'
-          toast.error(message)
-        }
-      },
-    })
+  async function handleFactoryResetConfirm() {
+    setFactoryResetStep('pin')
+  }
+
+  async function handleFactoryResetWithPin() {
+    if (!user) return
+    if (!factoryResetPin.trim()) {
+      toast.error('Enter your PIN to confirm factory reset')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const currentPinHash = await hashPin(factoryResetPin.trim())
+      const { data: existing } = await supabase
+        .from('users')
+        .select('pin')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (!existing || existing.pin !== currentPinHash) {
+        toast.error('PIN is incorrect')
+        setSaving(false)
+        return
+      }
+
+      const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balance_logs', 'drawer_balances', 'stock_log', 'cashier_device_approvals', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
+
+      for (const tableName of tablesToClear) {
+        await clearTable(tableName)
+      }
+
+      setProducts([])
+      setCategories([])
+      setSelectedProduct(null)
+      setFactoryResetStep('idle')
+      setFactoryResetPin('')
+      setBackupData(null)
+      toast.success('Factory reset complete')
+      refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reset factory data'
+      toast.error(message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function fetchCategories() {
@@ -568,6 +614,24 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            <div className="card p-6 border-emerald-100 bg-emerald-50/40">
+              <div className="flex items-start gap-3 mb-4">
+                <Store className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-bold text-slate-900">Backup</h3>
+                  <p className="text-sm text-slate-600 mt-1">Export your current products, categories, stock, and catalog data before making changes.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button onClick={handleBackupExport} disabled={exportingBackup} className="btn-secondary inline-flex items-center justify-center gap-2">
+                  {exportingBackup ? 'Exporting...' : 'Export Backup (JSON)'}
+                </button>
+                <button onClick={async () => { setExportingBackup(true); try { const backup = await exportFactoryResetBackup(); downloadCsvFile(backup); } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to export CSV backup'); } finally { setExportingBackup(false); } }} disabled={exportingBackup} className="btn-secondary inline-flex items-center justify-center gap-2">
+                  Export Backup (CSV)
+                </button>
+              </div>
+            </div>
+
             <div className="card p-6 border-red-100 bg-red-50/40">
               <div className="flex items-start gap-3 mb-4">
                 <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -873,6 +937,72 @@ export default function SettingsPage() {
           }
         >
           <p className="text-sm text-slate-600">{confirm.description}</p>
+        </Modal>
+      )}
+
+      {factoryResetStep === 'backup' && (
+        <Modal
+          isOpen={factoryResetStep === 'backup'}
+          onClose={() => { setFactoryResetStep('idle'); setBackupData(null); }}
+          title="Factory Reset - Step 1"
+          description="Export a backup before resetting."
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setFactoryResetStep('idle'); setBackupData(null); }} className="btn-secondary">Cancel</button>
+              <button onClick={handleBackupExport} disabled={exportingBackup} className="btn-primary">
+                {exportingBackup ? 'Exporting...' : 'Export & Continue'}
+              </button>
+            </div>
+          }
+        >
+          <p className="text-sm text-slate-600 mb-4">A JSON backup of your products, categories, stock, and catalog will be downloaded automatically.</p>
+        </Modal>
+      )}
+
+      {factoryResetStep === 'confirm' && backupData && (
+        <Modal
+          isOpen={factoryResetStep === 'confirm'}
+          onClose={() => { setFactoryResetStep('idle'); setBackupData(null); }}
+          title="Factory Reset - Step 2"
+          description="Confirm the reset."
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setFactoryResetStep('idle'); setBackupData(null); }} className="btn-secondary">Cancel</button>
+              <button onClick={handleFactoryResetConfirm} className="btn-danger">I understand, continue</button>
+            </div>
+          }
+        >
+          <p className="text-sm text-slate-600 mb-2">Backup exported: <strong>{backupData.shopName}</strong></p>
+          <p className="text-sm text-slate-600 mb-4">Exported at: {new Date(backupData.exportedAt).toLocaleString()}</p>
+          <p className="text-sm text-red-600 font-medium">This will permanently delete all sales, inventory, expenses, customers, and catalog data.</p>
+        </Modal>
+      )}
+
+      {factoryResetStep === 'pin' && (
+        <Modal
+          isOpen={factoryResetStep === 'pin'}
+          onClose={() => { setFactoryResetStep('idle'); setFactoryResetPin(''); }}
+          title="Factory Reset - Step 3"
+          description="Enter your PIN to confirm."
+          footer={
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setFactoryResetStep('idle'); setFactoryResetPin(''); }} className="btn-secondary">Cancel</button>
+              <button onClick={handleFactoryResetWithPin} disabled={saving} className="btn-danger">
+                {saving ? 'Resetting...' : 'Confirm Reset'}
+              </button>
+            </div>
+          }
+        >
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-700">Your PIN</span>
+            <input
+              type="password"
+              inputMode="numeric"
+              className="input w-full"
+              value={factoryResetPin}
+              onChange={e => setFactoryResetPin(e.target.value)}
+            />
+          </label>
         </Modal>
       )}
     </RoleGuard>
