@@ -356,26 +356,7 @@ export default function StaffPage() {
                 placeholder="Search staff by name, email, or role"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-        />
-
-        {pendingRequests.length > 0 && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Clock className="w-5 h-5 text-amber-600" />
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{pendingRequests.length} pending account request{pendingRequests.length === 1 ? '' : 's'}</p>
-                <p className="text-xs text-slate-500">Review and approve access for new staff</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowPending(true)}
-              className="btn-primary inline-flex items-center gap-2"
-            >
-              <UserPlus className="w-4 h-4" /> Review Requests
-            </button>
-          </div>
-        )}
+              />
             </div>
             <p className="text-sm text-slate-500">{filtered.length} of {staff.length} members</p>
           </div>
@@ -396,6 +377,30 @@ export default function StaffPage() {
               <button type="button" onClick={() => setShowPending(true)} className="btn-primary text-sm">
                 Review {pendingRequests.length ? `(${pendingRequests.length})` : ''}
               </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {pendingRequests.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+                  No pending account requests. Requests submitted from the Request Account page will appear here.
+                </div>
+              ) : (
+                pendingRequests.slice(0, 3).map(request => (
+                  <div key={request.id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{request.full_name}</p>
+                      <p className="text-xs text-slate-500">{request.email}</p>
+                    </div>
+                    <button type="button" onClick={() => setReviewingRequest(request)} className="btn-primary text-xs">
+                      Approve
+                    </button>
+                  </div>
+                ))
+              )}
+              {pendingRequests.length > 3 && (
+                <button type="button" onClick={() => setShowPending(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+                  View all {pendingRequests.length} requests
+                </button>
+              )}
             </div>
           </div>
 
