@@ -9,7 +9,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Modal } from '@/components/Modal'
 import { CashierDeviceApproval, SessionUser, User, PendingAccount } from '@/types'
-import { getSession } from '@/lib/auth'
+import { getSession, getDeviceId, getDeviceName } from '@/lib/auth'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
 import { validateStaffForm } from '@/lib/validators'
@@ -106,6 +106,27 @@ export default function StaffPage() {
         const { error } = await supabase.from('users').insert(payload)
         if (error) throw error
         toast.success('Staff added successfully')
+
+        if (payload.role === 'cashier') {
+          const now = new Date().toISOString()
+          const expiresAt = new Date(Date.now() + 168 * 60 * 60 * 1000).toISOString()
+          const deviceId = getDeviceId()
+          const deviceName = getDeviceName()
+          const { data: newUser } = await supabase.from('users').select('id').eq('email', payload.email).maybeSingle()
+          if (newUser?.id) {
+            await supabase.from('cashier_device_approvals').upsert({
+              user_id: newUser.id,
+              device_id: deviceId,
+              device_name: deviceName,
+              status: 'approved',
+              approved_duration_hours: 168,
+              expires_at: expiresAt,
+              reviewed_by: user?.id,
+              reviewed_at: now,
+              updated_at: now,
+            }, { onConflict: 'user_id,device_id' })
+          }
+        }
       }
 
       setModalOpen(false)
