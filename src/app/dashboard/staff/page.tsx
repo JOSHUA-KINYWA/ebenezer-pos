@@ -527,7 +527,9 @@ export default function StaffPage() {
                       </td>
                       <td className="table-cell text-right space-x-2">
                         <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
-                        <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Trash2 className="inline w-4 h-4" /></button>
+                        <button onClick={() => toggleStaffStatus(member)} className={member.is_active ? 'text-slate-600 hover:text-amber-600' : 'text-slate-600 hover:text-emerald-600'} title={member.is_active ? 'Deactivate' : 'Activate'}>
+                          {member.is_active ? <Slash className="inline w-4 h-4" /> : <CheckCircle2 className="inline w-4 h-4" />}
+                        </button>
                       </td>
                     </tr>
                   )

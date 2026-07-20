@@ -12,7 +12,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
-import { Store, Trash2, Search, Plus, Edit3, Save, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Store, Trash2, Search, Plus, Edit3, Save, RefreshCw, AlertTriangle, CheckCircle2, Slash } from 'lucide-react'
 import { validateCategoryForm, validateProductForm, validateStaffForm } from '@/lib/validators'
 import { hashPin, verifyPin } from '@/lib/pin-hash'
 import { exportFactoryResetBackup, downloadBackupFile, downloadCsvFile, type FactoryResetBackup } from '@/lib/factory-reset-backup'
@@ -775,8 +775,10 @@ export default function SettingsPage() {
                           </span>
                         </td>
                         <td className="table-cell text-right space-x-2">
-                          <button onClick={() => { setEditingStaff(member); setStaffForm({ full_name: member.full_name || '', email: member.email || '', role: (member.role as 'owner' | 'cashier') || 'cashier', pin: '', is_active: member.is_active }); setStaffModalOpen(true) }} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
-                          <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600"><Trash2 className="inline w-4 h-4" /></button>
+                          <button onClick={() => { setEditingStaff(member); setStaffForm({ full_name: member.full_name || '', email: member.email || '', role: (member.role as 'owner' | 'cashier') || 'cashier', pin: '', is_active: member.is_active }); setStaffModalOpen(true) }} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
+                          <button onClick={() => toggleStaffStatus(member)} className={member.is_active ? 'text-slate-600 hover:text-amber-600' : 'text-slate-600 hover:text-emerald-600'} title={member.is_active ? 'Deactivate' : 'Activate'}>
+                            {member.is_active ? <Slash className="inline w-4 h-4" /> : <CheckCircle2 className="inline w-4 h-4" />}
+                          </button>
                         </td>
                       </tr>
                     ))
