@@ -71,6 +71,21 @@ export default function LoginPage() {
             requested_duration_hours: 12,
             updated_at: now,
           }, { onConflict: 'user_id,device_id' })
+
+        try {
+          await fetch('/api/device-approval/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cashierName: data.full_name,
+              cashierEmail: data.email,
+              deviceName,
+            }),
+          })
+        } catch {
+          // notification failure shouldn't block login
+        }
+
         setError('This cashier device is waiting for owner approval. Ask the owner to approve it from Staff.')
         setLoading(false)
         return

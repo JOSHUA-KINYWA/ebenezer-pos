@@ -103,13 +103,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   async function fetchPendingCount() {
     if (!user || user.role !== 'owner') return
-    const { count } = await supabase
-      .from('pending_accounts')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending')
-    if (typeof count === 'number') {
-      setPendingCount(count)
-    }
+    const [{ count: accountCount }, { count: deviceCount }] = await Promise.all([
+      supabase.from('pending_accounts').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('cashier_device_approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    ])
+    const total = (typeof accountCount === 'number' ? accountCount : 0) + (typeof deviceCount === 'number' ? deviceCount : 0)
+    setPendingCount(total)
   }
 
   async function fetchLowStockCount() {
