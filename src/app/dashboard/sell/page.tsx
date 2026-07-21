@@ -228,12 +228,12 @@ export default function SellPage() {
   }
 
   function getMinimumQty(unit: string): number {
-    return isDecimalUnit(unit) ? 0.01 : 1
+    return isDecimalUnit(unit) ? 0.1 : 1
   }
 
   function roundQty(qty: number, unit: string): number {
     if (!isDecimalUnit(unit)) return Math.max(1, Math.round(qty))
-    return Math.max(getMinimumQty(unit), Math.round(qty * 100) / 100)
+    return Math.max(getMinimumQty(unit), Math.round(qty * 10) / 10)
   }
 
   function roundMoney(amount: number): number {
@@ -241,7 +241,7 @@ export default function SellPage() {
   }
 
   function formatQtyDisplay(qty: number, unit: string): string {
-    return isDecimalUnit(unit) ? roundQty(qty, unit).toFixed(2) : Math.round(qty).toString()
+    return isDecimalUnit(unit) ? roundQty(qty, unit).toFixed(1) : Math.round(qty).toString()
   }
 
   function recalculateCartItem(item: CartItem, qty?: number, amount?: number): CartItem {

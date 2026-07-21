@@ -80,6 +80,10 @@ export default function SettingsPage() {
   const toast = useToast()
   const supabase = createClient()
 
+  function round1(value: number): number {
+    return Math.round(value * 10) / 10
+  }
+
   useEffect(() => {
     const session = getSession()
     if (!session) {
@@ -457,8 +461,8 @@ export default function SettingsPage() {
       parent_product_id: productForm.parent_product_id || null,
       price: parseFloat(productForm.price),
       unit: productForm.unit.trim(),
-      stock_qty: parseFloat(productForm.stock_qty),
-      stock_alert: parseInt(productForm.stock_alert, 10),
+      stock_qty: round1(parseFloat(productForm.stock_qty)),
+      stock_alert: round1(parseInt(productForm.stock_alert, 10)),
       is_active: productForm.is_active,
     }
 

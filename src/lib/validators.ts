@@ -103,6 +103,8 @@ export function validateProductForm(data: {
     const stock = parseFloat(data.stock_qty!.trim())
     if (isNaN(stock) || !isNonNegativeNumber(stock)) {
       result.addError('stock_qty', 'Stock quantity must begin with a valid number')
+    } else if (Math.round(stock * 10) / 10 !== stock) {
+      result.addError('stock_qty', 'Stock quantity must have at most 1 decimal place')
     }
   }
 

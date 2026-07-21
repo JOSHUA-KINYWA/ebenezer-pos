@@ -48,6 +48,10 @@ const initialForm: ProductForm = {
   pricing_tiers: [],
 }
 
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
 export default function ProductsPage() {
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
@@ -237,8 +241,8 @@ export default function ProductsPage() {
       price: parseFloat(form.price),
       cost_price: parseFloat(form.cost_price || '0'),
       unit: form.unit.trim(),
-      stock_qty: parseFloat(form.stock_qty),
-      stock_alert: parseInt(form.stock_alert, 10),
+      stock_qty: round1(parseFloat(form.stock_qty)),
+      stock_alert: round1(parseInt(form.stock_alert, 10)),
       is_active: form.is_active,
       pricing_tiers: normalizedTiers,
     }
@@ -249,7 +253,7 @@ export default function ProductsPage() {
       payload.parent_product_id = form.parent_product_id
     }
     if (!editingProduct) {
-      payload.initial_stock = parseFloat(form.stock_qty)
+      payload.initial_stock = round1(parseFloat(form.stock_qty))
     }
 
     try {
@@ -267,11 +271,11 @@ export default function ProductsPage() {
               price: parseFloat(v.price),
               cost_price: parseFloat(v.cost_price || '0'),
               unit: v.unit.trim(),
-              stock_qty: parseFloat(v.stock_qty),
-              stock_alert: parseInt(v.stock_alert, 10),
+              stock_qty: round1(parseFloat(v.stock_qty)),
+              stock_alert: round1(parseInt(v.stock_alert, 10)),
               is_active: v.is_active,
               parent_product_id: variantParentId,
-              initial_stock: parseFloat(v.stock_qty),
+              initial_stock: round1(parseFloat(v.stock_qty)),
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -297,11 +301,11 @@ export default function ProductsPage() {
               price: parseFloat(v.price),
               cost_price: parseFloat(v.cost_price || '0'),
               unit: v.unit.trim(),
-              stock_qty: parseFloat(v.stock_qty),
-              stock_alert: parseInt(v.stock_alert, 10),
+              stock_qty: round1(parseFloat(v.stock_qty)),
+              stock_alert: round1(parseInt(v.stock_alert, 10)),
               is_active: v.is_active,
               parent_product_id: parentId,
-              initial_stock: parseFloat(v.stock_qty),
+              initial_stock: round1(parseFloat(v.stock_qty)),
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id

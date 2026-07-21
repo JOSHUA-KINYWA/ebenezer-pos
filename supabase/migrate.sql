@@ -115,9 +115,9 @@ ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS note text;
 DROP VIEW IF EXISTS daily_sales_summary;
 DROP VIEW IF EXISTS product_sales_summary;
 
-ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);
-ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING stock_log.change_qty::numeric(12,2);
-ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING sale_items.quantity::numeric(12,2);
+ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,1) USING stock_qty::numeric(12,1);
+ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,1) USING stock_log.change_qty::numeric(12,1);
+ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,1) USING sale_items.quantity::numeric(12,1);
 
 -- Drawer balances: track cash/coin/till per date and shift
 CREATE TABLE IF NOT EXISTS drawer_balances (
@@ -420,9 +420,11 @@ CREATE OR REPLACE FUNCTION adjust_product_stock(
 RETURNS numeric AS $$
 DECLARE
   v_new_stock numeric;
+  v_rounded_qty numeric;
 BEGIN
+  v_rounded_qty := round(p_change_qty::numeric, 1);
   UPDATE products
-  SET stock_qty = stock_qty + p_change_qty, updated_at = now()
+  SET stock_qty = stock_qty + v_rounded_qty, updated_at = now()
   WHERE id = p_product_id
   RETURNING stock_qty INTO v_new_stock;
 
@@ -431,7 +433,7 @@ BEGIN
   END IF;
 
   INSERT INTO stock_log(product_id, user_id, change_qty, reason, note, created_at)
-  VALUES (p_product_id, p_user_id, p_change_qty, p_reason, p_note, now());
+  VALUES (p_product_id, p_user_id, v_rounded_qty, p_reason, p_note, now());
 
   RETURN v_new_stock;
 END;

@@ -18,11 +18,11 @@ DROP VIEW IF EXISTS active_products CASCADE;
 DROP VIEW IF EXISTS inventory_value CASCADE;
 DROP VIEW IF EXISTS sales_by_payment CASCADE;
 
--- Step 2: Alter columns to numeric(12,2) (handles decimal stock/quantity)
-ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING change_qty::numeric(12,2);
-ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);
-ALTER TABLE products ALTER COLUMN stock_alert TYPE numeric(12,2) USING stock_alert::numeric(12,2);
-ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING quantity::numeric(12,2);
+-- Step 2: Alter columns to numeric(12,1) (handles decimal stock/quantity)
+ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,1) USING change_qty::numeric(12,1);
+ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,1) USING stock_qty::numeric(12,1);
+ALTER TABLE products ALTER COLUMN stock_alert TYPE numeric(12,1) USING stock_alert::numeric(12,1);
+ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,1) USING quantity::numeric(12,1);
 ALTER TABLE sale_items ALTER COLUMN subtotal TYPE numeric(12,2) USING subtotal::numeric(12,2);
 ALTER TABLE sale_items ALTER COLUMN unit_price TYPE numeric(12,2) USING unit_price::numeric(12,2);
 ALTER TABLE sales ALTER COLUMN total_amount TYPE numeric(12,2) USING total_amount::numeric(12,2);
@@ -93,7 +93,7 @@ CREATE OR REPLACE VIEW product_sales_summary AS
 SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
-  sum(si.quantity)::numeric(12,2) AS units_sold,
+  sum(si.quantity)::numeric(12,1) AS units_sold,
   coalesce(sum(si.subtotal), 0) AS total_revenue,
   coalesce(sum(si.quantity * p.cost_price), 0) AS total_cost
 FROM sale_items si
@@ -156,10 +156,10 @@ CREATE TABLE IF NOT EXISTS products (
   price numeric(12,2) NOT NULL DEFAULT 0,
   cost_price numeric(12,2) NOT NULL DEFAULT 0,
   unit text NOT NULL DEFAULT 'piece',
-  initial_stock numeric(12,2) NOT NULL DEFAULT 0,
-  stock_qty numeric(12,2) NOT NULL DEFAULT 0,
-  stock_alert numeric(12,2) NOT NULL DEFAULT 10,
-  reorder_qty numeric(12,2) NOT NULL DEFAULT 0,
+  initial_stock numeric(12,1) NOT NULL DEFAULT 0,
+  stock_qty numeric(12,1) NOT NULL DEFAULT 0,
+  stock_alert numeric(12,1) NOT NULL DEFAULT 10,
+  reorder_qty numeric(12,1) NOT NULL DEFAULT 0,
   is_active boolean NOT NULL DEFAULT true,
   pricing_tiers jsonb DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
   sale_id uuid NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
   product_id uuid REFERENCES products(id) ON DELETE SET NULL,
   product_name text NOT NULL,
-  quantity numeric(12,2) NOT NULL CHECK (quantity > 0),
+  quantity numeric(12,1) NOT NULL CHECK (quantity > 0),
   unit_price numeric(12,2) NOT NULL CHECK (unit_price >= 0),
   subtotal numeric(12,2) NOT NULL CHECK (subtotal >= 0),
   created_at timestamptz NOT NULL DEFAULT now()
@@ -269,14 +269,14 @@ CREATE TABLE IF NOT EXISTS stock_log (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   product_id uuid REFERENCES products(id) ON DELETE SET NULL,
   user_id uuid REFERENCES users(id) ON DELETE SET NULL,
-  change_qty numeric(12,2) NOT NULL,
+  change_qty numeric(12,1) NOT NULL,
   reason text NOT NULL CHECK (reason IN ('sale', 'restock', 'adjustment', 'damage', 'return')),
   note text,
   reference_id text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING change_qty::numeric(12,2);
+ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,1) USING change_qty::numeric(12,1);
 
 -- Audit Log (NEW - for security)
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -363,7 +363,7 @@ CREATE OR REPLACE VIEW product_sales_summary AS
 SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
-  sum(si.quantity)::numeric(12,2) AS units_sold,
+  sum(si.quantity)::numeric(12,1) AS units_sold,
   coalesce(sum(si.subtotal), 0) AS total_revenue,
   coalesce(sum(si.quantity * p.cost_price), 0) AS total_cost
 FROM sale_items si

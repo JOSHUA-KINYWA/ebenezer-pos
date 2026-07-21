@@ -65,16 +65,16 @@ DROP VIEW IF EXISTS product_sales_summary CASCADE;
 DROP VIEW IF EXISTS daily_sales_summary CASCADE;
 
 ALTER TABLE products
-  ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2),
-  ALTER COLUMN stock_alert TYPE numeric(12,2) USING stock_alert::numeric(12,2);
+  ALTER COLUMN stock_qty TYPE numeric(12,1) USING stock_qty::numeric(12,1),
+  ALTER COLUMN stock_alert TYPE numeric(12,1) USING stock_alert::numeric(12,1);
 
 ALTER TABLE sale_items
-  ALTER COLUMN quantity TYPE numeric(12,2) USING quantity::numeric(12,2),
+  ALTER COLUMN quantity TYPE numeric(12,1) USING quantity::numeric(12,1),
   ALTER COLUMN unit_price TYPE numeric(12,2) USING unit_price::numeric(12,2),
   ALTER COLUMN subtotal TYPE numeric(12,2) USING subtotal::numeric(12,2);
 
 ALTER TABLE stock_log
-  ALTER COLUMN change_qty TYPE numeric(12,2) USING change_qty::numeric(12,2);
+  ALTER COLUMN change_qty TYPE numeric(12,1) USING change_qty::numeric(12,1);
 
 CREATE OR REPLACE FUNCTION deduct_stock_on_sale()
 RETURNS trigger AS $$
@@ -113,7 +113,7 @@ CREATE OR REPLACE VIEW product_sales_summary AS
 SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
-  sum(si.quantity)::numeric(12,2) AS units_sold,
+  sum(si.quantity)::numeric(12,1) AS units_sold,
   coalesce(sum(si.subtotal), 0) AS total_revenue,
   coalesce(sum(si.quantity * p.cost_price), 0) AS total_cost
 FROM sale_items si
