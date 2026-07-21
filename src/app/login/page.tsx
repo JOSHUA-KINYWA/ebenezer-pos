@@ -52,14 +52,12 @@ export default function LoginPage() {
       const now = new Date().toISOString()
       const { data: approval } = await supabase
         .from('cashier_device_approvals')
-        .select('id, expires_at')
+        .select('id, expires_at, status')
         .eq('user_id', data.id)
         .eq('device_id', deviceId)
-        .eq('status', 'approved')
-        .gt('expires_at', now)
         .maybeSingle()
 
-      if (!approval) {
+      if (!approval || approval.status !== 'approved') {
         const deviceName = getDeviceName()
         await supabase
           .from('cashier_device_approvals')
@@ -96,10 +94,6 @@ export default function LoginPage() {
         } catch {
           // notification failure shouldn't block login
         }
-
-        setError('This cashier device is waiting for owner approval. Ask the owner to approve it from Staff.')
-        setLoading(false)
-        return
       }
     }
 

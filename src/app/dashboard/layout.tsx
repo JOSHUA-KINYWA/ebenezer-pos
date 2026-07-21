@@ -8,7 +8,7 @@ import {
   Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag, Bell, AlertTriangle
 } from 'lucide-react'
 import { SessionUser } from '@/types'
-import { clearSession, getSession, refreshSession } from '@/lib/auth'
+import { clearSession, getDeviceId, getSession, refreshSession } from '@/lib/auth'
 import { canAccessRoute } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase'
 import { useShopSettings } from '@/hooks/useShopSettings'
@@ -40,6 +40,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [cartCount, setCartCount] = useState(0)
   const [pendingCount, setPendingCount] = useState(0)
   const [lowStockCount, setLowStockCount] = useState(0)
+  const [deviceApproved, setDeviceApproved] = useState(true)
   const supabase = createClient()
   const { settings } = useShopSettings()
 
@@ -66,6 +67,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
 
       setUser(data as SessionUser)
+
+      if (data.role === 'cashier') {
+        const deviceId = getDeviceId()
+        const now = new Date().toISOString()
+        const { data: approval } = await supabase
+          .from('cashier_device_approvals')
+          .select('id, status, expires_at')
+          .eq('user_id', data.id)
+          .eq('device_id', deviceId)
+          .eq('status', 'approved')
+          .gt('expires_at', now)
+          .maybeSingle()
+
+        setDeviceApproved(!!approval)
+      } else {
+        setDeviceApproved(true)
+      }
 
       if (!canAccessRoute(pathname, data.role)) {
         setChecking(false)
@@ -167,6 +185,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [user, supabase])
 
   useEffect(() => {
+    if (!user || user.role !== 'cashier') return
+    const currentUser = user
+
+    async function checkDeviceApproval() {
+      const deviceId = getDeviceId()
+      const now = new Date().toISOString()
+      const { data: approval } = await supabase
+        .from('cashier_device_approvals')
+        .select('status, expires_at')
+        .eq('user_id', currentUser.id)
+        .eq('device_id', deviceId)
+        .eq('status', 'approved')
+        .gt('expires_at', now)
+        .maybeSingle()
+
+      setDeviceApproved(!!approval)
+    }
+
+    checkDeviceApproval()
+    const interval = window.setInterval(checkDeviceApproval, 10000)
+
+    return () => window.clearInterval(interval)
+  }, [user, supabase])
+
+  useEffect(() => {
     if (typeof window === 'undefined') return
 
     const syncCartCount = () => {
@@ -222,6 +265,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <LoadingSpinner label="Loading workspace..." />
+      </div>
+    )
+  }
+
+  if (!deviceApproved && user.role === 'cashier') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="max-w-md w-full card p-8 text-center">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-8 h-8 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Approval Required</h2>
+          <p className="text-sm text-slate-600 mb-6">This device is awaiting owner approval. Please wait for the owner to approve your device access.</p>
+          <button onClick={() => window.location.reload()} className="btn-primary w-full">Refresh</button>
+        </div>
       </div>
     )
   }
