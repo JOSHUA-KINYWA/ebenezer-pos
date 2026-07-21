@@ -517,14 +517,21 @@ export default function SettingsPage() {
       return
     }
 
+    const trimmedName = categoryForm.name.trim()
+    const duplicate = categories.find(c => c.name.toLowerCase() === trimmedName.toLowerCase() && c.id !== editingCategory?.id)
+    if (duplicate) {
+      toast.error(`Category "${trimmedName}" already exists`)
+      return
+    }
+
     const payload = {
-      name: categoryForm.name.trim(),
+      name: trimmedName,
       description: categoryForm.description.trim() || null,
     }
 
     try {
       if (editingCategory) {
-        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id).single()
+        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id)
         if (error) throw error
         toast.success('Category updated successfully')
       } else {
@@ -534,8 +541,9 @@ export default function SettingsPage() {
       }
       setCategoryModalOpen(false)
       fetchCategories()
-    } catch (error) {
-      toast.error('Unable to save category')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to save category'
+      toast.error(`❌ ${message}`)
       console.error(error)
     }
   }
