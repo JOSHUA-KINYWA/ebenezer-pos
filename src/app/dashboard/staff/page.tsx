@@ -349,6 +349,11 @@ export default function StaffPage() {
     return map
   }, [deviceApprovals])
 
+  const pendingDeviceApprovals = useMemo(
+    () => deviceApprovals.filter(item => item.status === 'pending'),
+    [deviceApprovals]
+  )
+
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading staff..." /></div>
 
   return (
@@ -455,13 +460,53 @@ export default function StaffPage() {
                 </div>
               </div>
               <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                {deviceApprovals.filter(item => item.status === 'pending').length} pending
+                {pendingDeviceApprovals.length} pending
               </span>
+            </div>
+            <div className="mt-4 space-y-2">
+              {pendingDeviceApprovals.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+                  No pending device requests.
+                </div>
+              ) : (
+                pendingDeviceApprovals.slice(0, 3).map(item => {
+                  const cashier = item.user as User | undefined
+                  return (
+                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{cashier?.full_name || 'Unknown cashier'}</p>
+                        <p className="text-xs text-slate-500">{cashier?.email}</p>
+                        <p className="text-xs text-slate-400">{item.device_name || 'Unknown device'}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {[2, 8, 24, 168].map(hours => (
+                          <button
+                            key={hours}
+                            type="button"
+                            onClick={() => approveDevice(item, hours)}
+                            className="btn-secondary text-xs"
+                          >
+                            {hours === 168 ? '7 days' : `${hours}h`}
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => updateDeviceStatus(item, 'rejected')} className="btn-danger text-xs">
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+              {pendingDeviceApprovals.length > 3 && (
+                <button type="button" onClick={() => document.getElementById('cashier-device-access-list')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+                  View all {pendingDeviceApprovals.length} requests
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="card p-4">
+        <div id="cashier-device-access-list" className="card p-4">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
               <h3 className="text-base font-bold text-slate-900">Cashier Device Access</h3>
