@@ -602,9 +602,37 @@ export default function StaffPage() {
                       <td className="table-cell text-slate-500">{member.last_login ? formatDateTime(member.last_login) : 'Never'}</td>
                       <td className="table-cell">
                         {member.role === 'cashier' ? (
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${pendingDevices ? 'bg-amber-100 text-amber-700' : approvedDevices ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-                            {pendingDevices ? `${pendingDevices} pending` : approvedDevices ? `${approvedDevices} approved` : 'No device'}
-                          </span>
+                          pendingDevices > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {memberDevices.filter(d => d.status === 'pending').slice(0, 1).map(device => (
+                                <div key={device.id} className="flex flex-wrap gap-1">
+                                  {[2, 8, 24, 168].map(hours => (
+                                    <button
+                                      key={hours}
+                                      type="button"
+                                      onClick={() => approveDevice(device, hours)}
+                                      className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-blue-700"
+                                    >
+                                      {hours === 168 ? '7d' : `${hours}h`}
+                                    </button>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => updateDeviceStatus(device, 'rejected')}
+                                    className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-700"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : approvedDevices > 0 ? (
+                            <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold bg-blue-100 text-blue-700">
+                              {approvedDevices} approved
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">No device</span>
+                          )
                         ) : (
                           <span className="text-xs text-slate-400">Owner</span>
                         )}
