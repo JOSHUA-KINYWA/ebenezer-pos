@@ -16,9 +16,10 @@ export async function POST(request: NextRequest) {
     const cashierName = String(body.cashierName || 'Unknown').trim()
     const cashierEmail = String(body.cashierEmail || '').trim()
     const deviceName = String(body.deviceName || 'Unknown device').trim()
+    const ownerEmails: string[] = Array.isArray(body.ownerEmails) ? body.ownerEmails.filter(Boolean) : []
 
-    if (!cashierEmail) {
-      return NextResponse.json({ error: 'Cashier email is required' }, { status: 400 })
+    if (ownerEmails.length === 0) {
+      return NextResponse.json({ error: 'Owner emails are required' }, { status: 400 })
     }
 
     const subject = 'New device approval request - Ebenezar POS'
@@ -36,9 +37,16 @@ export async function POST(request: NextRequest) {
       </div>
     `
 
-    await sendEmail(cashierEmail, subject, html)
+    const results = await Promise.allSettled(
+      ownerEmails.map(email => sendEmail(email, subject, html))
+    )
 
-    return NextResponse.json({ ok: true })
+    const failures = results.filter(r => r.status === 'rejected').length
+    if (failures === ownerEmails.length) {
+      throw new Error('Failed to send notification to all owners')
+    }
+
+    return NextResponse.json({ ok: true, sent: ownerEmails.length - failures, failed: failures })
   } catch (error) {
     console.error('Failed to send device approval notification:', error)
     return NextResponse.json({ error: 'Failed to send notification' }, { status: 500 })

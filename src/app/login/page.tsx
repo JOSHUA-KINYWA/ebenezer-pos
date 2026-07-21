@@ -73,15 +73,26 @@ export default function LoginPage() {
           }, { onConflict: 'user_id,device_id' })
 
         try {
-          await fetch('/api/device-approval/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              cashierName: data.full_name,
-              cashierEmail: data.email,
-              deviceName,
-            }),
-          })
+          const { data: ownerEmails } = await supabase
+            .from('users')
+            .select('email')
+            .eq('role', 'owner')
+            .eq('is_active', true)
+
+          const emails = (ownerEmails || []).map((o: { email?: string }) => o.email).filter((email: string | undefined): email is string => Boolean(email))
+
+          if (emails.length > 0) {
+            await fetch('/api/device-approval/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                cashierName: data.full_name,
+                cashierEmail: data.email,
+                deviceName,
+                ownerEmails: emails,
+              }),
+            })
+          }
         } catch {
           // notification failure shouldn't block login
         }
