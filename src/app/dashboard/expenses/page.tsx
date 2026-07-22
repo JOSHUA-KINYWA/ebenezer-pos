@@ -214,6 +214,13 @@ export default function ExpensesPage() {
 
       const current = existing || { cash: 0, coin: 0, till: 0 }
       const methodBalance = Number(current[form.payment_method] || 0)
+      const totalBalance = Number(current.cash || 0) + Number(current.coin || 0) + Number(current.till || 0)
+
+      if (methodBalance < amount && totalBalance < amount) {
+        toast.error(`❌ Insufficient drawer balance (${formatMoney(totalBalance, settings.currency)}). Cannot cover expense of ${formatMoney(amount, settings.currency)}`)
+        setSubmitting(false)
+        return
+      }
 
       if (methodBalance < amount) {
         const otherMethods: ('cash' | 'coin' | 'till')[] = form.payment_method === 'cash'
@@ -221,6 +228,13 @@ export default function ExpensesPage() {
           : form.payment_method === 'coin'
             ? ['cash', 'till']
             : ['cash', 'coin']
+
+        const availableFromOthers = otherMethods.reduce((sum, m) => sum + Number(current[m] || 0), 0)
+        if (methodBalance + availableFromOthers < amount) {
+          toast.error(`❌ Insufficient drawer balance (${formatMoney(totalBalance, settings.currency)}). Cannot cover expense of ${formatMoney(amount, settings.currency)}`)
+          setSubmitting(false)
+          return
+        }
 
         setTopUpShortfall(amount - methodBalance)
         setTopUpBalances({
@@ -323,6 +337,12 @@ export default function ExpensesPage() {
 
   async function handleTopUpSubmit(_e?: React.FormEvent) {
     if (!pendingExpense) return
+
+    const totalBalance = topUpBalances.cash + topUpBalances.coin + topUpBalances.till
+    if (totalBalance < pendingExpense.amount) {
+      toast.error(`❌ Insufficient drawer balance (${formatMoney(totalBalance, settings.currency)}). Cannot cover expense of ${formatMoney(pendingExpense.amount, settings.currency)}`)
+      return
+    }
 
     const totalDeductions = topUpDeductions.cash + topUpDeductions.coin + topUpDeductions.till
     if (totalDeductions < topUpShortfall) {
@@ -607,9 +627,10 @@ export default function ExpensesPage() {
                         step="0.01"
                         min="0"
                         max={available}
-                        value={topUpDeductions[method] || ''}
-                        onChange={e => updateTopUpDeduction(method, parseFloat(e.target.value) || 0)}
+                        value={available === 0 ? 0 : (topUpDeductions[method] || '')}
+                        onChange={e => available > 0 && updateTopUpDeduction(method, parseFloat(e.target.value) || 0)}
                         placeholder="0.00"
+                        disabled={available === 0}
                       />
                     </div>
                   </div>
