@@ -1,0 +1,490 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { createClient } from '@/lib/supabase'
+import { getSession } from '@/lib/auth'
+import { formatMoney, formatDate } from '@/lib/format'
+import { PageHeader } from '@/components/PageHeader'
+import { RoleGuard } from '@/components/RoleGuard'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { Alert } from '@/components/Alert'
+import { Modal } from '@/components/Modal'
+import { 
+  ChevronDown, ChevronUp, Trash2, Edit3, Eye, 
+  Filter, Calendar, Clock, AlertCircle, CheckCircle2, XCircle,
+  ShoppingBag, DollarSign, Wallet
+} from 'lucide-react'
+
+interface SaleItem {
+  id: string
+  product_name: string
+  quantity: number
+  unit_price: number
+  subtotal: number
+}
+
+interface Sale {
+  id: string
+  receipt_no: string
+  user_id: string
+  user?: { full_name: string }
+  total_amount: number
+  subtotal: number
+  tax_amount: number
+  payment_type: string
+  payment_method: string
+  discount: number
+  is_voided: boolean
+  created_at: string
+  items?: SaleItem[]
+}
+
+export default function MySalesPage() {
+  const [user] = useState(getSession())
+  const supabase = createClient()
+  
+  const [period, setPeriod] = useState<'day' | 'week' | 'month'>('day')
+  const [sales, setSales] = useState<Sale[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [expandedSale, setExpandedSale] = useState<string | null>(null)
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
+  const [editDiscount, setEditDiscount] = useState(0)
+  const [editPaymentMethod, setEditPaymentMethod] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [cancelingId, setCancelingId] = useState<string | null>(null)
+  const [voidReason, setVoidReason] = useState('')
+
+  useEffect(() => {
+    fetchSales()
+  }, [period, user])
+
+  async function fetchSales() {
+    if (!user) return
+    setLoading(true)
+    setError('')
+    
+    try {
+      const now = new Date()
+      let startDate = new Date()
+      
+      if (period === 'day') {
+        startDate.setHours(0, 0, 0, 0)
+      } else if (period === 'week') {
+        const day = now.getDay()
+        startDate.setDate(now.getDate() - day)
+        startDate.setHours(0, 0, 0, 0)
+      } else {
+        startDate.setDate(1)
+        startDate.setHours(0, 0, 0, 0)
+      }
+
+      const startISO = startDate.toISOString()
+      const endISO = now.toISOString()
+
+      // Get sales for the period
+      let query = supabase
+        .from('sales')
+        .select('id, receipt_no, user_id, total_amount, subtotal, tax_amount, payment_type, payment_method, discount, is_voided, created_at')
+        .gte('created_at', startISO)
+        .lte('created_at', endISO)
+
+      // Cashiers see only their own sales, owners see all
+      if (user.role === 'cashier') {
+        query = query.eq('user_id', user.id)
+      }
+
+      query = query.order('created_at', { ascending: false })
+
+      const { data, error: queryError } = await query
+
+      if (queryError) throw queryError
+
+      // Fetch user details and items for each sale
+      if (data) {
+        const salesWithDetails = await Promise.all(
+          (data as Sale[]).map(async (sale) => {
+            // Get user details
+            const { data: userData } = await supabase
+              .from('users')
+              .select('full_name')
+              .eq('id', sale.user_id)
+              .maybeSingle()
+
+            // Get sale items
+            const { data: itemsData } = await supabase
+              .from('sale_items')
+              .select('id, product_name, quantity, unit_price, subtotal')
+              .eq('sale_id', sale.id)
+
+            return {
+              ...sale,
+              user: userData || undefined,
+              items: (itemsData as SaleItem[]) || [],
+            }
+          })
+        )
+
+        setSales(salesWithDetails)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load sales'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleEditSale(sale: Sale) {
+    setSavingEdit(true)
+    try {
+      const { error } = await supabase
+        .from('sales')
+        .update({
+          discount: editDiscount,
+          payment_method: editPaymentMethod,
+          total_amount: sale.subtotal + sale.tax_amount - editDiscount,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sale.id)
+
+      if (error) throw error
+
+      setEditingSale(null)
+      setEditDiscount(0)
+      setEditPaymentMethod('')
+      fetchSales()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update sale')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function handleVoidSale(saleId: string) {
+    if (!voidReason.trim()) {
+      setError('Please provide a reason for canceling this sale')
+      return
+    }
+
+    setCancelingId(saleId)
+    try {
+      // Get the sale to restore stock
+      const sale = sales.find(s => s.id === saleId)
+      if (!sale || !sale.items) {
+        throw new Error('Sale not found')
+      }
+
+      // Restore stock for each item
+      for (const item of sale.items) {
+        const { data: product } = await supabase
+          .from('products')
+          .select('id, stock_qty')
+          .eq('name', item.product_name)
+          .maybeSingle()
+
+        if (product) {
+          await supabase
+            .from('products')
+            .update({ stock_qty: product.stock_qty + item.quantity })
+            .eq('id', product.id)
+
+          // Log stock adjustment
+          await supabase
+            .from('stock_log')
+            .insert({
+              product_id: product.id,
+              change_qty: item.quantity,
+              reason: 'return',
+              note: `Sale ${sale.receipt_no} canceled - ${voidReason}`,
+            })
+        }
+      }
+
+      // Mark sale as voided
+      const { error } = await supabase
+        .from('sales')
+        .update({
+          is_voided: true,
+          voided_at: new Date().toISOString(),
+          voided_by: user?.id,
+          void_reason: voidReason,
+        })
+        .eq('id', saleId)
+
+      if (error) throw error
+
+      setVoidReason('')
+      setCancelingId(null)
+      setExpandedSale(null)
+      fetchSales()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel sale')
+    } finally {
+      setCancelingId(null)
+    }
+  }
+
+  const stats = useMemo(() => {
+    const activeSales = sales.filter(s => !s.is_voided)
+    return {
+      count: activeSales.length,
+      total: activeSales.reduce((sum, s) => sum + s.total_amount, 0),
+      cash: activeSales.filter(s => s.payment_type === 'cash').reduce((sum, s) => sum + s.total_amount, 0),
+      mpesa: activeSales.filter(s => s.payment_type === 'mpesa').reduce((sum, s) => sum + s.total_amount, 0),
+      card: activeSales.filter(s => s.payment_type === 'card').reduce((sum, s) => sum + s.total_amount, 0),
+    }
+  }, [sales])
+
+  if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading sales..." /></div>
+
+  return (
+    <RoleGuard allowed={['owner', 'cashier']}>
+      <div className="space-y-6">
+        <PageHeader
+          title="My Sales"
+          description={user?.role === 'cashier' ? 'Track your daily transactions' : 'View all sales'}
+        />
+
+        {error && <Alert type="error" title="Error" message={error} dismissible onDismiss={() => setError('')} />}
+
+        <div className="card p-4">
+          <div className="flex gap-2">
+            {(['day', 'week', 'month'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  period === p
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {p === 'day' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {[
+            { label: 'Transactions', value: stats.count.toString(), icon: ShoppingBag },
+            { label: 'Total', value: formatMoney(stats.total), icon: DollarSign, color: 'bg-brand-50 text-brand-700' },
+            { label: 'Cash', value: formatMoney(stats.cash), icon: Wallet, color: 'bg-green-50 text-green-700' },
+            { label: 'M-Pesa', value: formatMoney(stats.mpesa), icon: Clock, color: 'bg-orange-50 text-orange-700' },
+            { label: 'Card', value: formatMoney(stats.card), icon: DollarSign, color: 'bg-blue-50 text-blue-700' },
+          ].map(item => (
+            <div key={item.label} className="card p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-2">{item.value}</p>
+                </div>
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${item.color || 'bg-slate-50 text-slate-900'}`}>
+                  <item.icon className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="card">
+          <div className="p-4 border-b border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900">Sales Transactions</h3>
+            <p className="text-sm text-slate-500">View, edit, or cancel sales</p>
+          </div>
+
+          {sales.length === 0 ? (
+            <div className="p-8 text-center text-slate-500">
+              <Calendar className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No sales in this period</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {sales.map(sale => (
+                <div key={sale.id} className="hover:bg-slate-50 transition">
+                  <div
+                    className="p-4 cursor-pointer flex items-center justify-between gap-3"
+                    onClick={() => setExpandedSale(expandedSale === sale.id ? null : sale.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900">{sale.receipt_no}</p>
+                        {sale.is_voided && (
+                          <span className="inline-flex rounded-full px-2 py-1 text-xs font-semibold bg-red-100 text-red-700">
+                            Canceled
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-500">
+                        {user?.role === 'owner' && sale.user?.full_name && `${sale.user.full_name} • `}
+                        {formatDate(sale.created_at)} • {sale.payment_type}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-slate-900">{formatMoney(sale.total_amount)}</p>
+                      <p className="text-xs text-slate-500">{sale.items?.length || 0} items</p>
+                    </div>
+                    <div className="text-slate-400">
+                      {expandedSale === sale.id ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </div>
+                  </div>
+
+                  {expandedSale === sale.id && (
+                    <div className="bg-slate-50 p-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs text-slate-500">Subtotal</p>
+                          <p className="font-semibold text-slate-900">{formatMoney(sale.subtotal)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Tax</p>
+                          <p className="font-semibold text-slate-900">{formatMoney(sale.tax_amount)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Discount</p>
+                          <p className="font-semibold text-slate-900">{formatMoney(sale.discount)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Total</p>
+                          <p className="font-bold text-brand-600">{formatMoney(sale.total_amount)}</p>
+                        </div>
+                      </div>
+
+                      {sale.items && sale.items.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700 uppercase mb-2">Items</p>
+                          <div className="space-y-1">
+                            {sale.items.map(item => (
+                              <div key={item.id} className="text-sm text-slate-600 flex items-center justify-between">
+                                <span>{item.product_name} × {item.quantity}</span>
+                                <span className="font-medium">{formatMoney(item.subtotal)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {!sale.is_voided && (
+                        <div className="pt-3 border-t border-slate-200 flex gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingSale(sale)
+                              setEditDiscount(sale.discount)
+                              setEditPaymentMethod(sale.payment_method)
+                            }}
+                            className="btn-primary inline-flex items-center gap-2 text-sm flex-1"
+                          >
+                            <Edit3 className="w-4 h-4" /> Edit
+                          </button>
+                          <button
+                            onClick={() => {
+                              setVoidReason('')
+                              setCancelingId(sale.id)
+                            }}
+                            className="btn-danger inline-flex items-center gap-2 text-sm flex-1"
+                          >
+                            <Trash2 className="w-4 h-4" /> Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {editingSale && (
+          <Modal
+            isOpen={!!editingSale}
+            onClose={() => setEditingSale(null)}
+            title="Edit Sale"
+            description={`Editing sale ${editingSale.receipt_no}`}
+            footer={
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setEditingSale(null)} className="btn-secondary">Cancel</button>
+                <button
+                  onClick={() => handleEditSale(editingSale)}
+                  disabled={savingEdit}
+                  className="btn-primary inline-flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> {savingEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            }
+          >
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-slate-700 mb-1">Payment Method</p>
+                <select
+                  value={editPaymentMethod}
+                  onChange={e => setEditPaymentMethod(e.target.value)}
+                  className="input w-full"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="coin">Coin</option>
+                  <option value="till">Till</option>
+                </select>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700 mb-1">Discount (KSh)</p>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editDiscount}
+                  onChange={e => setEditDiscount(parseFloat(e.target.value) || 0)}
+                  className="input w-full"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  New total: {formatMoney(editingSale.subtotal + editingSale.tax_amount - editDiscount)}
+                </p>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {cancelingId && (
+          <Modal
+            isOpen={!!cancelingId}
+            onClose={() => setCancelingId(null)}
+            title="Cancel Sale"
+            description="This will restore stock and void the sale."
+            footer={
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setCancelingId(null)} className="btn-secondary">Close</button>
+                <button
+                  onClick={() => handleVoidSale(cancelingId)}
+                  disabled={!voidReason.trim()}
+                  className="btn-danger inline-flex items-center gap-2"
+                >
+                  <XCircle className="w-4 h-4" /> Confirm Cancel
+                </button>
+              </div>
+            }
+          >
+            <div className="space-y-4">
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-800">
+                  Canceling a sale will restore all items to inventory and cannot be undone.
+                </p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700 mb-1">Reason for cancellation</p>
+                <textarea
+                  value={voidReason}
+                  onChange={e => setVoidReason(e.target.value)}
+                  className="input w-full h-20 resize-none"
+                  placeholder="Enter reason..."
+                />
+              </div>
+            </div>
+          </Modal>
+        )}
+      </div>
+    </RoleGuard>
+  )
+}

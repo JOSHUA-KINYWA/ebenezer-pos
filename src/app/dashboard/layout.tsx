@@ -19,6 +19,7 @@ import { formatMoney } from '@/lib/format'
 const nav = [
   { href: '/dashboard', icon: ShoppingBag, label: 'Dashboard', roles: ['owner', 'cashier'] },
   { href: '/dashboard/sell', icon: ShoppingCart, label: 'Sell', roles: ['owner', 'cashier'] },
+  { href: '/dashboard/my-sales', icon: DollarSign, label: 'My Sales', roles: ['owner', 'cashier'] },
   { href: '/dashboard/reports', icon: BarChart2, label: 'Reports', roles: ['owner', 'cashier'] },
   { href: '/dashboard/products', icon: Box, label: 'Products', roles: ['owner'] },
   { href: '/dashboard/stock', icon: Package, label: 'Stock', roles: ['owner', 'cashier'] },
