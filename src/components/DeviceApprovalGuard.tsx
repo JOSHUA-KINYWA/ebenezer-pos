@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { getSession } from '@/lib/auth'
+import { clearSession, getSession } from '@/lib/auth'
 import { getDeviceId, getDeviceName } from '@/lib/auth'
 import { LoadingSpinner } from './LoadingSpinner'
 import { Smartphone, Clock, AlertTriangle } from 'lucide-react'
@@ -32,6 +32,14 @@ export function DeviceApprovalGuard({ children }: DeviceApprovalGuardProps) {
     }
 
     checkDeviceApproval()
+
+    const interval = window.setInterval(() => {
+      if (user?.role === 'cashier') {
+        checkDeviceApproval()
+      }
+    }, 60_000)
+
+    return () => window.clearInterval(interval)
   }, [user])
 
   async function checkDeviceApproval() {
@@ -59,6 +67,10 @@ export function DeviceApprovalGuard({ children }: DeviceApprovalGuardProps) {
         } else {
           setApproved(true)
         }
+      } else if (data?.status === 'revoked') {
+        clearSession()
+        router.replace('/login')
+        return
       } else {
         setApproved(false)
         setDeviceName(getDeviceName())

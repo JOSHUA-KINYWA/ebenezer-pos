@@ -131,8 +131,12 @@ export default function LoginPage() {
             })
           }
         } catch {
-          // notification failure shouldn't block login
+          // notification failure shouldn't block request creation
         }
+
+        setError('Device approval is required. Your request has been sent to the owner.')
+        setLoading(false)
+        return
       }
     }
 

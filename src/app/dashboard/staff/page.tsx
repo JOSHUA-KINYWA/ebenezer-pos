@@ -51,9 +51,11 @@ export default function StaffPage() {
   const [reviewNote, setReviewNote] = useState('')
   const [newPin, setNewPin] = useState('')
   const [pendingDevices, setPendingDevices] = useState<CashierDeviceApproval[]>([])
+  const [activeDevices, setActiveDevices] = useState<CashierDeviceApproval[]>([])
   const [showDevices, setShowDevices] = useState(false)
   const [reviewingDevice, setReviewingDevice] = useState<CashierDeviceApproval | null>(null)
   const [approvingDevice, setApprovingDevice] = useState(false)
+  const [revokingDevice, setRevokingDevice] = useState(false)
   const [deviceApprovalDuration, setDeviceApprovalDuration] = useState('12')
   const toast = useToast()
   const supabase = createClient()
@@ -213,7 +215,7 @@ export default function StaffPage() {
         supabase
           .from('cashier_device_approvals')
           .select('*')
-          .eq('status', 'pending')
+          .in('status', ['pending', 'approved'])
           .order('created_at', { ascending: false }),
       ])
 
@@ -241,12 +243,16 @@ export default function StaffPage() {
             ...device,
             user: userMap[device.user_id]
           })) as CashierDeviceApproval[]
-          setPendingDevices(devices)
+          setPendingDevices(devices.filter(device => device.status === 'pending'))
+          setActiveDevices(devices.filter(device => device.status === 'approved'))
         } else {
-          setPendingDevices(devicesData as any)
+          const devices = (devicesData as any[]) as CashierDeviceApproval[]
+          setPendingDevices(devices.filter(device => device.status === 'pending'))
+          setActiveDevices(devices.filter(device => device.status === 'approved'))
         }
       } else {
         setPendingDevices([])
+        setActiveDevices([])
       }
       
       setError(null)
@@ -260,6 +266,7 @@ export default function StaffPage() {
   }
 
   async function handleApproveDevice(device: CashierDeviceApproval) {
+    setApprovingDevice(true)
     const duration = parseInt(deviceApprovalDuration) || 12
     try {
       const expiresAt = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString()
@@ -282,6 +289,33 @@ export default function StaffPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to approve device'
       toast.error(message)
+    } finally {
+      setApprovingDevice(false)
+    }
+  }
+
+  async function handleRevokeDevice(device: CashierDeviceApproval) {
+    setRevokingDevice(true)
+    try {
+      const { error } = await supabase
+        .from('cashier_device_approvals')
+        .update({
+          status: 'revoked',
+          reviewed_by: user?.id,
+          reviewed_at: new Date().toISOString(),
+          expires_at: new Date().toISOString(),
+        })
+        .eq('id', device.id)
+
+      if (error) throw error
+      toast.success('Device access terminated')
+      setReviewingDevice(null)
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to terminate device'
+      toast.error(message)
+    } finally {
+      setRevokingDevice(false)
     }
   }
 
@@ -409,6 +443,25 @@ export default function StaffPage() {
               className="btn-primary inline-flex items-center gap-2"
             >
               <Smartphone className="w-4 h-4" /> Review Devices
+            </button>
+          </div>
+        )}
+
+        {activeDevices.length > 0 && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-5 h-5 text-emerald-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{activeDevices.length} active device session{activeDevices.length === 1 ? '' : 's'}</p>
+                <p className="text-xs text-slate-500">Terminate device access for current cashier sessions</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDevices(true)}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <Smartphone className="w-4 h-4" /> Manage Devices
             </button>
           </div>
         )}
@@ -629,32 +682,73 @@ export default function StaffPage() {
                 </button>
               </div>
 
-              {pendingDevices.length === 0 ? (
-                <div className="py-12 text-center text-slate-500">No pending device approvals</div>
+              {pendingDevices.length === 0 && activeDevices.length === 0 ? (
+                <div className="py-12 text-center text-slate-500">No device approvals or active sessions</div>
               ) : (
-                <div className="space-y-3">
-                  {pendingDevices.map(device => (
-                    <div key={device.id} className="rounded-xl border border-slate-200 p-4">
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div>
-                          <p className="font-semibold text-slate-900">{device.user?.full_name || 'Unknown'}</p>
-                          <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
-                          <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
-                          <p className="text-xs text-slate-400">Requested: {formatDate(device.created_at)}</p>
-                          <p className="text-xs text-slate-400">Duration: {device.requested_duration_hours} hours</p>
+                <div className="space-y-6">
+                  {pendingDevices.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-900">Pending requests</div>
+                      {pendingDevices.map(device => (
+                        <div key={device.id} className="rounded-xl border border-slate-200 p-4">
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div>
+                              <p className="font-semibold text-slate-900">{device.user?.full_name || 'Unknown'}</p>
+                              <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
+                              <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
+                              <p className="text-xs text-slate-400">Requested: {formatDate(device.created_at)}</p>
+                              <p className="text-xs text-slate-400">Duration: {device.requested_duration_hours} hours</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              type="button"
+                              onClick={() => setReviewingDevice(device)}
+                              className="btn-primary inline-flex items-center gap-2 text-sm"
+                            >
+                              <CheckCircle2 className="w-4 h-4" /> Review
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          type="button"
-                          onClick={() => setReviewingDevice(device)}
-                          className="btn-primary inline-flex items-center gap-2 text-sm"
-                        >
-                          <CheckCircle2 className="w-4 h-4" /> Review
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {activeDevices.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-900">Approved devices</div>
+                      {activeDevices.map(device => (
+                        <div key={device.id} className="rounded-xl border border-slate-200 p-4">
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div>
+                              <p className="font-semibold text-slate-900">{device.user?.full_name || 'Unknown'}</p>
+                              <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
+                              <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
+                              <p className="text-xs text-slate-400">Approved: {formatDate(device.reviewed_at || device.created_at)}</p>
+                              <p className="text-xs text-slate-400">Expires: {device.expires_at ? formatDate(device.expires_at) : 'Never'}</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              type="button"
+                              onClick={() => setReviewingDevice(device)}
+                              className="btn-secondary inline-flex items-center gap-2 text-sm"
+                            >
+                              <Clock className="w-4 h-4" /> View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeDevice(device)}
+                              disabled={revokingDevice}
+                              className="btn-danger inline-flex items-center gap-2 text-sm"
+                            >
+                              <XCircle className="w-4 h-4" /> Terminate
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
