@@ -42,6 +42,7 @@ export interface Product {
   variety?: string
   description?: string
   price: number
+  cost_price?: number
   unit: string
   stock_qty: number
   stock_alert: number

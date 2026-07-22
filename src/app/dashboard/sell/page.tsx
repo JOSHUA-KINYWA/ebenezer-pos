@@ -257,6 +257,16 @@ export default function SellPage() {
     }
   }
 
+  function getItemProfit(item: CartItem) {
+    const cost = Number(item.product.cost_price || 0)
+    return Math.round((item.product.price - cost) * item.quantity * 100) / 100
+  }
+
+  function getItemProfitPerUnit(item: CartItem) {
+    const cost = Number(item.product.cost_price || 0)
+    return Math.round((item.product.price - cost) * 100) / 100
+  }
+
   function updateAmount(productId: string, amount: number) {
     if (amount < 0) return
     setCart(prev =>
@@ -470,6 +480,7 @@ export default function SellPage() {
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0)
   const total = subtotal
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0)
+  const totalProfit = cart.reduce((sum, item) => sum + getItemProfit(item), 0)
 
   return (
     <div>
@@ -538,7 +549,9 @@ export default function SellPage() {
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1">
                           <p className="font-medium text-xs">{formatProductName(item.product)}</p>
-                          <p className="text-xs text-slate-500">{formatMoney(item.product.price, settings.currency)} each</p>
+                          <p className="text-xs text-slate-500">
+                            {formatMoney(item.product.price, settings.currency)} each · {formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} {item.product.unit} in stock
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -637,6 +650,10 @@ export default function SellPage() {
                   <div className="flex justify-between text-sm text-slate-600">
                     <span>Subtotal</span>
                     <span>{formatMoney(subtotal, settings.currency)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-slate-600">
+                    <span>Estimated profit</span>
+                    <span className={totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{totalProfit >= 0 ? '+' : '-'}{formatMoney(Math.abs(totalProfit), settings.currency)}</span>
                   </div>
                   <div className="flex justify-between text-lg font-semibold text-slate-900">
                     <span>Total</span>
@@ -760,6 +777,14 @@ export default function SellPage() {
                         <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
                       </div>
                       <div className="flex items-center justify-between">
+                        <span>Cost</span>
+                        <span className="font-semibold text-slate-900">{formatMoney(product.cost_price ?? 0, settings.currency)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Profit/unit</span>
+                        <span className="font-semibold text-slate-900">{formatMoney(product.price - (product.cost_price ?? 0), settings.currency)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
                         <span>Stock</span>
                         <span className="font-semibold text-slate-900">
                           {hasVariants ? getAggregateStock(product).toLocaleString() : `${product.stock_qty} ${product.unit}`}
@@ -848,7 +873,9 @@ export default function SellPage() {
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex-1">
                         <p className="font-semibold text-sm text-slate-900">{formatProductName(item.product)}</p>
-                        <p className="text-xs text-slate-500">{formatMoney(item.product.price, settings.currency)} per unit</p>
+                        <p className="text-xs text-slate-500">
+                          {formatMoney(item.product.price, settings.currency)} per unit · {formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · {formatMoney(item.product.price - (item.product.cost_price ?? 0), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} {item.product.unit} in stock
+                        </p>
                       </div>
                       <button
                         type="button"

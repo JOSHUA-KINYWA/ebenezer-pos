@@ -22,6 +22,7 @@ interface ProductForm {
   category_id: string
   parent_product_id: string
   price: string
+  cost_price: string
   unit: string
   stock_qty: string
   stock_alert: string
@@ -37,6 +38,7 @@ const initialForm: ProductForm = {
   category_id: '',
   parent_product_id: '',
   price: '0.00',
+  cost_price: '0.00',
   unit: 'piece',
   stock_qty: '0',
   stock_alert: '10',
@@ -125,6 +127,7 @@ export default function ProductsPage() {
       category_id: (parentCategoryId || categories[0]?.id) ?? '',
       parent_product_id: parentId || '',
       price: parent?.price?.toString() || initialForm.price,
+      cost_price: parent?.cost_price?.toString() || initialForm.cost_price,
       unit: parent?.unit || initialForm.unit,
       stock_qty: '0',
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
@@ -149,6 +152,7 @@ export default function ProductsPage() {
       category_id: product.category_id || categories[0]?.id || '',
       parent_product_id: product.parent_product_id || '',
       price: product.price?.toString() || '0.00',
+      cost_price: product.cost_price?.toString() || '0.00',
       unit: product.unit || 'piece',
       stock_qty: product.stock_qty?.toString() || '0',
       stock_alert: product.stock_alert?.toString() || '10',
@@ -172,6 +176,7 @@ export default function ProductsPage() {
         category_id: form.category_id,
         parent_product_id: parentId,
         price: form.price,
+        cost_price: form.cost_price,
         unit: form.unit,
         stock_qty: '0',
         stock_alert: form.stock_alert,
@@ -213,6 +218,7 @@ export default function ProductsPage() {
       variety: form.variety.trim() || null,
       description: form.description.trim() || null,
       price: parseFloat(form.price),
+      cost_price: parseFloat(form.cost_price),
       unit: form.unit.trim(),
       stock_qty: parseFloat(form.stock_qty),
       stock_alert: parseInt(form.stock_alert, 10),
@@ -237,10 +243,11 @@ export default function ProductsPage() {
               barcode: v.barcode.trim() || null,
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
-              price: parseFloat(v.price),
+              price: parseFloat(v.price) || 0,
+              cost_price: parseFloat(v.cost_price) || 0,
               unit: v.unit.trim(),
-              stock_qty: parseFloat(v.stock_qty),
-              stock_alert: parseInt(v.stock_alert, 10),
+              stock_qty: parseFloat(v.stock_qty) || 0,
+              stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: variantParentId,
             }
@@ -265,10 +272,11 @@ export default function ProductsPage() {
               barcode: v.barcode.trim() || null,
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
-              price: parseFloat(v.price),
+              price: parseFloat(v.price) || 0,
+              cost_price: parseFloat(v.cost_price) || 0,
               unit: v.unit.trim(),
-              stock_qty: parseFloat(v.stock_qty),
-              stock_alert: parseInt(v.stock_alert, 10),
+              stock_qty: parseFloat(v.stock_qty) || 0,
+              stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: parentId,
             }
@@ -747,7 +755,20 @@ export default function ProductsPage() {
             </label>
 
             <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Price</span>
+              <span className="text-sm font-medium text-slate-700">Buying price</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.cost_price}
+                onChange={e => setForm({ ...form, cost_price: e.target.value })}
+                className="input w-full"
+              />
+              {errors.cost_price && <p className="text-xs text-red-600">{errors.cost_price}</p>}
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Selling price</span>
               <input
                 type="number"
                 step="0.01"
@@ -883,7 +904,11 @@ export default function ProductsPage() {
                               </select>
                             </label>
                             <label className="space-y-2">
-                              <span className="text-xs text-slate-500">Price</span>
+                              <span className="text-xs text-slate-500">Buying price</span>
+                              <input type="number" step="0.01" min="0" value={v.cost_price} onChange={e => updateVariantDraft(i, 'cost_price', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Selling price</span>
                               <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
                             </label>
                             <label className="space-y-2">
