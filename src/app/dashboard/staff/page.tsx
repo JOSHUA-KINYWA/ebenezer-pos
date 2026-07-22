@@ -10,7 +10,7 @@ import { RoleGuard } from '@/components/RoleGuard'
 import { Modal } from '@/components/Modal'
 import { SessionUser, User, PendingAccount } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
 import { validateStaffForm } from '@/lib/validators'
 import { Search, Users, CheckCircle2, Slash, Plus, Edit3, Trash2, Save, Clock, XCircle, UserPlus, Smartphone } from 'lucide-react'
@@ -516,7 +516,7 @@ export default function StaffPage() {
                         {member.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="table-cell text-slate-500">{member.last_login ? formatDate(member.last_login) : '—'}</td>
+                    <td className="table-cell text-slate-500">{member.last_login ? formatDateTime(member.last_login) : '—'}</td>
                     <td className="table-cell text-right space-x-2">
                       <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
                       <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-amber-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Slash className="inline w-4 h-4" /></button>
@@ -604,7 +604,7 @@ export default function StaffPage() {
                           <p className="font-semibold text-slate-900">{request.full_name}</p>
                           <p className="text-sm text-slate-500">{request.email}</p>
                           <p className="text-xs text-slate-400 mt-1">Requested role: <span className="capitalize font-medium text-slate-600">{request.requested_role}</span></p>
-                          <p className="text-xs text-slate-400">Submitted: {formatDate(request.created_at)}</p>
+                          <p className="text-xs text-slate-400">Submitted: {formatDateTime(request.created_at)}</p>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-3">
@@ -659,7 +659,7 @@ export default function StaffPage() {
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Submitted</p>
-                  <p className="text-sm font-semibold text-slate-900">{formatDate(reviewingRequest.created_at)}</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatDateTime(reviewingRequest.created_at)}</p>
                 </div>
               </div>
 
@@ -716,7 +716,7 @@ export default function StaffPage() {
                               <p className="font-semibold text-slate-900">{device.user?.full_name || 'Unknown'}</p>
                               <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
                               <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
-                              <p className="text-xs text-slate-400">Requested: {formatDate(device.created_at)}</p>
+                              <p className="text-xs text-slate-400">Requested: {formatDateTime(device.created_at)}</p>
                               <p className="text-xs text-slate-400">Duration: {device.requested_duration_hours} hours</p>
                             </div>
                           </div>
@@ -744,7 +744,7 @@ export default function StaffPage() {
                               <p className="font-semibold text-slate-900">{device.user?.full_name || 'Unknown'}</p>
                               <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
                               <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
-                              <p className="text-xs text-slate-400">Approved: {formatDate(device.reviewed_at || device.created_at)}</p>
+                              <p className="text-xs text-slate-400">Approved: {formatDateTime(device.reviewed_at || device.created_at)}</p>
                               <p className="text-xs text-slate-400">Expires: {device.expires_at ? formatDate(device.expires_at) : 'Never'}</p>
                             </div>
                           </div>
@@ -814,7 +814,7 @@ export default function StaffPage() {
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Submitted</p>
-                  <p className="text-sm font-semibold text-slate-900">{formatDate(reviewingDevice.created_at)}</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatDateTime(reviewingDevice.created_at)}</p>
                 </div>
               </div>
 
