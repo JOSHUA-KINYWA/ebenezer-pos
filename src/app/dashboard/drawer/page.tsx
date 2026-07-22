@@ -172,7 +172,7 @@ export default function DrawerPage() {
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>
 
   return (
-    <RoleGuard allowed={['owner', 'cashier']}>
+    <RoleGuard allowed={['owner']}>
       <div className="space-y-6">
         <PageHeader 
           title="Cash Drawer Management" 

@@ -47,6 +47,10 @@ export default function ReportsPage() {
       return
     }
     setUser(session)
+    // If cashier, auto-filter to their own sales
+    if (session.role === 'cashier') {
+      setFilterCashier(session.id)
+    }
   }, [])
 
   async function fetchAll() {
@@ -58,7 +62,6 @@ export default function ReportsPage() {
         .from('sales')
         .select('*, sale_items(*), user:users(full_name)')
         .order('created_at', { ascending: false })
-        .limit(100)
 
       if (since) salesQuery = salesQuery.gte('created_at', since)
       if (filterCashier !== 'all') salesQuery = salesQuery.eq('user_id', filterCashier)
@@ -67,23 +70,23 @@ export default function ReportsPage() {
       const fromDate = since ? since.split('T')[0] : '2000-01-01'
       const todayDate = new Date().toISOString().split('T')[0]
 
-      const [{ data: d }, { data: p }, { data: txns, error: txnError }] = await Promise.all([
+      const [{ data: d, error: dError }, { data: p, error: pError }, { data: txns, error: txnError }] = await Promise.all([
         supabase.from('daily_sales_summary').select('*').gte('sale_date', fromDate).lte('sale_date', todayDate).order('sale_date', { ascending: false }).limit(range === 'all' ? 365 : parseInt(range)),
         supabase.from('product_sales_summary').select('*').limit(50),
         salesQuery,
       ])
 
+      if (dError) throw dError
+      if (pError) throw pError
       if (txnError) throw txnError
 
-      const { data: cashierData, error: cashierErr } = await supabase.from('users').select('id, full_name').eq('is_active', true)
+      const { data: cashierData, error: cashierErr } = await supabase.from('users').select('id, full_name').eq('is_active', true).eq('role', 'cashier')
       if (cashierErr) throw cashierErr
 
       // Filter to cash-only payments
-      const cashOnlyTxns = (txns ?? []).filter(t => t.payment_type === 'cash') as Sale[]
-
       setDaily(d || [])
       setProducts(p || [])
-      setTransactions(cashOnlyTxns)
+      setTransactions((txns || []) as Sale[])
       setCashiers((cashierData || []) as SessionUser[])
       setError(null)
     } catch (err) {
@@ -205,8 +208,8 @@ export default function ReportsPage() {
               <option value="90">Last 90 days</option>
               <option value="all">All time</option>
             </select>
-            <select className="input w-auto py-2" value={filterCashier} onChange={e => setFilterCashier(e.target.value)}>
-              <option value="all">All cashiers</option>
+            <select className="input w-auto py-2" value={filterCashier} onChange={e => setFilterCashier(e.target.value)} disabled={user?.role === 'cashier'}>
+              {user?.role === 'owner' && <option value="all">All cashiers</option>}
               {cashiers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
             </select>
             <select className="input w-auto py-2" value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>

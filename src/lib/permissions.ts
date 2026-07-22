@@ -5,6 +5,7 @@ export const OWNER_ONLY_ROUTES = [
   '/dashboard/products',
   '/dashboard/staff',
   '/dashboard/settings',
+  '/dashboard/drawer',
 ]
 
 export function isOwner(role?: Role) {

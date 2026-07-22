@@ -44,6 +44,8 @@ export default function MySalesPage() {
   const supabase = createClient()
   
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('day')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
   const [sales, setSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -57,7 +59,7 @@ export default function MySalesPage() {
 
   useEffect(() => {
     fetchSales()
-  }, [period, user])
+  }, [period, customStartDate, customEndDate, user])
 
   async function fetchSales() {
     if (!user) return
@@ -68,19 +70,28 @@ export default function MySalesPage() {
       const now = new Date()
       let startDate = new Date()
       
-      if (period === 'day') {
-        startDate.setHours(0, 0, 0, 0)
-      } else if (period === 'week') {
-        const day = now.getDay()
-        startDate.setDate(now.getDate() - day)
-        startDate.setHours(0, 0, 0, 0)
+      // Use custom dates if provided
+      if (customStartDate && customEndDate) {
+        startDate = new Date(customStartDate + 'T00:00:00')
+        const endDate = new Date(customEndDate + 'T23:59:59')
+        var startISO = startDate.toISOString()
+        var endISO = endDate.toISOString()
       } else {
-        startDate.setDate(1)
-        startDate.setHours(0, 0, 0, 0)
-      }
+        // Use period
+        if (period === 'day') {
+          startDate.setHours(0, 0, 0, 0)
+        } else if (period === 'week') {
+          const day = now.getDay()
+          startDate.setDate(now.getDate() - day)
+          startDate.setHours(0, 0, 0, 0)
+        } else {
+          startDate.setDate(1)
+          startDate.setHours(0, 0, 0, 0)
+        }
 
-      const startISO = startDate.toISOString()
-      const endISO = now.toISOString()
+        startISO = startDate.toISOString()
+        endISO = now.toISOString()
+      }
 
       // Get sales for the period
       let query = supabase
@@ -263,6 +274,38 @@ export default function MySalesPage() {
                 {p === 'day' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
               </button>
             ))}
+          </div>
+
+          <div className="flex gap-2 items-end flex-wrap">
+            <div>
+              <label className="text-xs font-medium text-slate-700 mb-1 block">From Date</label>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={e => setCustomStartDate(e.target.value)}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700 mb-1 block">To Date</label>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={e => setCustomEndDate(e.target.value)}
+                className="input"
+              />
+            </div>
+            {(customStartDate || customEndDate) && (
+              <button
+                onClick={() => {
+                  setCustomStartDate('')
+                  setCustomEndDate('')
+                }}
+                className="btn-secondary px-3 py-2 text-sm"
+              >
+                Clear Dates
+              </button>
+            )}
           </div>
         </div>
 

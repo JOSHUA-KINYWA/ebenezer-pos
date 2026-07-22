@@ -13,9 +13,17 @@ import { PageHeader } from '@/components/PageHeader'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Search, Plus, X, Package, TrendingUp, TrendingDown, History } from 'lucide-react'
 
+interface StockProduct extends Product {
+  soldUnits: number
+  soldRevenue: number
+  soldCost: number
+  profit: number
+  profitMargin: number
+}
+
 export default function StockPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
-  const [products, setProducts] = useState<Product[]>([])
+  const [products, setProducts] = useState<StockProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -51,14 +59,64 @@ export default function StockPage() {
         setError(error.message)
         toast.error(`❌ Failed to load inventory: ${error.message}`)
         setProducts([])
-      } else {
-        setProducts(data || [])
-        if (data && data.length > 0) {
-          const lowStockItems = data.filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0)
-          const outOfStock = data.filter(p => p.stock_qty === 0)
-          if (lowStockItems.length > 0 || outOfStock.length > 0) {
-            toast.warning(`⚠️ ${lowStockItems.length} low stock, ${outOfStock.length} out of stock`)
-          }
+        return
+      }
+
+      const productsData = data || []
+      const activeProductIds = productsData.map(product => product.id)
+
+      const { data: saleIdsData, error: saleIdsError } = await supabase
+        .from('sales')
+        .select('id')
+        .eq('is_voided', false)
+
+      if (saleIdsError) throw saleIdsError
+
+      const saleIds = (saleIdsData || []).map(sale => sale.id)
+      const { data: saleItemsData, error: saleItemsError } = activeProductIds.length > 0 && saleIds.length > 0
+        ? await supabase
+            .from('sale_items')
+            .select('product_id, quantity, subtotal')
+            .in('product_id', activeProductIds)
+            .in('sale_id', saleIds)
+        : { data: [], error: null }
+
+      if (saleItemsError) throw saleItemsError
+
+      const salesByProduct = new Map<string, { soldUnits: number; soldRevenue: number; soldCost: number }>()
+      ;(saleItemsData || []).forEach(item => {
+        if (!item.product_id) return
+        const existing = salesByProduct.get(item.product_id) || { soldUnits: 0, soldRevenue: 0, soldCost: 0 }
+        const quantity = Number(item.quantity || 0)
+        const subtotal = Number(item.subtotal || 0)
+        existing.soldUnits += quantity
+        existing.soldRevenue += subtotal
+        salesByProduct.set(item.product_id, existing)
+      })
+
+      const productsWithMetrics = productsData.map(product => {
+        const totals = salesByProduct.get(product.id) || { soldUnits: 0, soldRevenue: 0, soldCost: 0 }
+        const costPerUnit = Number(product.cost_price) || 0
+        const soldCost = totals.soldUnits * costPerUnit
+        const profit = totals.soldRevenue - soldCost
+        const profitMargin = totals.soldRevenue > 0 ? (profit / totals.soldRevenue) * 100 : 0
+
+        return {
+          ...product,
+          soldUnits: totals.soldUnits,
+          soldRevenue: totals.soldRevenue,
+          soldCost,
+          profit,
+          profitMargin,
+        }
+      })
+
+      setProducts(productsWithMetrics)
+      if (productsWithMetrics.length > 0) {
+        const lowStockItems = productsWithMetrics.filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0)
+        const outOfStock = productsWithMetrics.filter(p => p.stock_qty === 0)
+        if (lowStockItems.length > 0 || outOfStock.length > 0) {
+          toast.warning(`⚠️ ${lowStockItems.length} low stock, ${outOfStock.length} out of stock`)
         }
       }
     } catch (error) {
@@ -75,6 +133,11 @@ export default function StockPage() {
     ...p,
     stock_qty: Number(p.stock_qty) || 0,
     price: Number(p.price) || 0,
+    soldUnits: Number(p.soldUnits || 0),
+    soldRevenue: Number(p.soldRevenue || 0),
+    soldCost: Number(p.soldCost || 0),
+    profit: Number(p.profit || 0),
+    profitMargin: Number(p.profitMargin || 0),
   })), [products])
 
   const categories = Array.from(new Set(inventoryProducts.map(p => (p.category as { name?: string })?.name || 'Uncategorized')))
@@ -131,6 +194,18 @@ export default function StockPage() {
     return acc
   }, {})
 
+  const totalSoldUnits = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    const sold = variants.length === 0 ? p.soldUnits : variants.reduce((vSum, v) => vSum + (v.soldUnits || 0), 0)
+    return sum + sold
+  }, 0)
+
+  const totalProfit = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    const profit = variants.length === 0 ? p.profit : variants.reduce((vSum, v) => vSum + (v.profit || 0), 0)
+    return sum + profit
+  }, 0)
+
   const filteredProducts = useMemo(() => groupedProducts, [groupedProducts])
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>
@@ -142,11 +217,12 @@ export default function StockPage() {
         <PageHeader title="Inventory" description="Manage stock and products" />
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
           <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
           <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
-          <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalValue, settings.currency)}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
         </div>
 
         {/* Category Values */}
@@ -218,6 +294,9 @@ export default function StockPage() {
                 )}
                 <p className="text-xs text-slate-400 mt-2">
                   Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Sold: {product.soldUnits.toLocaleString()} • Profit: <span className={product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatMoney(product.profit, settings.currency)}</span>
                 </p>
               </div>
             )
