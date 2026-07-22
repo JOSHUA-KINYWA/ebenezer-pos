@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { getDeviceId, getDeviceName, getDetailedDeviceInfo, getDeviceLocationInfo, setSession, toSessionUser } from '@/lib/auth'
+import { getDeviceId, getDeviceName, getDeviceNameFriendly, getDetailedDeviceInfo, getDeviceLocationInfo, setSession, toSessionUser } from '@/lib/auth'
 import { hashPin } from '@/lib/pin-hash'
 import { ShoppingBag, Loader2, Shield } from 'lucide-react'
 
@@ -59,6 +59,14 @@ export default function LoginPage() {
 
       if (!approval || approval.status !== 'approved') {
         const deviceName = getDeviceName()
+        let friendlyDeviceName = deviceName
+        
+        // Try to get a more user-friendly device name
+        try {
+          friendlyDeviceName = await getDeviceNameFriendly()
+        } catch (e) {
+          console.error('Failed to get friendly device name:', e)
+        }
         
         // Capture detailed device information
         let deviceInfo = JSON.stringify({ device_name: deviceName })
@@ -91,7 +99,7 @@ export default function LoginPage() {
           .upsert({
             user_id: data.id,
             device_id: deviceId,
-            device_name: deviceName,
+            device_name: friendlyDeviceName,
             device_info: deviceInfo,
             device_location: locationInfo,
             status: 'pending',
@@ -115,7 +123,7 @@ export default function LoginPage() {
               body: JSON.stringify({
                 cashierName: data.full_name,
                 cashierEmail: data.email,
-                deviceName,
+                deviceName: friendlyDeviceName,
                 deviceInfo: JSON.parse(deviceInfo),
                 deviceLocation: locationInfo,
                 ownerEmails: emails,

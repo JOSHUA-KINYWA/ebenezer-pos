@@ -90,6 +90,18 @@ export function getDeviceName() {
   return `${platform}${width && height ? ` ${width}x${height}` : ''}`
 }
 
+export async function getDeviceNameFriendly() {
+  try {
+    const info = await getDetailedDeviceInfo()
+    const deviceLabel = info.deviceType || 'Device'
+    const browserLabel = info.browserName || 'Unknown browser'
+    const resolution = info.screenResolution || ''
+    return `${deviceLabel} - ${browserLabel}${resolution ? ` (${resolution})` : ''}`
+  } catch {
+    return getDeviceName()
+  }
+}
+
 export async function getDetailedDeviceInfo() {
   if (typeof window === 'undefined') return {
     userAgent: 'Unknown',
