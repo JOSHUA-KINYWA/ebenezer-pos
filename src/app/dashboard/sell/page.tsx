@@ -34,6 +34,7 @@ export default function SellPage() {
   const [submitting, setSubmitting] = useState(false)
   const [completedSale, setCompletedSale] = useState<{ id: string; total: number; items: CartItem[]; customer: string } | null>(null)
   const [cartHighlight, setCartHighlight] = useState(false)
+  const [cartMismatchWarning, setCartMismatchWarning] = useState<string | null>(null)
   const cartRef = useRef<HTMLDivElement | null>(null)
 
   const supabase = createClient()
@@ -75,6 +76,27 @@ export default function SellPage() {
         detail: { count: cart.reduce((sum, item) => sum + item.quantity, 0) },
       })
     )
+  }, [cart])
+
+  useEffect(() => {
+    if (cart.length === 0) {
+      setCartMismatchWarning(null)
+      return
+    }
+
+    const mismatched = cart.filter(item => {
+      const price = Number(item.product.price || 0)
+      if (price <= 0) return false
+      const expected = Math.round(item.quantity * price * 100) / 100
+      return Math.abs(expected - item.subtotal) > 0.01
+    })
+
+    if (mismatched.length > 0) {
+      const names = mismatched.map(i => formatProductName(i.product)).join(', ')
+      setCartMismatchWarning(`⚠️ Subtotal mismatch for ${names}: subtotal does not match qty × unit price.`)
+    } else {
+      setCartMismatchWarning(null)
+    }
   }, [cart])
 
   async function fetchProducts() {
@@ -835,6 +857,11 @@ export default function SellPage() {
               </div>
             ) : (
               <div className="space-y-4">
+                {cartMismatchWarning && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {cartMismatchWarning}
+                  </div>
+                )}
                 {cart.map(item => (
                   <div key={item.product.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
                     <div className="flex items-start justify-between gap-3 mb-2">

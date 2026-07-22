@@ -90,15 +90,15 @@ export default function ReportsPage() {
           total_transactions: 0,
           total_revenue: 0,
           cash_total: 0,
-          mpesa_total: 0,
-          card_total: 0,
+          till_total: 0,
+          coin_total: 0,
         }
         const amount = Number(sale.total_amount || 0)
         currentDay.total_transactions += 1
         currentDay.total_revenue += amount
         if (sale.payment_method === 'cash') currentDay.cash_total += amount
-        else if (sale.payment_method === 'till') currentDay.mpesa_total += amount
-        else if (sale.payment_method === 'coin') currentDay.card_total += amount
+        else if (sale.payment_method === 'till') currentDay.till_total += amount
+        else if (sale.payment_method === 'coin') currentDay.coin_total += amount
         dailyMap.set(saleDate, currentDay)
 
         ;(sale.sale_items || []).forEach(item => {

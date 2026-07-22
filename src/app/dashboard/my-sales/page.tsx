@@ -13,7 +13,7 @@ import { Modal } from '@/components/Modal'
 import { 
   ChevronDown, ChevronUp, Trash2, Edit3, Eye, 
   Filter, Calendar, Clock, AlertCircle, CheckCircle2, XCircle,
-  ShoppingBag, DollarSign, Wallet
+  ShoppingBag, DollarSign, Wallet, Coins
 } from 'lucide-react'
 
 interface SaleItem {
@@ -261,9 +261,9 @@ export default function MySalesPage() {
     return {
       count: activeSales.length,
       total: activeSales.reduce((sum, s) => sum + s.total_amount, 0),
-      cash: activeSales.filter(s => s.payment_type === 'cash').reduce((sum, s) => sum + s.total_amount, 0),
-      mpesa: activeSales.filter(s => s.payment_type === 'mpesa').reduce((sum, s) => sum + s.total_amount, 0),
-      card: activeSales.filter(s => s.payment_type === 'card').reduce((sum, s) => sum + s.total_amount, 0),
+      cash: activeSales.filter(s => s.payment_method === 'cash').reduce((sum, s) => sum + s.total_amount, 0),
+      till: activeSales.filter(s => s.payment_method === 'till').reduce((sum, s) => sum + s.total_amount, 0),
+      coin: activeSales.filter(s => s.payment_method === 'coin').reduce((sum, s) => sum + s.total_amount, 0),
     }
   }, [sales])
 
@@ -391,8 +391,8 @@ export default function MySalesPage() {
             { label: 'Transactions', value: stats.count.toString(), icon: ShoppingBag },
             { label: 'Total', value: formatMoney(stats.total), icon: DollarSign, color: 'bg-brand-50 text-brand-700' },
             { label: 'Cash', value: formatMoney(stats.cash), icon: Wallet, color: 'bg-green-50 text-green-700' },
-            { label: 'M-Pesa', value: formatMoney(stats.mpesa), icon: Clock, color: 'bg-orange-50 text-orange-700' },
-            { label: 'Card', value: formatMoney(stats.card), icon: DollarSign, color: 'bg-blue-50 text-blue-700' },
+            { label: 'Till', value: formatMoney(stats.till), icon: Wallet, color: 'bg-amber-50 text-amber-700' },
+            { label: 'Coin', value: formatMoney(stats.coin), icon: Coins, color: 'bg-sky-50 text-sky-700' },
           ].map(item => (
             <div key={item.label} className="card p-4">
               <div className="flex items-center justify-between gap-4">
@@ -440,7 +440,7 @@ export default function MySalesPage() {
                         {(viewScope === 'all' || user?.role === 'owner') && sale.user && (
                           <span>{formatSaleAttribution(sale.user)} • </span>
                         )}
-                        {formatDate(sale.created_at)} • {sale.payment_type}
+                        {formatDate(sale.created_at)} • <span className="capitalize">{sale.payment_method}</span>
                       </p>
                     </div>
                     <div className="text-right">
@@ -456,6 +456,10 @@ export default function MySalesPage() {
                     <div className="bg-slate-50 p-4 space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
+                          <p className="text-xs text-slate-500">Payment Method</p>
+                          <p className="font-semibold text-slate-900 capitalize">{sale.payment_method}</p>
+                        </div>
+                        <div>
                           <p className="text-xs text-slate-500">Subtotal</p>
                           <p className="font-semibold text-slate-900">{formatMoney(sale.subtotal)}</p>
                         </div>
@@ -467,7 +471,7 @@ export default function MySalesPage() {
                           <p className="text-xs text-slate-500">Discount</p>
                           <p className="font-semibold text-slate-900">{formatMoney(sale.discount)}</p>
                         </div>
-                        <div>
+                        <div className="col-span-2">
                           <p className="text-xs text-slate-500">Total</p>
                           <p className="font-bold text-brand-600">{formatMoney(sale.total_amount)}</p>
                         </div>

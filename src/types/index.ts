@@ -130,8 +130,8 @@ export interface DailySalesSummary {
   total_transactions: number
   total_revenue: number
   cash_total: number
-  mpesa_total: number
-  card_total: number
+  till_total: number
+  coin_total: number
 }
 
 export interface ProductSalesSummary {

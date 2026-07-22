@@ -132,15 +132,15 @@ export default function DashboardPage() {
           total_transactions: 0,
           total_revenue: 0,
           cash_total: 0,
-          mpesa_total: 0,
-          card_total: 0,
+          till_total: 0,
+          coin_total: 0,
         }
         const amount = Number(sale.total_amount || 0)
         current.total_transactions += 1
         current.total_revenue += amount
         if (sale.payment_method === 'cash') current.cash_total += amount
-        else if (sale.payment_method === 'till') current.mpesa_total += amount
-        else if (sale.payment_method === 'coin') current.card_total += amount
+        else if (sale.payment_method === 'till') current.till_total += amount
+        else if (sale.payment_method === 'coin') current.coin_total += amount
         dailyMap.set(saleDate, current)
       })
       const dailyData = Array.from(dailyMap.values()).sort((a, b) => b.sale_date.localeCompare(a.sale_date))
