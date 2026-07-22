@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { RoleGuard } from '@/components/RoleGuard'
+import { Modal } from '@/components/Modal'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { getSession } from '@/lib/auth'
@@ -25,6 +26,19 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState('')
   const [filterPayment, setFilterPayment] = useState('all')
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null)
+  const [showTopUpModal, setShowTopUpModal] = useState(false)
+  const [pendingExpense, setPendingExpense] = useState<{
+    item_name: string
+    amount: number
+    payment_method: PaymentMethod
+    vendor: string
+    category: string
+    payment_note: string
+  } | null>(null)
+  const [topUpShortfall, setTopUpShortfall] = useState(0)
+  const [topUpBalances, setTopUpBalances] = useState({ cash: 0, coin: 0, till: 0 })
+  const [topUpDeductions, setTopUpDeductions] = useState({ cash: 0, coin: 0, till: 0 })
+  const [topUpSubmitting, setTopUpSubmitting] = useState(false)
   const [form, setForm] = useState({
     item_name: '',
     amount: '',
@@ -123,12 +137,19 @@ export default function ExpensesPage() {
       const current = existing || { cash: 0, coin: 0, till: 0 }
       const nextBalance: any = { cash: current.cash, coin: current.coin, till: current.till, updated_at: new Date().toISOString() }
 
-      if (expense.payment_method === 'cash') {
-        nextBalance.cash = Number(current.cash || 0) + Number(expense.amount)
-      } else if (expense.payment_method === 'coin') {
-        nextBalance.coin = Number(current.coin || 0) + Number(expense.amount)
+      const totalDeducted = Number(expense.cash_deducted || 0) + Number(expense.coin_deducted || 0) + Number(expense.till_deducted || 0)
+      if (totalDeducted === 0) {
+        if (expense.payment_method === 'cash') {
+          nextBalance.cash = Number(current.cash || 0) + Number(expense.amount)
+        } else if (expense.payment_method === 'coin') {
+          nextBalance.coin = Number(current.coin || 0) + Number(expense.amount)
+        } else {
+          nextBalance.till = Number(current.till || 0) + Number(expense.amount)
+        }
       } else {
-        nextBalance.till = Number(current.till || 0) + Number(expense.amount)
+        nextBalance.cash = Number(current.cash || 0) + Number(expense.cash_deducted || 0)
+        nextBalance.coin = Number(current.coin || 0) + Number(expense.coin_deducted || 0)
+        nextBalance.till = Number(current.till || 0) + Number(expense.till_deducted || 0)
       }
 
       const drawerResult = existing?.id
@@ -154,7 +175,7 @@ export default function ExpensesPage() {
       toast.error('❌ Item name is required')
       return
     }
-    
+
     if (!form.amount) {
       toast.error('❌ Amount is required')
       return
@@ -182,18 +203,95 @@ export default function ExpensesPage() {
     const todayString = today.current
 
     try {
-      const { error: insertError } = await supabase.from('expenses').insert({
-        item_name: form.item_name.trim(),
-        amount,
-        payment_method: form.payment_method,
-        vendor: form.vendor.trim() || null,
-        category: form.category.trim() || 'Miscellaneous',
-        payment_note: form.payment_note.trim() || null,
-        expense_date: todayString,
-        created_by: user?.id,
-      })
+      const { data: existing } = await supabase
+        .from('drawer_balances')
+        .select('id, cash, coin, till')
+        .eq('date', todayString)
+        .is('shift_id', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
-      if (insertError) throw insertError
+      const current = existing || { cash: 0, coin: 0, till: 0 }
+      const methodBalance = Number(current[form.payment_method] || 0)
+
+      if (methodBalance < amount) {
+        const otherMethods: ('cash' | 'coin' | 'till')[] = form.payment_method === 'cash'
+          ? ['coin', 'till']
+          : form.payment_method === 'coin'
+            ? ['cash', 'till']
+            : ['cash', 'coin']
+
+        setTopUpShortfall(amount - methodBalance)
+        setTopUpBalances({
+          cash: Number(current.cash || 0),
+          coin: Number(current.coin || 0),
+          till: Number(current.till || 0),
+        })
+        setTopUpDeductions({
+          cash: 0,
+          coin: 0,
+          till: 0,
+        })
+        setPendingExpense({
+          item_name: form.item_name.trim(),
+          amount,
+          payment_method: form.payment_method,
+          vendor: form.vendor.trim(),
+          category: form.category.trim() || 'Miscellaneous',
+          payment_note: form.payment_note.trim(),
+        })
+        setShowTopUpModal(true)
+        setSubmitting(false)
+        return
+      }
+
+      const deductions: Record<PaymentMethod, number> = { cash: 0, coin: 0, till: 0 }
+      deductions[form.payment_method] = amount
+      await createExpense(
+        form.item_name.trim(),
+        amount,
+        form.payment_method,
+        deductions,
+        form.vendor.trim() || undefined,
+        form.category.trim() || undefined,
+        form.payment_note.trim() || undefined,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to record expense'
+      toast.error(`❌ ${message}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function createExpense(
+    item_name: string,
+    amount: number,
+    primaryMethod: PaymentMethod,
+    deductions: Record<PaymentMethod, number>,
+    vendor?: string,
+    category?: string,
+    payment_note?: string,
+  ) {
+    const todayString = today.current
+
+    const { error: insertError } = await supabase.from('expenses').insert({
+      item_name,
+      amount,
+      payment_method: primaryMethod,
+      vendor: vendor || null,
+      category: category || 'Miscellaneous',
+      payment_note: payment_note || null,
+      expense_date: todayString,
+      created_by: user?.id,
+      cash_deducted: Number(deductions.cash || 0),
+      coin_deducted: Number(deductions.coin || 0),
+      till_deducted: Number(deductions.till || 0),
+    })
+
+    if (insertError) throw insertError
+
     const { data: existing } = await supabase
       .from('drawer_balances')
       .select('id, cash, coin, till')
@@ -204,25 +302,11 @@ export default function ExpensesPage() {
       .maybeSingle()
 
     const current = existing || { cash: 0, coin: 0, till: 0 }
-    const nextBalance: any = { cash: current.cash, coin: current.coin, till: current.till, updated_at: new Date().toISOString() }
-
-    if (form.payment_method === 'cash') {
-      if (current.cash < amount) {
-        toast.warning(`⚠️ Cash balance (${formatMoney(current.cash, settings.currency)}) is less than expense amount`)
-      }
-      nextBalance.cash = current.cash - amount
-    }
-    else if (form.payment_method === 'coin') {
-      if (current.coin < amount) {
-        toast.warning(`⚠️ Coin balance (${formatMoney(current.coin, settings.currency)}) is less than expense amount`)
-      }
-      nextBalance.coin = current.coin - amount
-    }
-    else {
-      if (current.till < amount) {
-        toast.warning(`⚠️ Till balance (${formatMoney(current.till, settings.currency)}) is less than expense amount`)
-      }
-      nextBalance.till = current.till - amount
+    const nextBalance: any = {
+      cash: Number(current.cash || 0) - Number(deductions.cash || 0),
+      coin: Number(current.coin || 0) - Number(deductions.coin || 0),
+      till: Number(current.till || 0) - Number(deductions.till || 0),
+      updated_at: new Date().toISOString(),
     }
 
     const drawerResult = existing?.id
@@ -230,16 +314,66 @@ export default function ExpensesPage() {
       : await supabase.from('drawer_balances').insert({ date: todayString, shift_id: null, ...nextBalance })
     if (drawerResult.error) throw drawerResult.error
 
-    toast.success(`✓ Expense recorded: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)}`)
-    setForm({ ...form, item_name: '', amount: '', vendor: '', category: '', payment_note: '' })
+    toast.success(`✓ Expense recorded: ${item_name} for ${formatMoney(amount, settings.currency)}`)
+    setForm({ item_name: '', amount: '', payment_method: 'cash', vendor: '', category: '', payment_note: '' })
+    setPendingExpense(null)
+    setShowTopUpModal(false)
     fetchExpenses()
+  }
+
+  async function handleTopUpSubmit(_e?: React.FormEvent) {
+    if (!pendingExpense) return
+
+    const totalDeductions = topUpDeductions.cash + topUpDeductions.coin + topUpDeductions.till
+    if (totalDeductions < topUpShortfall) {
+      toast.error(`❌ You need to cover a shortfall of ${formatMoney(topUpShortfall, settings.currency)}`)
+      return
+    }
+
+    if (topUpDeductions.cash > topUpBalances.cash) {
+      toast.error('❌ Cash deduction exceeds available balance')
+      return
+    }
+    if (topUpDeductions.coin > topUpBalances.coin) {
+      toast.error('❌ Coin deduction exceeds available balance')
+      return
+    }
+    if (topUpDeductions.till > topUpBalances.till) {
+      toast.error('❌ Till deduction exceeds available balance')
+      return
+    }
+
+    setTopUpSubmitting(true)
+    try {
+      await createExpense(
+        pendingExpense.item_name,
+        pendingExpense.amount,
+        pendingExpense.payment_method,
+        topUpDeductions,
+        pendingExpense.vendor,
+        pendingExpense.category,
+        pendingExpense.payment_note,
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to record expense'
-      toast.error(`âŒ ${message}`)
-    } finally {
-      setSubmitting(false)
+      toast.error(`❌ ${message}`)
+      setTopUpSubmitting(false)
     }
   }
+
+  function updateTopUpDeduction(method: 'cash' | 'coin' | 'till', value: number) {
+    setTopUpDeductions(prev => ({ ...prev, [method]: Math.max(0, value) }))
+  }
+
+  const otherMethods = useMemo(() => {
+    if (!showTopUpModal || !pendingExpense) return []
+    const methods: ('cash' | 'coin' | 'till')[] = pendingExpense.payment_method === 'cash'
+      ? ['coin', 'till']
+      : pendingExpense.payment_method === 'coin'
+        ? ['cash', 'till']
+        : ['cash', 'coin']
+    return methods.map(m => ({ method: m, available: topUpBalances[m] }))
+  }, [showTopUpModal, pendingExpense, topUpBalances])
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading expenses..." /></div>
   if (error) return <div className="flex items-center justify-center py-20 text-center text-sm text-red-600">{error}</div>
@@ -405,6 +539,97 @@ export default function ExpensesPage() {
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={showTopUpModal}
+        onClose={() => {
+          setShowTopUpModal(false)
+          setPendingExpense(null)
+          setSubmitting(false)
+        }}
+        title="Insufficient funds"
+        description={`${pendingExpense?.payment_method?.toUpperCase() || ''} balance is less than the expense amount.`}
+        size="lg"
+        footer={
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShowTopUpModal(false)
+                setPendingExpense(null)
+                setSubmitting(false)
+              }}
+              className="btn-secondary"
+              disabled={topUpSubmitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleTopUpSubmit}
+              className="btn-primary"
+              disabled={topUpSubmitting}
+            >
+              {topUpSubmitting ? 'Recording...' : 'Record Expense'}
+            </button>
+          </div>
+        }
+      >
+        {pendingExpense && (
+          <form onSubmit={handleTopUpSubmit} className="space-y-5">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              <p className="font-medium">Expense: {pendingExpense.item_name}</p>
+              <p className="mt-1">
+                Amount: <span className="font-semibold">{formatMoney(pendingExpense.amount, settings.currency)}</span>
+              </p>
+              <p className="mt-1">
+                Payment method: <span className="font-semibold">{pendingExpense.payment_method.toUpperCase()}</span> (
+                {formatMoney(topUpBalances[pendingExpense.payment_method], settings.currency)} available)
+              </p>
+              <p className="mt-2 font-semibold">
+                Shortfall: {formatMoney(topUpShortfall, settings.currency)}
+              </p>
+            </div>
+
+            <div>
+              <p className="label mb-3">Top up from other payment methods</p>
+              <div className="space-y-3">
+                {otherMethods.map(({ method, available }) => (
+                  <div key={method} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
+                    <div>
+                      <p className="text-sm font-medium capitalize text-slate-900">{method}</p>
+                      <p className="text-xs text-slate-500">Available: {formatMoney(available, settings.currency)}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="input w-28 text-right"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={available}
+                        value={topUpDeductions[method] || ''}
+                        onChange={e => updateTopUpDeduction(method, parseFloat(e.target.value) || 0)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+              <span className="text-slate-600">Total to deduct from other methods</span>
+              <span className="font-semibold text-slate-900">
+                {formatMoney(topUpDeductions.cash + topUpDeductions.coin + topUpDeductions.till, settings.currency)}
+              </span>
+            </div>
+
+            {topUpDeductions.cash + topUpDeductions.coin + topUpDeductions.till < topUpShortfall && (
+              <p className="text-xs text-red-600">Total top-up must cover the shortfall of {formatMoney(topUpShortfall, settings.currency)}</p>
+            )}
+          </form>
+        )}
+      </Modal>
     </RoleGuard>
   )
 }
