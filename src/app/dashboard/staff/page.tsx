@@ -153,6 +153,25 @@ export default function StaffPage() {
     }
   }
 
+  async function handleDeleteStaff(member: User) {
+    if (!member.id) return
+    const confirmed = window.confirm(`Delete staff ${member.full_name}? This cannot be undone.`)
+    if (!confirmed) return
+
+    setLoading(true)
+    try {
+      const { error } = await supabase.from('users').delete().eq('id', member.id)
+      if (error) throw error
+      toast.success(`Deleted ${member.full_name}`)
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to delete staff'
+      toast.error(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleApproveRequest(request: PendingAccount) {
     if (!newPin.trim() || newPin.trim().length < 4) {
       toast.error('Set a PIN (at least 4 characters) for the new account')
@@ -500,7 +519,8 @@ export default function StaffPage() {
                     <td className="table-cell text-slate-500">{member.last_login ? formatDate(member.last_login) : '—'}</td>
                     <td className="table-cell text-right space-x-2">
                       <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
-                      <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Trash2 className="inline w-4 h-4" /></button>
+                      <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-amber-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Slash className="inline w-4 h-4" /></button>
+                      <button onClick={() => handleDeleteStaff(member)} className="text-slate-600 hover:text-red-600" title="Delete staff"><Trash2 className="inline w-4 h-4" /></button>
                     </td>
                   </tr>
                 ))
