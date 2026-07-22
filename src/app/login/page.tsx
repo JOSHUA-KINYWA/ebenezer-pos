@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { getDeviceId, getDeviceName, setSession, toSessionUser } from '@/lib/auth'
+import { getDeviceId, getDeviceName, getDetailedDeviceInfo, getDeviceLocationInfo, setSession, toSessionUser } from '@/lib/auth'
 import { hashPin } from '@/lib/pin-hash'
 import { ShoppingBag, Loader2, Shield } from 'lucide-react'
 
@@ -59,12 +59,41 @@ export default function LoginPage() {
 
       if (!approval || approval.status !== 'approved') {
         const deviceName = getDeviceName()
+        
+        // Capture detailed device information
+        let deviceInfo = JSON.stringify({ device_name: deviceName })
+        let locationInfo = ''
+        try {
+          const detailedInfo = await getDetailedDeviceInfo()
+          deviceInfo = JSON.stringify({
+            device_name: deviceName,
+            browser: detailedInfo.browserName,
+            device_type: detailedInfo.deviceType,
+            platform: detailedInfo.platform,
+            screen_resolution: detailedInfo.screenResolution,
+            user_agent: detailedInfo.userAgent,
+            language: detailedInfo.language,
+            timezone: detailedInfo.timezone,
+          })
+        } catch (e) {
+          console.error('Failed to get detailed device info:', e)
+        }
+        
+        try {
+          const location = await getDeviceLocationInfo()
+          locationInfo = `${location.location.city}, ${location.location.country} (${location.ip})`
+        } catch (e) {
+          console.error('Failed to get location info:', e)
+        }
+        
         await supabase
           .from('cashier_device_approvals')
           .upsert({
             user_id: data.id,
             device_id: deviceId,
             device_name: deviceName,
+            device_info: deviceInfo,
+            device_location: locationInfo,
             status: 'pending',
             requested_duration_hours: 12,
             updated_at: now,
@@ -87,6 +116,8 @@ export default function LoginPage() {
                 cashierName: data.full_name,
                 cashierEmail: data.email,
                 deviceName,
+                deviceInfo: JSON.parse(deviceInfo),
+                deviceLocation: locationInfo,
                 ownerEmails: emails,
               }),
             })

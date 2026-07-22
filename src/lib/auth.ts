@@ -89,3 +89,66 @@ export function getDeviceName() {
   const height = window.screen?.height
   return `${platform}${width && height ? ` ${width}x${height}` : ''}`
 }
+
+export async function getDetailedDeviceInfo() {
+  if (typeof window === 'undefined') return {
+    userAgent: 'Unknown',
+    platform: 'Unknown',
+    language: 'Unknown',
+    timezone: 'Unknown',
+    screenResolution: 'Unknown',
+    browserName: 'Unknown',
+    deviceType: 'Unknown',
+  }
+
+  // Get browser and device info
+  const userAgent = navigator.userAgent || 'Unknown'
+  const platform = navigator.platform || 'Unknown'
+  const language = navigator.language || 'Unknown'
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown'
+  const screenResolution = window.screen ? `${window.screen.width}x${window.screen.height}` : 'Unknown'
+
+  // Detect browser name
+  let browserName = 'Unknown'
+  if (userAgent.indexOf('Edg') > -1) browserName = 'Edge'
+  else if (userAgent.indexOf('Chrome') > -1) browserName = 'Chrome'
+  else if (userAgent.indexOf('Safari') > -1) browserName = 'Safari'
+  else if (userAgent.indexOf('Firefox') > -1) browserName = 'Firefox'
+  else if (userAgent.indexOf('Opera') > -1 || userAgent.indexOf('OPR') > -1) browserName = 'Opera'
+
+  // Detect device type
+  let deviceType = 'Desktop'
+  if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)) {
+    if (/iPhone|iPod/i.test(userAgent)) deviceType = 'iPhone'
+    else if (/iPad/i.test(userAgent)) deviceType = 'iPad'
+    else if (/Android/i.test(userAgent)) deviceType = 'Android'
+    else deviceType = 'Mobile'
+  }
+
+  return {
+    userAgent,
+    platform,
+    language,
+    timezone,
+    screenResolution,
+    browserName,
+    deviceType,
+  }
+}
+
+export async function getDeviceLocationInfo() {
+  try {
+    const response = await fetch('/api/device-info')
+    if (response.ok) {
+      return await response.json()
+    }
+  } catch (error) {
+    console.error('Failed to get device location info:', error)
+  }
+
+  return {
+    ip: 'Unknown',
+    location: { country: 'Unknown', city: 'Unknown', timezone: 'Unknown' },
+    timestamp: new Date().toISOString(),
+  }
+}

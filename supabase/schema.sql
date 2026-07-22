@@ -467,6 +467,8 @@ CREATE TABLE IF NOT EXISTS cashier_device_approvals (
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   device_id text NOT NULL,
   device_name text,
+  device_info jsonb,
+  device_location text,
   status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'revoked')) DEFAULT 'pending',
   requested_duration_hours integer NOT NULL DEFAULT 12,
   approved_duration_hours integer,
@@ -480,6 +482,8 @@ CREATE TABLE IF NOT EXISTS cashier_device_approvals (
 );
 
 ALTER TABLE cashier_device_approvals ADD COLUMN IF NOT EXISTS review_token text UNIQUE;
+ALTER TABLE cashier_device_approvals ADD COLUMN IF NOT EXISTS device_info jsonb;
+ALTER TABLE cashier_device_approvals ADD COLUMN IF NOT EXISTS device_location text;
 
 CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_status ON cashier_device_approvals(status);
 CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_user_id ON cashier_device_approvals(user_id);

@@ -20,6 +20,8 @@ interface CashierDeviceApproval {
   user_id: string
   device_id: string
   device_name: string
+  device_info?: string | Record<string, any>
+  device_location?: string
   status: string
   requested_duration_hours: number
   approved_duration_hours?: number
@@ -701,6 +703,49 @@ export default function StaffPage() {
                   <p className="text-sm font-semibold text-slate-900">{formatDate(reviewingDevice.created_at)}</p>
                 </div>
               </div>
+
+              {reviewingDevice.device_location && (
+                <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
+                  <p className="text-xs text-slate-500 mb-1">Login Location</p>
+                  <p className="text-sm font-semibold text-blue-900">{reviewingDevice.device_location}</p>
+                </div>
+              )}
+
+              {reviewingDevice.device_info && (
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-xs font-semibold text-slate-700 mb-2 uppercase">Device Details</p>
+                  <div className="space-y-1 text-xs">
+                    {typeof reviewingDevice.device_info === 'string' ? (
+                      (() => {
+                        try {
+                          const info = JSON.parse(reviewingDevice.device_info)
+                          return (
+                            <>
+                              {info.browser && <div className="text-slate-600"><span className="font-medium text-slate-700">Browser:</span> {info.browser}</div>}
+                              {info.device_type && <div className="text-slate-600"><span className="font-medium text-slate-700">Device:</span> {info.device_type}</div>}
+                              {info.platform && <div className="text-slate-600"><span className="font-medium text-slate-700">Platform:</span> {info.platform}</div>}
+                              {info.screen_resolution && <div className="text-slate-600"><span className="font-medium text-slate-700">Screen:</span> {info.screen_resolution}</div>}
+                              {info.language && <div className="text-slate-600"><span className="font-medium text-slate-700">Language:</span> {info.language}</div>}
+                              {info.timezone && <div className="text-slate-600"><span className="font-medium text-slate-700">Timezone:</span> {info.timezone}</div>}
+                            </>
+                          )
+                        } catch {
+                          return <div className="text-slate-600">{reviewingDevice.device_info}</div>
+                        }
+                      })()
+                    ) : (
+                      <>
+                        {reviewingDevice.device_info.browser && <div className="text-slate-600"><span className="font-medium text-slate-700">Browser:</span> {reviewingDevice.device_info.browser}</div>}
+                        {reviewingDevice.device_info.device_type && <div className="text-slate-600"><span className="font-medium text-slate-700">Device:</span> {reviewingDevice.device_info.device_type}</div>}
+                        {reviewingDevice.device_info.platform && <div className="text-slate-600"><span className="font-medium text-slate-700">Platform:</span> {reviewingDevice.device_info.platform}</div>}
+                        {reviewingDevice.device_info.screen_resolution && <div className="text-slate-600"><span className="font-medium text-slate-700">Screen:</span> {reviewingDevice.device_info.screen_resolution}</div>}
+                        {reviewingDevice.device_info.language && <div className="text-slate-600"><span className="font-medium text-slate-700">Language:</span> {reviewingDevice.device_info.language}</div>}
+                        {reviewingDevice.device_info.timezone && <div className="text-slate-600"><span className="font-medium text-slate-700">Timezone:</span> {reviewingDevice.device_info.timezone}</div>}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <label className="space-y-2">
                 <span className="text-sm font-medium text-slate-700">Approval Duration (hours)</span>
