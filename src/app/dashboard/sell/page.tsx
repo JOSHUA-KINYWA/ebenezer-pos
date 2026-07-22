@@ -1,16 +1,15 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createClient, withRetry } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
 import { CartItem, Customer, Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatProductName, getLocalDateString } from '@/lib/format'
+import { formatMoney, formatProductName } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { Modal } from '@/components/Modal'
 import { PageHeader } from '@/components/PageHeader'
-import { CheckCircle, Plus, Minus, X, ArrowLeftRight, Search, Mail } from 'lucide-react'
+import { Barcode, CheckCircle, Search, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
 
 type POSPaymentType = 'cash'
 type CashMethod = 'cash' | 'coin' | 'till'
@@ -23,18 +22,18 @@ export default function SellPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
+  const [barcodeInput, setBarcodeInput] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [cart, setCart] = useState<CartItem[]>([])
-  const [tierSelectionProduct, setTierSelectionProduct] = useState<Product | null>(null)
+  const [quickAddValue, setQuickAddValue] = useState('')
   const [paymentType, setPaymentType] = useState<POSPaymentType>('cash')
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('cash')
   const [isReviewingPayment, setIsReviewingPayment] = useState(false)
   const [customer, setCustomer] = useState('')
   const [customerId, setCustomerId] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [completedSale, setCompletedSale] = useState<{ id: string; total: number; items: CartItem[]; customer: string; customerEmail?: string } | null>(null)
+  const [completedSale, setCompletedSale] = useState<{ id: string; total: number; items: CartItem[]; customer: string } | null>(null)
   const [cartHighlight, setCartHighlight] = useState(false)
-  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const cartRef = useRef<HTMLDivElement | null>(null)
 
   const supabase = createClient()
@@ -79,49 +78,28 @@ export default function SellPage() {
   }, [cart])
 
   async function fetchProducts() {
-    const productRes = await withRetry(async () => await supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name'))
-    if (productRes.error) throw productRes.error
-    const customerRes = await withRetry(async () => await supabase.from('customers').select('*').eq('is_active', true).order('name'))
-    if (customerRes.error) throw customerRes.error
+    const [{ data: productData }, { data: customerData }] = await Promise.all([
+      supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name'),
+      supabase.from('customers').select('*').eq('is_active', true).order('name'),
+    ])
 
-    setProducts(productRes.data ?? [])
-    setCustomers(customerRes.data ?? [])
+    setProducts(productData ?? [])
+    setCustomers(customerData ?? [])
     setLoading(false)
   }
+
+  const categories = useMemo(
+    () => Array.from(new Set(products.map(product => (product.category as { name?: string })?.name ?? 'Uncategorized'))),
+    [products]
+  )
 
   const parentProducts = useMemo(
     () => products.filter(product => !product.parent_product_id),
     [products]
   )
 
-  const categories = useMemo(
-    () => Array.from(new Set(parentProducts.map(product => (product.category as { name?: string })?.name ?? 'Uncategorized'))),
-    [parentProducts]
-  )
-
   function getProductVariants(productId: string) {
     return products.filter(p => p.parent_product_id === productId && p.is_active)
-  }
-
-  function isProductOutOfStock(product: Product): boolean {
-    const variants = getProductVariants(product.id)
-    if (variants.length > 0) {
-      return getAggregateStock(product) === 0
-    }
-    return Number(product.stock_qty || 0) === 0
-  }
-
-  function getPricingTiers(product: Product) {
-    const tiers = (product as any).pricing_tiers || []
-    return Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
-  }
-
-  function getItemProfit(item: CartItem): number {
-    const cost = Number(item.product.cost_price || 0)
-    const revenue = Number(item.subtotal || 0)
-    const qty = Number(item.quantity || 0)
-    const totalCost = Math.round(cost * qty * 100) / 100
-    return Math.round((revenue - totalCost) * 100) / 100
   }
 
   function getAggregateStock(product: Product): number {
@@ -140,29 +118,14 @@ export default function SellPage() {
         (product.variety ?? '').toLowerCase().includes(query)
       const matchesCategory =
         categoryFilter === 'all' ||
-        ((product.category as { name?: string })?.name ?? 'Uncategorized') === categoryFilter
+        (product.category as { name?: string })?.name === categoryFilter
       return matchesSearch && matchesCategory
     })
   }, [parentProducts, search, categoryFilter])
 
-  function addToCart(product: Product, tier?: { qty: number; price: number }) {
-    const currentStock = Number(product.stock_qty || 0)
-
-    if (currentStock === 0 && !tier) {
+  function addToCart(product: Product) {
+    if (product.stock_qty === 0) {
       toast.error(`⚠️ ${formatProductName(product)} is out of stock!`)
-      return
-    }
-
-    const tiers = (product as any).pricing_tiers || []
-    const validTiers = Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
-    const selectedTier = tier || (validTiers.length === 1 ? { qty: validTiers[0].qty, price: validTiers[0].price } : undefined)
-
-    const quantity = selectedTier ? selectedTier.qty : 1
-    const subtotal = selectedTier ? selectedTier.price : product.price
-    const effectiveStock = currentStock
-
-    if (effectiveStock < quantity) {
-      toast.error(`⚠️ ${formatProductName(product)} only has ${product.stock_qty} available`)
       return
     }
 
@@ -171,10 +134,10 @@ export default function SellPage() {
       const next = existing
         ? prev.map(item =>
             item.product.id === product.id
-              ? { ...item, quantity: item.quantity + quantity, subtotal: item.subtotal + subtotal, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount', selectedTier: item.selectedTier || selectedTier }
+              ? { ...item, quantity: item.quantity + 1, subtotal: item.subtotal + product.price, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount' }
               : item
           )
-        : [...prev, { product, quantity, subtotal, saleMode: 'quantity' as const, selectedTier }]
+        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'amount' as const }]
 
       if (existing) {
         toast.info(`Added another ${formatProductName(product)}`)
@@ -194,94 +157,34 @@ export default function SellPage() {
   }
 
   function handleProductSelect(product: Product) {
-    const tiers = (product as any).pricing_tiers || []
-    const validTiers = Array.isArray(tiers) ? tiers.filter((t: any) => t && t.qty && t.price) : []
-
-    if (validTiers.length > 1) {
-      setTierSelectionProduct(product)
-      return
-    }
-
     addToCart(product)
   }
 
-  function getNormalizedUnit(unit: string): string {
-    return unit.trim().toLowerCase()
-  }
-
   function isDecimalUnit(unit: string): boolean {
-    const normalized = getNormalizedUnit(unit)
-    const decimalUnits = [
-      'kg', 'kgs', 'kilogram', 'kilograms',
-      'g', 'gram', 'grams',
-      'litre', 'litres', 'liter', 'liters', 'l', 'ltr', 'ltrs', 'ml',
-      'oz', 'lb', 'lbs', 'gallon', 'pint', 'cup', 'tbsp', 'tsp',
-      'meter', 'meters', 'metre', 'metres', 'm', 'cm', 'km',
-    ]
-    return decimalUnits.some(u => normalized === u || (u.length > 1 && normalized.includes(u)))
+    const decimalUnits = ['liter', 'litre', 'ml', 'gram', 'kg', 'oz', 'lb', 'gallon', 'pint', 'cup', 'tbsp', 'tsp', 'meter', 'm', 'cm', 'km']
+    return decimalUnits.some(u => unit.toLowerCase().includes(u))
   }
 
   function getIncrementStep(unit: string): number {
-    const normalized = getNormalizedUnit(unit)
-    if (normalized === 'g' || normalized.includes('gram') || normalized === 'ml') return 1
-    return isDecimalUnit(unit) ? 0.1 : 1
-  }
-
-  function getMinimumQty(unit: string): number {
-    return isDecimalUnit(unit) ? 0.1 : 1
-  }
-
-  function roundQty(qty: number, unit: string): number {
-    if (!isDecimalUnit(unit)) return Math.max(1, Math.round(qty))
-    return Math.max(getMinimumQty(unit), Math.round(qty * 10) / 10)
-  }
-
-  function roundMoney(amount: number): number {
-    return Math.round(amount * 100) / 100
+    return isDecimalUnit(unit) ? 0.5 : 1
   }
 
   function formatQtyDisplay(qty: number, unit: string): string {
-    return isDecimalUnit(unit) ? roundQty(qty, unit).toFixed(1) : Math.round(qty).toString()
-  }
-
-  function recalculateCartItem(item: CartItem, qty?: number, amount?: number): CartItem {
-    const tier = item.selectedTier
-    if (tier) {
-      if (amount !== undefined && amount >= 0) {
-        const tierMultiples = Math.max(1, Math.round((amount || 0) / tier.price))
-        const newQty = tierMultiples * tier.qty
-        const newSubtotal = tierMultiples * tier.price
-        return { ...item, quantity: newQty, subtotal: roundMoney(newSubtotal) }
-      }
-      const targetQty = qty ?? item.quantity
-      const tierMultiples = Math.max(1, Math.round(targetQty / tier.qty))
-      const newQty = tierMultiples * tier.qty
-      const subtotal = tierMultiples * tier.price
-      return { ...item, quantity: newQty, subtotal: roundMoney(subtotal) }
-    }
-
-    const price = item.product.price || 0
-    if (amount !== undefined) {
-      const finalSubtotal = roundMoney(Math.max(0.01, amount))
-      const qtyFromAmount = price > 0 ? roundQty(finalSubtotal / price, item.product.unit) : getMinimumQty(item.product.unit)
-      return { ...item, quantity: qtyFromAmount, subtotal: finalSubtotal }
-    }
-
-    const finalQty = roundQty(qty ?? item.quantity, item.product.unit)
-    return { ...item, quantity: finalQty, subtotal: roundMoney(finalQty * price) }
+    return isDecimalUnit(unit) ? qty.toFixed(2) : qty.toString()
   }
 
   function updateQty(productId: string, qty: number) {
     const cartItem = cart.find(item => item.product.id === productId)
     if (!cartItem) return
 
-    const validQty = isNaN(qty) ? getMinimumQty(cartItem.product.unit) : qty
-    const finalQty = roundQty(validQty, cartItem.product.unit)
+    const isDecimal = isDecimalUnit(cartItem.product.unit)
+    const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
+    const finalQty = isDecimal ? Math.round(validQty * 100) / 100 : Math.round(validQty)
 
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? recalculateCartItem(item, finalQty)
+          ? { ...item, quantity: finalQty, subtotal: Math.round(finalQty * item.product.price * 100) / 100, saleMode: 'quantity' }
           : item
       )
     )
@@ -297,7 +200,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? recalculateCartItem(item, newQty)
+          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
           : item
       )
     )
@@ -308,12 +211,12 @@ export default function SellPage() {
     if (!cartItem) return
 
     const step = getIncrementStep(cartItem.product.unit)
-    const newQty = Math.max(getMinimumQty(cartItem.product.unit), cartItem.quantity - step)
+    const newQty = Math.max(0.01, cartItem.quantity - step)
 
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? recalculateCartItem(item, newQty)
+          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
           : item
       )
     )
@@ -325,20 +228,23 @@ export default function SellPage() {
         if (item.product.id !== productId) return item
 
         if (saleMode === 'quantity') {
-          const quantity = Math.max(getMinimumQty(item.product.unit), item.quantity || getMinimumQty(item.product.unit))
-          return recalculateCartItem(item, quantity)
+          const quantity = Math.max(0.01, item.quantity || 1)
+          return {
+            ...item,
+            saleMode,
+            quantity,
+            subtotal: Math.round(quantity * item.product.price * 100) / 100,
+          }
         }
 
         const amount = Math.max(0.01, item.subtotal || item.product.price)
-        if (item.selectedTier) {
-          const tierMultiples = Math.max(1, Math.round(amount / item.selectedTier.price))
-          const quantity = tierMultiples * item.selectedTier.qty
-          const subtotal = tierMultiples * item.selectedTier.price
-          return { ...item, saleMode, quantity, subtotal: roundMoney(subtotal) }
+        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
+        return {
+          ...item,
+          saleMode,
+          quantity,
+          subtotal: Math.round(amount * 100) / 100,
         }
-
-        const quantity = item.product.price > 0 ? roundQty(amount / item.product.price, item.product.unit) : getMinimumQty(item.product.unit)
-        return { ...item, saleMode, quantity, subtotal: roundMoney(amount) }
       })
     )
   }
@@ -354,10 +260,16 @@ export default function SellPage() {
   function updateAmount(productId: string, amount: number) {
     if (amount < 0) return
     setCart(prev =>
-      prev.map(item => {
-        if (item.product.id !== productId) return item
-        return recalculateCartItem(item, undefined, amount)
-      })
+      prev.map(item =>
+        item.product.id === productId
+          ? {
+              ...item,
+              subtotal: Math.round(amount * 100) / 100,
+              quantity: item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0,
+              saleMode: 'amount',
+            }
+          : item
+      )
     )
   }
 
@@ -366,14 +278,18 @@ export default function SellPage() {
       await supabase.from('sales').delete().eq('id', saleId)
       await Promise.all(
         items.map(async item => {
-          const { error } = await supabase.rpc('adjust_product_stock', {
-            p_product_id: item.product.id,
-            p_change_qty: Number(item.quantity),
-            p_reason: 'adjustment',
-            p_note: `Rollback sale ${saleId.slice(0, 8).toUpperCase()}`,
-            p_user_id: userId ?? null,
+          const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product.id).single()
+          if (productError || !product) return
+
+          const nextStock = Number(product.stock_qty) + Number(item.quantity)
+          await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product.id)
+          await supabase.from('stock_log').insert({
+            product_id: item.product.id,
+            user_id: userId ?? null,
+            change_qty: Number(item.quantity),
+            reason: 'adjustment',
+            note: `Rollback sale ${saleId.slice(0, 8).toUpperCase()}`,
           })
-          if (error) console.error('Failed to rollback stock:', error)
         })
       )
     } catch (error) {
@@ -394,26 +310,15 @@ export default function SellPage() {
 
     const totalAmount = cart.reduce((sum, item) => sum + item.subtotal, 0)
     
+    // Warn for large transactions
     if (totalAmount > 50000) {
-      setConfirm({
-        title: 'Large transaction',
-        description: `Large transaction detected (${formatMoney(totalAmount, settings.currency)}). Are you sure?`,
-        confirmLabel: 'Confirm',
-        cancelLabel: 'Cancel',
-        tone: 'danger',
-        onConfirm: async () => {
-          setConfirm(null)
-          await processCompletion(totalAmount)
-        },
-      })
-      return
+      const confirm = window.confirm(`⚠️ Large transaction detected (${formatMoney(totalAmount, settings.currency)}). Are you sure?`)
+      if (!confirm) {
+        toast.info('Sale cancelled')
+        return
+      }
     }
 
-    await processCompletion(totalAmount)
-  }
-
-async function processCompletion(totalAmount: number) {
-    if (submitting) return
     setSubmitting(true)
 
     const stockChecks = await Promise.all(
@@ -425,14 +330,7 @@ async function processCompletion(totalAmount: number) {
         }
         return product
       })
-    ).catch(error => {
-      const message = error instanceof Error ? error.message : 'Unable to verify stock'
-      toast.error(`Stock check failed: ${message}`)
-      setSubmitting(false)
-      return null
-    })
-
-    if (!stockChecks) return
+    )
 
     if (!stockChecks.length) {
       toast.error('❌ No items available for sale')
@@ -444,7 +342,7 @@ async function processCompletion(totalAmount: number) {
       const { data: sale, error: saleErr } = await supabase
         .from('sales')
         .insert({
-          user_id: user!.id,
+          user_id: user.id,
           shift_id: null,
           customer_id: customerId || null,
           subtotal: totalAmount,
@@ -471,7 +369,7 @@ async function processCompletion(totalAmount: number) {
         product_id: item.product.id,
         product_name: formatProductName(item.product),
         quantity: item.quantity,
-        unit_price: item.selectedTier ? item.selectedTier.price : item.product.price,
+        unit_price: item.product.price,
         subtotal: item.subtotal,
       }))
 
@@ -480,47 +378,37 @@ async function processCompletion(totalAmount: number) {
         throw new Error(itemsErr.message)
       }
 
-      if (paymentMethod === 'cash' || paymentMethod === 'coin' || paymentMethod === 'till') {
-        const today = getLocalDateString()
+      if (paymentType === 'cash') {
+        const today = new Date().toISOString().split('T')[0]
         const { data: existing } = await supabase
           .from('drawer_balances')
-          .select('id, cash, coin, till')
+          .select('cash, coin, till')
           .eq('date', today)
           .is('shift_id', null)
           .maybeSingle()
 
-        if (existing) {
-          const nextCash = Number(existing.cash || 0) + (paymentMethod === 'cash' ? totalAmount : 0)
-          const nextCoin = Number(existing.coin || 0) + (paymentMethod === 'coin' ? totalAmount : 0)
-          const nextTill = Number(existing.till || 0) + (paymentMethod === 'till' ? totalAmount : 0)
-          const { error: drawerError } = await supabase
-            .from('drawer_balances')
-            .update({ cash: nextCash, coin: nextCoin, till: nextTill, updated_at: new Date().toISOString() })
-            .eq('id', existing.id)
-          if (drawerError) throw new Error(drawerError.message)
-        } else {
-          const { error: drawerError } = await supabase.from('drawer_balances').insert({
-            date: today,
-            shift_id: null,
-            cash: paymentMethod === 'cash' ? totalAmount : 0,
-            coin: paymentMethod === 'coin' ? totalAmount : 0,
-            till: paymentMethod === 'till' ? totalAmount : 0,
-          })
-          if (drawerError) throw new Error(drawerError.message)
+        const balance = existing ?? { cash: 0, coin: 0, till: 0 }
+        const updatedBalance: any = {
+          date: today,
+          shift_id: null,
+          cash: balance.cash,
+          coin: balance.coin,
+          till: balance.till,
+        }
+
+        if (paymentMethod === 'cash') updatedBalance.cash += totalAmount
+        if (paymentMethod === 'coin') updatedBalance.coin += totalAmount
+        if (paymentMethod === 'till') updatedBalance.till += totalAmount
+
+        const { error: drawerError } = await supabase.from('drawer_balances').upsert(updatedBalance)
+        if (drawerError) {
+          throw new Error(drawerError.message)
         }
       }
 
       await fetchProducts()
 
-      window.dispatchEvent(new Event('drawer-update'))
-
-      let customerEmail = ''
-      if (customerId) {
-        const { data: custData } = await supabase.from('customers').select('email').eq('id', customerId).single()
-        customerEmail = custData?.email || ''
-      }
-
-      setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer, customerEmail })
+      setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer })
       setCart([])
       setCustomer('')
       setPaymentType('cash')
@@ -545,12 +433,43 @@ async function processCompletion(totalAmount: number) {
     cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  function addProductByCode(code: string) {
+    const trimmed = code.trim()
+    if (!trimmed) {
+      toast.error('❌ Enter a barcode or product code')
+      return
+    }
+
+    const found = products.find(product => product.barcode === trimmed || product.name.toLowerCase() === trimmed.toLowerCase())
+    if (found) {
+      if (found.stock_qty === 0) {
+        toast.error(`❌ ${formatProductName(found)} is out of stock!`)
+      } else {
+        handleProductSelect(found)
+        toast.success(`✓ Added ${formatProductName(found)}`)
+      }
+      setBarcodeInput('')
+      setQuickAddValue('')
+    } else {
+      toast.error(`❌ Product not found: ${trimmed}`)
+    }
+  }
+
+  async function handleBarcodeSearch(e: React.FormEvent) {
+    e.preventDefault()
+    addProductByCode(barcodeInput)
+  }
+
+  function handleQuickAddSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    addProductByCode(quickAddValue)
+  }
+
   if (loading) return <LoadingSpinner label="Loading products..." />
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0)
   const total = subtotal
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0)
-  const totalProfit = cart.reduce((sum, item) => sum + getItemProfit(item), 0)
 
   return (
     <div>
@@ -619,11 +538,7 @@ async function processCompletion(totalAmount: number) {
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1">
                           <p className="font-medium text-xs">{formatProductName(item.product)}</p>
-                          <p className="text-xs text-slate-500">
-                            {item.selectedTier
-                              ? `${item.selectedTier.qty} for ${formatMoney(item.selectedTier.price, settings.currency)}`
-                              : `${formatMoney(item.product.price, settings.currency)} each`}
-                          </p>
+                          <p className="text-xs text-slate-500">{formatMoney(item.product.price, settings.currency)} each</p>
                         </div>
                         <button
                           type="button"
@@ -666,7 +581,7 @@ async function processCompletion(totalAmount: number) {
                               <input
                                 type="number"
                                 min="0.01"
-                                step={getIncrementStep(item.product.unit)}
+                                step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
                                 value={formatQtyDisplay(item.quantity, item.product.unit)}
                                 onChange={e => updateQty(item.product.id, Number(e.target.value) || 0.01)}
                                 className="input w-12 text-center border-0 p-0.5 text-xs"
@@ -757,6 +672,20 @@ async function processCompletion(totalAmount: number) {
                 <p className="text-sm text-slate-500">Search, scan, and select a variant under each main product.</p>
               </div>
 
+            <form onSubmit={handleBarcodeSearch} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+              <div className="relative">
+                <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Scan barcode or enter code"
+                  value={barcodeInput}
+                  onChange={e => setBarcodeInput(e.target.value)}
+                  className="input pl-9 w-full"
+                />
+              </div>
+              <button type="submit" className="btn-primary px-4 py-3">Add</button>
+            </form>
+
             <div className="mt-4 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -767,6 +696,24 @@ async function processCompletion(totalAmount: number) {
                 className="input pl-9 w-full"
               />
             </div>
+
+            <form onSubmit={handleQuickAddSubmit} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</label>
+                  <input
+                    type="text"
+                    value={quickAddValue}
+                    onChange={e => setQuickAddValue(e.target.value)}
+                    placeholder="Enter barcode or product name"
+                    className="input mt-1 w-full"
+                  />
+                </div>
+                <button type="submit" className="btn-primary px-4 py-3 sm:self-end">
+                  Quick add
+                </button>
+              </div>
+            </form>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -798,28 +745,19 @@ async function processCompletion(totalAmount: number) {
               filteredParentProducts.map(product => {
                 const variants = getProductVariants(product.id)
                 const hasVariants = variants.length > 0
-                const outOfStock = isProductOutOfStock(product)
                 return (
-                  <div key={product.id} className={`card p-4 transition-shadow ${outOfStock ? 'opacity-60 border-slate-200' : 'hover:shadow-lg'}`}>
+                  <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${outOfStock ? 'bg-red-100 text-red-700' : hasVariants ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {outOfStock ? 'Out of stock' : hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : 'Product'}
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${hasVariants ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : 'Product'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
                     <div className="grid gap-2 text-sm text-slate-600 mb-3">
                       <div className="flex items-center justify-between">
-                        <span>Buying</span>
-                        <span className="font-semibold text-slate-900">{formatMoney(product.cost_price || 0, settings.currency)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Selling</span>
+                        <span>Price</span>
                         <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Profit/unit</span>
-                        <span className="font-semibold text-emerald-600">{formatMoney((product.price - (product.cost_price || 0)), settings.currency)}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Stock</span>
@@ -833,73 +771,32 @@ async function processCompletion(totalAmount: number) {
                       <div className="mb-3">
                         <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Variants</p>
                         <div className="flex flex-wrap gap-2">
-                          {variants.map(variant => {
-                            const variantOutOfStock = Number(variant.stock_qty || 0) === 0
-                            return (
-                              <button
-                                key={variant.id}
-                                type="button"
-                                onClick={() => !variantOutOfStock && addToCart(variant)}
-                                disabled={variantOutOfStock}
-                                className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                                  variantOutOfStock
-                                    ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:text-brand-700'
-                                }`}
-                              >
-                                <Plus className="w-3 h-3" />
-                                {formatProductName(variant)}
-                                <span className="text-slate-400">({formatMoney(variant.price, settings.currency)})</span>
-                              </button>
-                            )
-                          })}
+                          {variants.map(variant => (
+                            <button
+                              key={variant.id}
+                              type="button"
+                              onClick={() => addToCart(variant)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand-400 hover:text-brand-700"
+                            >
+                              <Plus className="w-3 h-3" />
+                              {formatProductName(variant)}
+                              <span className="text-slate-400">({formatMoney(variant.price, settings.currency)})</span>
+                            </button>
+                          ))}
                         </div>
                       </div>
                     )}
 
-                    {!hasVariants && (() => {
-                      const tiers = getPricingTiers(product)
-                      if (tiers.length > 1) {
-                        return (
-                          <div className="mb-3">
-                            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Pricing tiers</p>
-                            <div className="flex flex-wrap gap-2">
-                              {tiers.map((tier: any, idx: number) => (
-                                <button
-                                  key={idx}
-                                  type="button"
-                                  onClick={() => addToCart(product, { qty: Number(tier.qty), price: Number(tier.price) })}
-                                  disabled={outOfStock}
-                                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                                    outOfStock
-                                      ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                                      : 'border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:text-brand-700'
-                                  }`}
-                                >
-                                  <Plus className="w-3 h-3" />
-                                  {tier.qty} for {formatMoney(Number(tier.price), settings.currency)}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      }
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => addToCart(product)}
-                          disabled={outOfStock}
-                          className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                            outOfStock
-                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                              : 'bg-brand-600 text-white hover:bg-brand-700'
-                          }`}
-                        >
-                          <Plus className="w-4 h-4" />
-                          Add to cart
-                        </button>
-                      )
-                    })()}
+                    {!hasVariants && (
+                      <button
+                        type="button"
+                        onClick={() => addToCart(product)}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add to cart
+                      </button>
+                    )}
                   </div>
                 )
               })
@@ -951,12 +848,7 @@ async function processCompletion(totalAmount: number) {
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex-1">
                         <p className="font-semibold text-sm text-slate-900">{formatProductName(item.product)}</p>
-                        <p className="text-xs text-slate-500">
-                          {item.selectedTier
-                            ? `${item.selectedTier.qty} for ${formatMoney(item.selectedTier.price, settings.currency)}`
-                            : `${formatMoney(item.product.price, settings.currency)} per unit`}
-                          <span className="ml-2 text-emerald-600">Profit: {formatMoney(getItemProfit(item), settings.currency)}</span>
-                        </p>
+                        <p className="text-xs text-slate-500">{formatMoney(item.product.price, settings.currency)} per unit</p>
                       </div>
                       <button
                         type="button"
@@ -1011,7 +903,7 @@ async function processCompletion(totalAmount: number) {
                           <button
                             type="button"
                             onClick={() => decreaseQty(item.product.id)}
-                            disabled={item.quantity <= getMinimumQty(item.product.unit)}
+                            disabled={item.quantity <= 1}
                             className="rounded p-1.5 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Decrease quantity"
                           >
@@ -1019,10 +911,10 @@ async function processCompletion(totalAmount: number) {
                           </button>
                           <input
                             type="number"
-                            min={getMinimumQty(item.product.unit)}
-                            step={getIncrementStep(item.product.unit)}
+                            min="1"
+                            step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
                             value={formatQtyDisplay(item.quantity, item.product.unit)}
-                            onChange={e => updateQty(item.product.id, Number(e.target.value) || getMinimumQty(item.product.unit))}
+                            onChange={e => updateQty(item.product.id, Number(e.target.value) || 1)}
                             className="input w-12 border-0 bg-transparent p-1 text-center"
                           />
                           <button
@@ -1045,10 +937,6 @@ async function processCompletion(totalAmount: number) {
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                   <span className="font-semibold">Total due</span>
                   <span className="font-semibold text-slate-900">{formatMoney(total, settings.currency)}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-emerald-50 px-4 py-3 text-sm text-slate-600">
-                  <span className="font-semibold text-emerald-700">Profit</span>
-                  <span className="font-semibold text-emerald-700">{formatMoney(totalProfit, settings.currency)}</span>
                 </div>
               </div>
             )}
@@ -1075,69 +963,13 @@ async function processCompletion(totalAmount: number) {
           <div className="card w-full max-w-md mx-4 p-6 text-center">
             <CheckCircle className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-slate-900 mb-2">Sale Complete!</h3>
-            <p className="text-slate-600 mb-4">Sale #{completedSale.id.slice(0, 8).toUpperCase()} for {formatMoney(completedSale.total, settings.currency)}</p>
-            {completedSale.customerEmail && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const res = await fetch('/api/send-receipt', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'x-user-id': user?.id || '',
-                      },
-                      body: JSON.stringify({
-                        saleId: completedSale.id,
-                        customerEmail: completedSale.customerEmail,
-                        items: completedSale.items.map(i => ({
-                          name: formatProductName(i.product),
-                          quantity: i.quantity,
-                          price: i.product.price,
-                          total: i.subtotal,
-                        })),
-                        subtotal: completedSale.total,
-                        total: completedSale.total,
-                        date: new Date().toISOString(),
-                      }),
-                    })
-                    if (res.ok) {
-                      toast.success('Receipt emailed!')
-                    } else {
-                      toast.error('Failed to send email')
-                    }
-                  } catch (e) {
-                    toast.error('Failed to send email')
-                  }
-                }}
-                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 mb-4"
-              >
-                <Mail className="w-4 h-4" /> Email receipt
-              </button>
-            )}
+            <p className="text-slate-600 mb-4">Sale #{completedSale.id} for {formatMoney(completedSale.total, settings.currency)}</p>
             <div className="flex gap-2">
               <button type="button" onClick={() => { setCompletedSale(null); window.print() }} className="btn-secondary flex-1">Print</button>
               <button type="button" onClick={startNewSale} className="btn-primary flex-1">New Sale</button>
             </div>
           </div>
         </div>
-      )}
-
-      {confirm && (
-        <Modal
-          isOpen={!!confirm}
-          onClose={() => setConfirm(null)}
-          title={confirm.title}
-          description={confirm.description}
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
-              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
-            </div>
-          }
-        >
-          <p className="text-sm text-slate-600">{confirm.description}</p>
-        </Modal>
       )}
     </div>
   )

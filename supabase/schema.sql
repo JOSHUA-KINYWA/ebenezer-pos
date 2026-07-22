@@ -471,12 +471,15 @@ CREATE TABLE IF NOT EXISTS cashier_device_approvals (
   requested_duration_hours integer NOT NULL DEFAULT 12,
   approved_duration_hours integer,
   expires_at timestamptz,
+  review_token text UNIQUE,
   reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL,
   reviewed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(user_id, device_id)
 );
+
+ALTER TABLE cashier_device_approvals ADD COLUMN IF NOT EXISTS review_token text UNIQUE;
 
 CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_status ON cashier_device_approvals(status);
 CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_user_id ON cashier_device_approvals(user_id);

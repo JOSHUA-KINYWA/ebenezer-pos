@@ -12,7 +12,7 @@ import { useToast } from '@/context/ToastContext'
 import { Product, Category } from '@/types'
 import { validateProductForm } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
-import { Search, Plus, Edit3, Trash2, Save, X } from 'lucide-react'
+import { Search, Plus, Edit3, Trash2, Save } from 'lucide-react'
 
 interface ProductForm {
   name: string
@@ -22,13 +22,11 @@ interface ProductForm {
   category_id: string
   parent_product_id: string
   price: string
-  cost_price: string
   unit: string
   stock_qty: string
   stock_alert: string
   is_active: boolean
   product_type: 'standalone' | 'parent'
-  pricing_tiers: { qty: string; price: string }[]
 }
 
 const initialForm: ProductForm = {
@@ -39,17 +37,11 @@ const initialForm: ProductForm = {
   category_id: '',
   parent_product_id: '',
   price: '0.00',
-  cost_price: '0.00',
   unit: 'piece',
   stock_qty: '0',
   stock_alert: '10',
   is_active: true,
   product_type: 'standalone',
-  pricing_tiers: [],
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10
 }
 
 export default function ProductsPage() {
@@ -66,8 +58,7 @@ export default function ProductsPage() {
   const [variantsDraft, setVariantsDraft] = useState<ProductForm[]>([])
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'instock' | 'outofstock'>('all')
-  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const toast = useToast()
   const supabase = createClient()
 
@@ -103,7 +94,7 @@ export default function ProductsPage() {
   async function fetchProducts() {
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('products').select('*, category:categories(name), parent:products!parent_product_id(name)').order('name')
+      const { data, error } = await supabase.from('products').select('*, category:categories(name)').order('name')
       if (error) throw error
       setProducts((data || []) as Product[])
       setError(null)
@@ -122,7 +113,6 @@ export default function ProductsPage() {
       category_id: categories[0]?.id ?? '',
       parent_product_id: '',
       product_type: 'standalone',
-      pricing_tiers: [],
     })
     setErrors({})
     setEditingProduct(null)
@@ -135,13 +125,11 @@ export default function ProductsPage() {
       category_id: (parentCategoryId || categories[0]?.id) ?? '',
       parent_product_id: parentId || '',
       price: parent?.price?.toString() || initialForm.price,
-      cost_price: parent?.cost_price?.toString() || initialForm.cost_price,
       unit: parent?.unit || initialForm.unit,
       stock_qty: '0',
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
       name: '',
       product_type: 'standalone',
-      pricing_tiers: [],
     })
     setErrors({})
     setVariantsDraft([])
@@ -153,7 +141,6 @@ export default function ProductsPage() {
     setEditingProduct(product)
     const isVariant = !!product.parent_product_id
     const hasChildren = products.some(p => p.parent_product_id === product.id)
-    const tiers = (product as any).pricing_tiers || []
     setForm({
       name: product.name || '',
       barcode: product.barcode || '',
@@ -162,13 +149,11 @@ export default function ProductsPage() {
       category_id: product.category_id || categories[0]?.id || '',
       parent_product_id: product.parent_product_id || '',
       price: product.price?.toString() || '0.00',
-      cost_price: product.cost_price?.toString() || '0.00',
       unit: product.unit || 'piece',
       stock_qty: product.stock_qty?.toString() || '0',
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
       product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
-      pricing_tiers: Array.isArray(tiers) ? tiers.map((t: any) => ({ qty: String(t.qty ?? ''), price: String(t.price ?? '') })) : [],
     })
     setErrors({})
     setVariantsDraft([])
@@ -187,13 +172,11 @@ export default function ProductsPage() {
         category_id: form.category_id,
         parent_product_id: parentId,
         price: form.price,
-        cost_price: form.cost_price,
         unit: form.unit,
         stock_qty: '0',
         stock_alert: form.stock_alert,
         is_active: true,
         product_type: 'standalone',
-        pricing_tiers: [],
       },
     ])
   }
@@ -224,36 +207,22 @@ export default function ProductsPage() {
       return
     }
 
-    const normalizedTiers = form.pricing_tiers
-      .filter(tier => tier.qty && tier.price)
-      .map(tier => ({
-        qty: Math.max(parseInt(tier.qty, 10) || 1, 1),
-        price: Math.max(parseFloat(tier.price) || 0, 0),
-      }))
-      .filter((tier, index, self) => index === 0 || tier.qty !== self[index - 1].qty)
-      .sort((a, b) => a.qty - b.qty)
-
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       barcode: form.barcode.trim() || null,
       variety: form.variety.trim() || null,
       description: form.description.trim() || null,
       price: parseFloat(form.price),
-      cost_price: parseFloat(form.cost_price || '0'),
       unit: form.unit.trim(),
-      stock_qty: round1(parseFloat(form.stock_qty)),
-      stock_alert: round1(parseInt(form.stock_alert, 10)),
+      stock_qty: parseFloat(form.stock_qty),
+      stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
-      pricing_tiers: normalizedTiers,
     }
     if (form.category_id) {
       payload.category_id = form.category_id
     }
     if (form.parent_product_id) {
       payload.parent_product_id = form.parent_product_id
-    }
-    if (!editingProduct) {
-      payload.initial_stock = round1(parseFloat(form.stock_qty))
     }
 
     try {
@@ -269,13 +238,11 @@ export default function ProductsPage() {
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
               price: parseFloat(v.price),
-              cost_price: parseFloat(v.cost_price || '0'),
               unit: v.unit.trim(),
-              stock_qty: round1(parseFloat(v.stock_qty)),
-              stock_alert: round1(parseInt(v.stock_alert, 10)),
+              stock_qty: parseFloat(v.stock_qty),
+              stock_alert: parseInt(v.stock_alert, 10),
               is_active: v.is_active,
               parent_product_id: variantParentId,
-              initial_stock: round1(parseFloat(v.stock_qty)),
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -299,13 +266,11 @@ export default function ProductsPage() {
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
               price: parseFloat(v.price),
-              cost_price: parseFloat(v.cost_price || '0'),
               unit: v.unit.trim(),
-              stock_qty: round1(parseFloat(v.stock_qty)),
-              stock_alert: round1(parseInt(v.stock_alert, 10)),
+              stock_qty: parseFloat(v.stock_qty),
+              stock_alert: parseInt(v.stock_alert, 10),
               is_active: v.is_active,
               parent_product_id: parentId,
-              initial_stock: round1(parseFloat(v.stock_qty)),
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -350,42 +315,28 @@ export default function ProductsPage() {
       return
     }
 
-    setConfirm({
-      title: 'Delete product',
-      description: `Delete "${product.name}"? This will remove the product and any attached variants.`,
-      tone: 'danger',
-      confirmLabel: 'Delete',
-      onConfirm: async () => {
-        setConfirm(null)
-        try {
-          const { error } = await supabase.from('products').delete().eq('id', product.id)
-          if (error) throw error
-          toast.success('Product deleted successfully')
-          setSelectedProduct(current => (current?.id === product.id ? null : current))
-          fetchProducts()
-        } catch (error) {
-          const message = getSupabaseErrorMessage(error)
-          toast.error(`❌ ${message}`)
-          console.error(error)
-        }
-      },
-    })
-  }
+    const confirmed = window.confirm(`Delete "${product.name}"? This will remove the product and any attached variants.`)
+    if (!confirmed) return
 
-  function getAggregateStock(product: Product): number {
-    const variants = products.filter(p => p.parent_product_id === product.id)
-    if (variants.length === 0) return Number(product.stock_qty || 0)
-    return variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0)
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', product.id)
+      if (error) throw error
+      toast.success('Product deleted successfully')
+      setSelectedProduct(current => (current?.id === product.id ? null : current))
+      fetchProducts()
+    } catch (error) {
+      const message = getSupabaseErrorMessage(error)
+      toast.error(`❌ ${message}`)
+      console.error(error)
+    }
   }
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase()
     return products.filter(product => {
-      const aggregateStock = getAggregateStock(product)
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'instock' && aggregateStock > 0) ||
-        (statusFilter === 'outofstock' && aggregateStock === 0)
+      if (product.parent_product_id) return false
+      if (statusFilter === 'active' && !product.is_active) return false
+      if (statusFilter === 'inactive' && product.is_active) return false
       const matchesSearch =
         !query ||
         product.name.toLowerCase().includes(query) ||
@@ -396,7 +347,7 @@ export default function ProductsPage() {
       const matchesCategory =
         categoryFilter === 'all' ||
         ((product.category as { name?: string })?.name || 'Uncategorized') === categoryFilter
-      return matchesStatus && matchesSearch && matchesCategory
+      return matchesSearch && matchesCategory
     })
   }, [products, search, categoryFilter, statusFilter])
 
@@ -487,12 +438,12 @@ export default function ProductsPage() {
             </select>
             <select
               value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value as 'all' | 'instock' | 'outofstock')}
+              onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
               className="input w-full"
             >
               <option value="all">All statuses</option>
-              <option value="instock">In stock</option>
-              <option value="outofstock">Out of stock</option>
+              <option value="active">Active only</option>
+              <option value="inactive">Inactive only</option>
             </select>
           </div>
         </div>
@@ -503,8 +454,7 @@ export default function ProductsPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Category</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Buying price</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Selling price</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Price</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
@@ -513,7 +463,7 @@ export default function ProductsPage() {
             <tbody className="divide-y divide-slate-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">No products found.</td>
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">No products found.</td>
                 </tr>
               ) : (
                 filteredProducts.map(product => {
@@ -521,21 +471,20 @@ export default function ProductsPage() {
                     ? products.find(p => p.id === product.parent_product_id)?.name
                     : null
                   return (
-                <tr key={product.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedProduct(product)}>
-                  <td className="px-4 py-4 text-sm font-medium text-slate-900">
-                    {product.name}
-                    {product.parent_product_id ? (
-                      <span className="ml-2 inline-block text-xs rounded-full bg-slate-100 text-slate-700 px-2 py-0.5">Variant</span>
-                    ) : products.some(p => p.parent_product_id === product.id) ? (
-                      <span className="ml-2 inline-block text-xs rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">Parent</span>
-                    ) : null}
-                    {parentName && (
-                      <div className="mt-1 text-xs text-slate-500">Variant of {parentName}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
-                  <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.cost_price || 0, 'KSh')}</td>
-                  <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.price, 'KSh')}</td>
+                    <tr key={product.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedProduct(product)}>
+                      <td className="px-4 py-4 text-sm font-medium text-slate-900">
+                        {product.name}
+                        {product.parent_product_id ? (
+                          <span className="ml-2 inline-block text-xs rounded-full bg-slate-100 text-slate-700 px-2 py-0.5">Variant</span>
+                        ) : products.some(p => p.parent_product_id === product.id) ? (
+                          <span className="ml-2 inline-block text-xs rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">Parent</span>
+                        ) : null}
+                        {parentName && (
+                          <div className="mt-1 text-xs text-slate-500">Variant of {parentName}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.price, 'KSh')}</td>
                       <td className="px-4 py-4 text-sm text-slate-600">
                         {product.parent_product_id
                           ? `${product.stock_qty} ${product.unit}`
@@ -611,14 +560,6 @@ export default function ProductsPage() {
                 <p className="text-sm text-slate-900">{selectedProduct.unit}</p>
               </div>
               <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Buying price</p>
-                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.cost_price || 0, 'KSh')}</p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Selling price</p>
-                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.price, 'KSh')}</p>
-              </div>
-              <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Quantity</p>
                 <p className="text-sm text-slate-900">
                   {selectedProduct.parent_product_id
@@ -653,8 +594,7 @@ export default function ProductsPage() {
                         <th className="table-head">Name</th>
                         <th className="table-head">Unit</th>
                         <th className="table-head">Qty</th>
-                        <th className="table-head">Selling price</th>
-                        <th className="table-head">Buying price</th>
+                        <th className="table-head">Price</th>
                         <th className="table-head text-right">Actions</th>
                       </tr>
                     </thead>
@@ -665,7 +605,6 @@ export default function ProductsPage() {
                           <td className="table-cell">{variant.unit}</td>
                           <td className="table-cell">{variant.stock_qty}</td>
                           <td className="table-cell">{formatMoney(variant.price, 'KSh')}</td>
-                          <td className="table-cell">{formatMoney(variant.cost_price || 0, 'KSh')}</td>
                           <td className="table-cell text-right">
                             <button onClick={() => openEditProduct(variant)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
                           </td>
@@ -808,7 +747,7 @@ export default function ProductsPage() {
             </label>
 
             <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Selling price</span>
+              <span className="text-sm font-medium text-slate-700">Price</span>
               <input
                 type="number"
                 step="0.01"
@@ -819,86 +758,6 @@ export default function ProductsPage() {
               />
               {errors.price && <p className="text-xs text-red-600">{errors.price}</p>}
             </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Buying price</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.cost_price}
-                onChange={e => setForm({ ...form, cost_price: e.target.value })}
-                className="input w-full"
-                placeholder="Cost per unit"
-              />
-              {errors.cost_price && <p className="text-xs text-red-600">{errors.cost_price}</p>}
-            </label>
-
-            <div className="sm:col-span-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-slate-700">Pricing tiers</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextQty = Number(form.stock_qty || 0) > 0 ? Number(form.stock_qty) : 1
-                    const basePrice = Number(form.price || 0)
-                    setForm({
-                      ...form,
-                      pricing_tiers: [
-                        ...form.pricing_tiers,
-                        { qty: String(nextQty), price: String(basePrice) },
-                      ],
-                    })
-                  }}
-                  className="btn-secondary inline-flex items-center gap-1 text-xs py-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add tier
-                </button>
-              </div>
-              {form.pricing_tiers.length === 0 ? (
-                <p className="text-xs text-slate-500">No pricing tiers. Leave empty for standard per-unit pricing.</p>
-              ) : (
-                <div className="space-y-2">
-                  {form.pricing_tiers.map((tier, index) => (
-                    <div key={index} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
-                      <span className="text-xs text-slate-500 w-16">Qty</span>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        className="input flex-1 py-1.5 text-sm"
-                        value={tier.qty}
-                        onChange={e => {
-                          const next = [...form.pricing_tiers]
-                          next[index] = { ...next[index], qty: e.target.value }
-                          setForm({ ...form, pricing_tiers: next })
-                        }}
-                      />
-                      <span className="text-xs text-slate-500 w-12">Selling</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="input flex-1 py-1.5 text-sm"
-                        value={tier.price}
-                        onChange={e => {
-                          const next = [...form.pricing_tiers]
-                          next[index] = { ...next[index], price: e.target.value }
-                          setForm({ ...form, pricing_tiers: next })
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setForm({ ...form, pricing_tiers: form.pricing_tiers.filter((_, i) => i !== index) })}
-                        className="rounded p-1.5 text-red-600 hover:bg-red-50"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Unit</span>
@@ -966,8 +825,7 @@ export default function ProductsPage() {
                               <th className="table-head">Name</th>
                               <th className="table-head">Unit</th>
                               <th className="table-head">Qty</th>
-                              <th className="table-head">Selling price</th>
-                              <th className="table-head">Buying price</th>
+                              <th className="table-head">Price</th>
                               <th className="table-head text-right">Actions</th>
                             </tr>
                           </thead>
@@ -978,7 +836,6 @@ export default function ProductsPage() {
                                 <td className="px-3 py-2 text-sm text-slate-600">{v.unit}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600">{v.stock_qty}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.price, 'KSh')}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.cost_price || 0, 'KSh')}</td>
                                 <td className="px-3 py-2 text-right"><button onClick={() => openEditProduct(v)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button></td>
                               </tr>
                             ))}
@@ -1025,18 +882,14 @@ export default function ProductsPage() {
                                 ))}
                               </select>
                             </label>
-                              <label className="space-y-2">
-                                <span className="text-xs text-slate-500">Selling price</span>
-                                <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
-                              </label>
-                              <label className="space-y-2">
-                                <span className="text-xs text-slate-500">Buying price</span>
-                                <input type="number" step="0.01" min="0" value={v.cost_price} onChange={e => updateVariantDraft(i, 'cost_price', e.target.value)} className="input w-full" />
-                              </label>
-                              <label className="space-y-2">
-                                <span className="text-xs text-slate-500">Quantity</span>
-                                <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
-                              </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Price</span>
+                              <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Quantity</span>
+                              <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
+                            </label>
                             <label className="space-y-2">
                               <span className="text-xs text-slate-500">Unit</span>
                               <input value={v.unit} onChange={e => updateVariantDraft(i, 'unit', e.target.value)} className="input w-full" />
@@ -1074,25 +927,8 @@ export default function ProductsPage() {
               <span className="text-sm text-slate-700">Mark as active</span>
             </label>
           </div>
-         </Modal>
-      </div>
-
-      {confirm && (
-        <Modal
-          isOpen={!!confirm}
-          onClose={() => setConfirm(null)}
-          title={confirm.title}
-          description={confirm.description}
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
-              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
-            </div>
-          }
-        >
-          <p className="text-sm text-slate-600">{confirm.description}</p>
         </Modal>
-      )}
+      </div>
     </RoleGuard>
   )
 }

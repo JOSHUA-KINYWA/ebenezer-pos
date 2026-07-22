@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { SessionUser, ShopSettings, Product, Category, User } from '@/types'
-import { getSession, getDeviceId, getDeviceName } from '@/lib/auth'
+import { SessionUser, ShopSettings, Product, Category } from '@/types'
+import { getSession } from '@/lib/auth'
 import { formatMoney } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
@@ -12,10 +12,8 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
-import { Store, Trash2, Search, Plus, Edit3, Save, RefreshCw, AlertTriangle, CheckCircle2, Slash } from 'lucide-react'
-import { validateCategoryForm, validateProductForm, validateStaffForm } from '@/lib/validators'
-import { hashPin, verifyPin } from '@/lib/pin-hash'
-import { exportFactoryResetBackup, downloadBackupFile, downloadCsvFile, type FactoryResetBackup } from '@/lib/factory-reset-backup'
+import { Store, Trash2, Search, Plus, Edit3, Save, RefreshCw, AlertTriangle } from 'lucide-react'
+import { validateCategoryForm, validateProductForm } from '@/lib/validators'
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -38,7 +36,7 @@ export default function SettingsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  type SettingsTab = 'general' | 'categories' | 'staff' | 'account'
+  type SettingsTab = 'general' | 'categories' | 'account'
   const [currentPin, setCurrentPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
@@ -61,28 +59,11 @@ export default function SettingsPage() {
   const [productErrors, setProductErrors] = useState<Record<string, string>>({})
   const [categoryErrors, setCategoryErrors] = useState<Record<string, string>>({})
   const [catalogLoading, setCatalogLoading] = useState(true)
-  const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const [productSearch, setProductSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
-  const [staff, setStaff] = useState<User[]>([])
-  const [staffSearch, setStaffSearch] = useState('')
-  const [staffModalOpen, setStaffModalOpen] = useState(false)
-  const [editingStaff, setEditingStaff] = useState<User | null>(null)
-  const [staffForm, setStaffForm] = useState({ full_name: '', email: '', role: 'cashier' as 'owner' | 'cashier', pin: '', is_active: true })
-  const [staffErrors, setStaffErrors] = useState<Record<string, string>>({})
-  const [savingStaff, setSavingStaff] = useState(false)
-  const [deletingStaff, setDeletingStaff] = useState<User | null>(null)
-  const [backupData, setBackupData] = useState<FactoryResetBackup | null>(null)
-  const [exportingBackup, setExportingBackup] = useState(false)
-  const [factoryResetPin, setFactoryResetPin] = useState('')
-  const [factoryResetStep, setFactoryResetStep] = useState<'idle' | 'backup' | 'confirm' | 'pin'>('idle')
   const toast = useToast()
   const supabase = createClient()
-
-  function round1(value: number): number {
-    return Math.round(value * 10) / 10
-  }
 
   useEffect(() => {
     const session = getSession()
@@ -117,12 +98,6 @@ export default function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'staff') {
-      fetchStaff()
-    }
-  }, [activeTab])
-
-  useEffect(() => {
     if (categories.length && productModalOpen && !productForm.category_id) {
       setProductForm(prev => ({ ...prev, category_id: categories[0].id }))
     }
@@ -146,111 +121,45 @@ export default function SettingsPage() {
   }
 
   async function resetSales() {
-    setConfirm({
-      title: 'Reset sales',
-      description: 'Delete all sales records and transaction history? This cannot be undone.',
-      tone: 'danger',
-      confirmLabel: 'Reset',
-      onConfirm: async () => {
-        setConfirm(null)
-        try {
-          await Promise.all([clearTable('sale_items'), clearTable('sales')])
-          toast.success('All sales and transactions reset')
-          refresh()
-        } catch (err) {
-          toast.error('Failed to reset sales')
-        }
-      },
-    })
+    if (!confirm('Delete all sales records and transaction history? This cannot be undone.')) return
+    if (!confirm('This will remove all sales data. Are you sure?')) return
+    try {
+      await Promise.all([clearTable('sale_items'), clearTable('sales')])
+      toast.success('All sales and transactions reset')
+      refresh()
+    } catch (err) {
+      toast.error('Failed to reset sales')
+    }
   }
 
   async function resetExpenses() {
-    setConfirm({
-      title: 'Reset expenses',
-      description: 'Delete all expense records? This cannot be undone.',
-      tone: 'danger',
-      confirmLabel: 'Reset',
-      onConfirm: async () => {
-        setConfirm(null)
-        try {
-          await clearTable('expenses')
-          toast.success('All expenses reset')
-          refresh()
-        } catch (err) {
-          toast.error('Failed to reset expenses')
-        }
-      },
-    })
+    if (!confirm('Delete all expense records? This cannot be undone.')) return
+    try {
+      await clearTable('expenses')
+      toast.success('All expenses reset')
+      refresh()
+    } catch (err) {
+      toast.error('Failed to reset expenses')
+    }
   }
 
   async function resetDrawer() {
-    setConfirm({
-      title: 'Reset drawer',
-      description: 'Delete all drawer balance records? This cannot be undone.',
-      tone: 'danger',
-      confirmLabel: 'Reset',
-      onConfirm: async () => {
-        setConfirm(null)
-        try {
-          await clearTable('drawer_balance_logs')
-          await clearTable('drawer_balances')
-          toast.success('All drawer balances reset')
-          refresh()
-        } catch (err) {
-          toast.error('Failed to reset drawer balances')
-        }
-      },
-    })
+    if (!confirm('Delete all drawer balance records? This cannot be undone.')) return
+    try {
+      await clearTable('drawer_balances')
+      toast.success('All drawer balances reset')
+      refresh()
+    } catch (err) {
+      toast.error('Failed to reset drawer balances')
+    }
   }
 
   async function resetFactoryData() {
-    setFactoryResetStep('backup')
-    setBackupData(null)
-    setFactoryResetPin('')
-  }
+    if (!confirm('Factory reset will remove sales, inventory, expenses, customers, and catalog data. This cannot be undone.')) return
+    if (!confirm('This will remove your business history and inventory records. Continue?')) return
 
-  async function handleBackupExport() {
-    setExportingBackup(true)
     try {
-      const backup = await exportFactoryResetBackup()
-      setBackupData(backup)
-      downloadBackupFile(backup)
-      setFactoryResetStep('confirm')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to export backup'
-      toast.error(message)
-      setFactoryResetStep('idle')
-    } finally {
-      setExportingBackup(false)
-    }
-  }
-
-  async function handleFactoryResetConfirm() {
-    setFactoryResetStep('pin')
-  }
-
-  async function handleFactoryResetWithPin() {
-    if (!user) return
-    if (!factoryResetPin.trim()) {
-      toast.error('Enter your PIN to confirm factory reset')
-      return
-    }
-
-    setSaving(true)
-    try {
-      const currentPinHash = await hashPin(factoryResetPin.trim())
-      const { data: existing } = await supabase
-        .from('users')
-        .select('pin')
-        .eq('id', user.id)
-        .maybeSingle()
-      if (!existing || existing.pin !== currentPinHash) {
-        toast.error('PIN is incorrect')
-        setSaving(false)
-        return
-      }
-
-      const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balance_logs', 'drawer_balances', 'stock_log', 'cashier_device_approvals', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
+      const tablesToClear = ['sale_items', 'sales', 'expenses', 'drawer_balances', 'stock_log', 'products', 'categories', 'customers', 'shifts', 'audit_logs', 'payment_reconciliation']
 
       for (const tableName of tablesToClear) {
         await clearTable(tableName)
@@ -259,16 +168,11 @@ export default function SettingsPage() {
       setProducts([])
       setCategories([])
       setSelectedProduct(null)
-      setFactoryResetStep('idle')
-      setFactoryResetPin('')
-      setBackupData(null)
       toast.success('Factory reset complete')
       refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reset factory data'
       toast.error(message)
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -281,118 +185,6 @@ export default function SettingsPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to load categories'
       setError(message)
-      toast.error(message)
-    }
-  }
-
-  async function fetchStaff() {
-    try {
-      const { data, error } = await supabase.from('users').select('id, full_name, email, role, is_active, created_at').order('full_name')
-      if (error) throw error
-      setStaff((data || []) as User[])
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to load staff'
-      toast.error(message)
-    }
-  }
-
-  function resetStaffForm() {
-    setStaffForm({ full_name: '', email: '', role: 'cashier', pin: '', is_active: true })
-    setStaffErrors({})
-    setEditingStaff(null)
-  }
-
-  async function handleSaveStaff() {
-    const validation = editingStaff || staffForm.pin.trim()
-      ? validateStaffForm({ full_name: staffForm.full_name, email: staffForm.email, pin: editingStaff ? staffForm.pin || '0000' : staffForm.pin })
-      : validateStaffForm({ full_name: staffForm.full_name, email: staffForm.email, pin: staffForm.pin })
-
-    if (!validation.isValid) {
-      setStaffErrors(Object.fromEntries(validation.errors.map(error => [error.field, error.message])))
-      return
-    }
-
-    setSavingStaff(true)
-    try {
-      const payload = {
-        full_name: staffForm.full_name.trim(),
-        email: staffForm.email.trim(),
-        role: staffForm.role,
-        is_active: staffForm.is_active,
-      }
-
-      if (!editingStaff || staffForm.pin.trim()) {
-        const pinHash = await hashPin(staffForm.pin.trim() || '0000')
-        Object.assign(payload, { pin: pinHash })
-      }
-
-      if (editingStaff) {
-        const { error } = await supabase.from('users').update(payload).eq('id', editingStaff.id).single()
-        if (error) throw error
-        toast.success('Staff updated successfully')
-      } else {
-        const { error } = await supabase.from('users').insert([payload])
-        if (error) throw error
-        toast.success('Staff added successfully')
-
-        if (payload.role === 'cashier') {
-          const now = new Date().toISOString()
-          const expiresAt = new Date(Date.now() + 168 * 60 * 60 * 1000).toISOString()
-          const deviceId = getDeviceId()
-          const deviceName = getDeviceName()
-          const { data: newUser } = await supabase.from('users').select('id').eq('email', payload.email).maybeSingle()
-          if (newUser?.id) {
-            await supabase.from('cashier_device_approvals').upsert({
-              user_id: newUser.id,
-              device_id: deviceId,
-              device_name: deviceName,
-              status: 'approved',
-              approved_duration_hours: 168,
-              expires_at: expiresAt,
-              reviewed_by: user?.id,
-              reviewed_at: now,
-              updated_at: now,
-            }, { onConflict: 'user_id,device_id' })
-          }
-        }
-      }
-
-      setStaffModalOpen(false)
-      resetStaffForm()
-      fetchStaff()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to save staff'
-      toast.error(message)
-    } finally {
-      setSavingStaff(false)
-    }
-  }
-
-  async function toggleStaffStatus(member: User) {
-    try {
-      const { error } = await supabase.from('users').update({ is_active: !member.is_active }).eq('id', member.id)
-      if (error) throw error
-      toast.success(`${member.is_active ? 'Deactivated' : 'Activated'} staff member`)
-      fetchStaff()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to update staff status'
-      toast.error(message)
-    }
-  }
-
-  async function deleteStaff(member: User) {
-    if (member.id === user?.id) {
-      toast.error('You cannot delete your own account')
-      return
-    }
-    try {
-      const { error } = await supabase.from('users').delete().eq('id', member.id)
-      if (error) throw error
-      toast.success(`Deleted ${member.full_name}`)
-      setDeletingStaff(null)
-      fetchStaff()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to delete staff'
       toast.error(message)
     }
   }
@@ -461,8 +253,8 @@ export default function SettingsPage() {
       parent_product_id: productForm.parent_product_id || null,
       price: parseFloat(productForm.price),
       unit: productForm.unit.trim(),
-      stock_qty: round1(parseFloat(productForm.stock_qty)),
-      stock_alert: round1(parseInt(productForm.stock_alert, 10)),
+      stock_qty: parseFloat(productForm.stock_qty),
+      stock_alert: parseInt(productForm.stock_alert, 10),
       is_active: productForm.is_active,
     }
 
@@ -517,21 +309,14 @@ export default function SettingsPage() {
       return
     }
 
-    const trimmedName = categoryForm.name.trim()
-    const duplicate = categories.find(c => c.name.toLowerCase() === trimmedName.toLowerCase() && c.id !== editingCategory?.id)
-    if (duplicate) {
-      toast.error(`Category "${trimmedName}" already exists`)
-      return
-    }
-
     const payload = {
-      name: trimmedName,
+      name: categoryForm.name.trim(),
       description: categoryForm.description.trim() || null,
     }
 
     try {
       if (editingCategory) {
-        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id)
+        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id).single()
         if (error) throw error
         toast.success('Category updated successfully')
       } else {
@@ -541,60 +326,37 @@ export default function SettingsPage() {
       }
       setCategoryModalOpen(false)
       fetchCategories()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to save category'
-      toast.error(`❌ ${message}`)
+    } catch (error) {
+      toast.error('Unable to save category')
       console.error(error)
     }
   }
 
   async function deleteCategory(category: Category) {
-    setConfirm({
-      title: 'Delete category',
-      description: `Delete category "${category.name}"? Products in this category will be uncategorized.`,
-      tone: 'danger',
-      confirmLabel: 'Delete',
-      onConfirm: async () => {
-        setConfirm(null)
-        try {
-          const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', category.id)
-          if (productError) throw productError
+    if (!confirm(`Delete category "${category.name}"? Products in this category will be uncategorized.`)) return
 
-          const { error } = await supabase.from('categories').delete().eq('id', category.id)
-          if (error) throw error
+    try {
+      const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', category.id)
+      if (productError) throw productError
 
-          toast.success('Category deleted successfully')
-          await Promise.all([fetchCategories(), fetchProducts()])
-        } catch (error) {
-          toast.error('Unable to delete category')
-          console.error(error)
-        }
-      },
-    })
+      const { error } = await supabase.from('categories').delete().eq('id', category.id)
+      if (error) throw error
+
+      toast.success('Category deleted successfully')
+      await Promise.all([fetchCategories(), fetchProducts()])
+    } catch (error) {
+      toast.error('Unable to delete category')
+      console.error(error)
+    }
   }
 
   const productOptions = ['all', ...Array.from(new Set(products.map(product => ((product.category as { name?: string })?.name || 'Uncategorized'))))]
 
-  const inventorySummary = useMemo(() => {
-    const parentProducts = products.filter(p => !p.parent_product_id)
-    const stockMap = new Map<string, { stock_qty: number; stock_alert: number }>()
-    products.forEach((product: any) => {
-      if (product.parent_product_id) {
-        const parent = stockMap.get(product.parent_product_id)
-        if (parent) {
-          parent.stock_qty += Number(product.stock_qty || 0)
-        }
-      } else {
-        stockMap.set(product.id, { stock_qty: Number(product.stock_qty || 0), stock_alert: Number(product.stock_alert || 0) })
-      }
-    })
-    const aggregateStocks = Array.from(stockMap.values())
-    return {
-      total: parentProducts.length,
-      active: parentProducts.filter(p => p.is_active).length,
-      lowStock: aggregateStocks.filter(p => p.stock_qty > 0 && p.stock_qty <= p.stock_alert).length,
-    }
-  }, [products])
+  const inventorySummary = useMemo(() => ({
+    total: products.length,
+    active: products.filter(product => product.is_active).length,
+    lowStock: products.filter(product => product.is_active && product.stock_qty <= product.stock_alert).length,
+  }), [products])
 
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase()
@@ -621,7 +383,6 @@ export default function SettingsPage() {
           {[
             { id: 'general', label: 'Shop' },
             { id: 'categories', label: 'Categories' },
-            { id: 'staff', label: 'Staff' },
             { id: 'account', label: 'Account' },
           ].map(tab => (
             <button
@@ -662,24 +423,6 @@ export default function SettingsPage() {
               <div className="card p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Low stock</p>
                 <p className="mt-2 text-2xl font-bold text-amber-600">{inventorySummary.lowStock}</p>
-              </div>
-            </div>
-
-            <div className="card p-6 border-emerald-100 bg-emerald-50/40">
-              <div className="flex items-start gap-3 mb-4">
-                <Store className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-bold text-slate-900">Backup</h3>
-                  <p className="text-sm text-slate-600 mt-1">Export your current products, categories, stock, and catalog data before making changes.</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button onClick={handleBackupExport} disabled={exportingBackup} className="btn-secondary inline-flex items-center justify-center gap-2">
-                  {exportingBackup ? 'Exporting...' : 'Export Backup (JSON)'}
-                </button>
-                <button onClick={async () => { setExportingBackup(true); try { const backup = await exportFactoryResetBackup(); downloadCsvFile(backup); } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to export CSV backup'); } finally { setExportingBackup(false); } }} disabled={exportingBackup} className="btn-secondary inline-flex items-center justify-center gap-2">
-                  Export Backup (CSV)
-                </button>
               </div>
             </div>
 
@@ -784,110 +527,6 @@ export default function SettingsPage() {
           </div>
         </Modal>
 
-        {activeTab === 'staff' && (
-          <div className="card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-bold text-slate-900">Staff</h3>
-                <p className="text-sm text-slate-500">Quick account list. Use Staff Management for approvals and device access.</p>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <button onClick={() => router.push('/dashboard/staff')} className="btn-secondary inline-flex items-center gap-2 text-sm">
-                  Staff Management
-                </button>
-                <button onClick={() => { resetStaffForm(); setStaffModalOpen(true) }} className="btn-primary inline-flex items-center gap-2 text-sm">
-                  <Plus className="w-4 h-4" /> Add Cashier
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="table-head">Name</th>
-                    <th className="table-head">Email</th>
-                    <th className="table-head">Role</th>
-                    <th className="table-head">Status</th>
-                    <th className="table-head text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {staff.length === 0 ? (
-                    <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No staff found.</td></tr>
-                  ) : (
-                    staff.map(member => (
-                      <tr key={member.id} className="table-row-hover">
-                        <td className="table-cell font-medium text-slate-900">{member.full_name}</td>
-                        <td className="table-cell text-slate-500">{member.email || '—'}</td>
-                        <td className="table-cell capitalize">{member.role}</td>
-                        <td className="table-cell">
-                          <span className={member.is_active ? 'badge badge-active' : 'badge badge-inactive'}>
-                            {member.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="table-cell text-right space-x-2">
-                          <button onClick={() => { setEditingStaff(member); setStaffForm({ full_name: member.full_name || '', email: member.email || '', role: (member.role as 'owner' | 'cashier') || 'cashier', pin: '', is_active: member.is_active }); setStaffModalOpen(true) }} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
-                          <button onClick={() => toggleStaffStatus(member)} className={member.is_active ? 'text-slate-600 hover:text-amber-600' : 'text-slate-600 hover:text-emerald-600'} title={member.is_active ? 'Deactivate' : 'Activate'}>
-                            {member.is_active ? <Slash className="inline w-4 h-4" /> : <CheckCircle2 className="inline w-4 h-4" />}
-                          </button>
-                          {member.id !== user?.id && (
-                            <button onClick={() => setDeletingStaff(member)} className="text-slate-600 hover:text-red-600" title="Delete staff"><Trash2 className="inline w-4 h-4" /></button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        <Modal
-          isOpen={staffModalOpen}
-          onClose={() => { setStaffModalOpen(false); resetStaffForm() }}
-          title={editingStaff ? 'Edit Cashier' : 'Add Cashier'}
-          description="Create or update a cashier account."
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setStaffModalOpen(false); resetStaffForm() }} className="btn-secondary">Cancel</button>
-              <button onClick={handleSaveStaff} disabled={savingStaff} className="btn-primary inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {savingStaff ? 'Saving...' : editingStaff ? 'Update' : 'Save'}
-              </button>
-            </div>
-          }
-          size="md"
-        >
-          <div className="grid gap-4">
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Full name</span>
-              <input value={staffForm.full_name} onChange={e => setStaffForm({ ...staffForm, full_name: e.target.value })} className="input w-full" />
-              {staffErrors.full_name && <p className="text-xs text-red-600">{staffErrors.full_name}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Email</span>
-              <input value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} className="input w-full" />
-              {staffErrors.email && <p className="text-xs text-red-600">{staffErrors.email}</p>}
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Role</span>
-              <select value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value as 'owner' | 'cashier' })} className="input w-full">
-                <option value="cashier">Cashier</option>
-                <option value="owner">Owner</option>
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">PIN</span>
-              <input type="password" value={staffForm.pin} onChange={e => setStaffForm({ ...staffForm, pin: e.target.value })} className="input w-full" placeholder={editingStaff ? 'Leave blank to keep current PIN' : 'Enter a 4-digit PIN'} />
-              {staffErrors.pin && <p className="text-xs text-red-600">{staffErrors.pin}</p>}
-            </label>
-            <label className="flex items-center gap-3">
-              <input type="checkbox" checked={staffForm.is_active} onChange={e => setStaffForm({ ...staffForm, is_active: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
-              <span className="text-sm text-slate-700">Active account</span>
-            </label>
-          </div>
-        </Modal>
-
         {activeTab === 'account' && (
           <div className="card p-6">
             <h3 className="font-bold text-slate-900 mb-2">Owner Account</h3>
@@ -944,19 +583,17 @@ export default function SettingsPage() {
                 }
                 setSavingPin(true)
                 try {
-                  const currentPinHash = await hashPin(currentPin.trim())
                   const { data: existing } = await supabase
                     .from('users')
                     .select('pin')
                     .eq('id', user.id)
                     .maybeSingle()
-                  if (!existing || existing.pin !== currentPinHash) {
+                  if (!existing || existing.pin !== currentPin.trim()) {
                     setPinError('Current PIN is incorrect')
                     setSavingPin(false)
                     return
                   }
-                  const newPinHash = await hashPin(newPin.trim())
-                  const { error } = await supabase.from('users').update({ pin: newPinHash }).eq('id', user.id)
+                  const { error } = await supabase.from('users').update({ pin: newPin.trim() }).eq('id', user.id)
                   if (error) throw error
                   toast.success('PIN updated successfully')
                   setCurrentPin('')
@@ -978,109 +615,6 @@ export default function SettingsPage() {
         )}
 
       </div>
-
-      {confirm && (
-        <Modal
-          isOpen={!!confirm}
-          onClose={() => setConfirm(null)}
-          title={confirm.title}
-          description={confirm.description}
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setConfirm(null)} className="btn-secondary">Cancel</button>
-              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
-            </div>
-          }
-        >
-          <p className="text-sm text-slate-600">{confirm.description}</p>
-        </Modal>
-      )}
-
-      {deletingStaff && (
-        <Modal
-          isOpen={!!deletingStaff}
-          onClose={() => setDeletingStaff(null)}
-          title="Delete Staff Account"
-          description={`This will permanently remove ${deletingStaff.full_name}.`}
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setDeletingStaff(null)} className="btn-secondary">Cancel</button>
-              <button onClick={() => deleteStaff(deletingStaff)} className="btn-danger inline-flex items-center gap-2">
-                <Trash2 className="w-4 h-4" /> Delete
-              </button>
-            </div>
-          }
-          size="md"
-        >
-          <p className="text-sm text-slate-600">This action cannot be undone. All associated device approvals will also be removed.</p>
-        </Modal>
-      )}
-
-      {factoryResetStep === 'backup' && (
-        <Modal
-          isOpen={factoryResetStep === 'backup'}
-          onClose={() => { setFactoryResetStep('idle'); setBackupData(null); }}
-          title="Factory Reset - Step 1"
-          description="Export a backup before resetting."
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setFactoryResetStep('idle'); setBackupData(null); }} className="btn-secondary">Cancel</button>
-              <button onClick={handleBackupExport} disabled={exportingBackup} className="btn-primary">
-                {exportingBackup ? 'Exporting...' : 'Export & Continue'}
-              </button>
-            </div>
-          }
-        >
-          <p className="text-sm text-slate-600 mb-4">A JSON backup of your products, categories, stock, and catalog will be downloaded automatically.</p>
-        </Modal>
-      )}
-
-      {factoryResetStep === 'confirm' && backupData && (
-        <Modal
-          isOpen={factoryResetStep === 'confirm'}
-          onClose={() => { setFactoryResetStep('idle'); setBackupData(null); }}
-          title="Factory Reset - Step 2"
-          description="Confirm the reset."
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setFactoryResetStep('idle'); setBackupData(null); }} className="btn-secondary">Cancel</button>
-              <button onClick={handleFactoryResetConfirm} className="btn-danger">I understand, continue</button>
-            </div>
-          }
-        >
-          <p className="text-sm text-slate-600 mb-2">Backup exported: <strong>{backupData.shopName}</strong></p>
-          <p className="text-sm text-slate-600 mb-4">Exported at: {new Date(backupData.exportedAt).toLocaleString()}</p>
-          <p className="text-sm text-red-600 font-medium">This will permanently delete all sales, inventory, expenses, customers, and catalog data.</p>
-        </Modal>
-      )}
-
-      {factoryResetStep === 'pin' && (
-        <Modal
-          isOpen={factoryResetStep === 'pin'}
-          onClose={() => { setFactoryResetStep('idle'); setFactoryResetPin(''); }}
-          title="Factory Reset - Step 3"
-          description="Enter your PIN to confirm."
-          footer={
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setFactoryResetStep('idle'); setFactoryResetPin(''); }} className="btn-secondary">Cancel</button>
-              <button onClick={handleFactoryResetWithPin} disabled={saving} className="btn-danger">
-                {saving ? 'Resetting...' : 'Confirm Reset'}
-              </button>
-            </div>
-          }
-        >
-          <label className="space-y-2">
-            <span className="text-sm font-medium text-slate-700">Your PIN</span>
-            <input
-              type="password"
-              inputMode="numeric"
-              className="input w-full"
-              value={factoryResetPin}
-              onChange={e => setFactoryResetPin(e.target.value)}
-            />
-          </label>
-        </Modal>
-      )}
     </RoleGuard>
   )
 }

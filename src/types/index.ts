@@ -42,9 +42,7 @@ export interface Product {
   variety?: string
   description?: string
   price: number
-  cost_price: number
   unit: string
-  initial_stock?: number
   stock_qty: number
   stock_alert: number
   is_active: boolean
@@ -102,9 +100,6 @@ export interface Expense {
   expense_date: string
   created_by?: string
   created_at: string
-  cash_deducted?: number
-  coin_deducted?: number
-  till_deducted?: number
 }
 
 export interface StockLog {
@@ -124,7 +119,6 @@ export interface CartItem {
   quantity: number
   subtotal: number
   saleMode?: 'quantity' | 'amount'
-  selectedTier?: { qty: number; price: number }
 }
 
 export interface DailySalesSummary {
@@ -141,7 +135,6 @@ export interface ProductSalesSummary {
   unit: string
   units_sold: number
   total_revenue: number
-  total_cost: number
 }
 
 export interface ShopSettings {
@@ -176,22 +169,6 @@ export interface PendingAccount {
   reviewed_at?: string
   note?: string
   created_at: string
-}
-
-export interface CashierDeviceApproval {
-  id: string
-  user_id: string
-  device_id: string
-  device_name?: string
-  status: 'pending' | 'approved' | 'rejected' | 'revoked'
-  requested_duration_hours: number
-  approved_duration_hours?: number
-  expires_at?: string
-  reviewed_by?: string
-  reviewed_at?: string
-  created_at: string
-  updated_at?: string
-  user?: User | SessionUser
 }
 
 export interface Shift {

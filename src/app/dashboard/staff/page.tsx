@@ -8,13 +8,28 @@ import { EmptyState } from '@/components/EmptyState'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Modal } from '@/components/Modal'
-import { CashierDeviceApproval, SessionUser, User, PendingAccount } from '@/types'
-import { getSession, getDeviceId, getDeviceName } from '@/lib/auth'
-import { formatDate, formatDateTime } from '@/lib/format'
+import { SessionUser, User, PendingAccount } from '@/types'
+import { getSession } from '@/lib/auth'
+import { formatDate } from '@/lib/format'
 import { useToast } from '@/context/ToastContext'
 import { validateStaffForm } from '@/lib/validators'
-import { hashPin } from '@/lib/pin-hash'
-import { Search, Users, CheckCircle2, Slash, Plus, Edit3, Trash2, Save, Clock, XCircle, UserPlus } from 'lucide-react'
+import { Search, Users, CheckCircle2, Slash, Plus, Edit3, Trash2, Save, Clock, XCircle, UserPlus, Smartphone } from 'lucide-react'
+
+interface CashierDeviceApproval {
+  id: string
+  user_id: string
+  device_id: string
+  device_name: string
+  status: string
+  requested_duration_hours: number
+  approved_duration_hours?: number
+  expires_at?: string
+  reviewed_by?: string
+  reviewed_at?: string
+  created_at: string
+  updated_at: string
+  user?: { full_name: string; email: string }
+}
 
 export default function StaffPage() {
   const router = useRouter()
@@ -29,12 +44,15 @@ export default function StaffPage() {
   const [staffErrors, setStaffErrors] = useState<Record<string, string>>({})
   const [savingStaff, setSavingStaff] = useState(false)
   const [pendingRequests, setPendingRequests] = useState<PendingAccount[]>([])
-  const [deviceApprovals, setDeviceApprovals] = useState<CashierDeviceApproval[]>([])
   const [showPending, setShowPending] = useState(false)
   const [reviewingRequest, setReviewingRequest] = useState<PendingAccount | null>(null)
   const [reviewNote, setReviewNote] = useState('')
   const [newPin, setNewPin] = useState('')
-  const [deletingStaff, setDeletingStaff] = useState<User | null>(null)
+  const [pendingDevices, setPendingDevices] = useState<CashierDeviceApproval[]>([])
+  const [showDevices, setShowDevices] = useState(false)
+  const [reviewingDevice, setReviewingDevice] = useState<CashierDeviceApproval | null>(null)
+  const [approvingDevice, setApprovingDevice] = useState(false)
+  const [deviceApprovalDuration, setDeviceApprovalDuration] = useState('12')
   const toast = useToast()
   const supabase = createClient()
 
@@ -95,8 +113,7 @@ export default function StaffPage() {
       }
 
       if (!editingStaff || staffForm.pin.trim()) {
-        const pinHash = await hashPin(staffForm.pin.trim() || '0000')
-        Object.assign(payload, { pin: pinHash })
+        Object.assign(payload, { pin: staffForm.pin.trim() })
       }
 
       if (editingStaff) {
@@ -107,27 +124,6 @@ export default function StaffPage() {
         const { error } = await supabase.from('users').insert(payload)
         if (error) throw error
         toast.success('Staff added successfully')
-
-        if (payload.role === 'cashier') {
-          const now = new Date().toISOString()
-          const expiresAt = new Date(Date.now() + 168 * 60 * 60 * 1000).toISOString()
-          const deviceId = getDeviceId()
-          const deviceName = getDeviceName()
-          const { data: newUser } = await supabase.from('users').select('id').eq('email', payload.email).maybeSingle()
-          if (newUser?.id) {
-            await supabase.from('cashier_device_approvals').upsert({
-              user_id: newUser.id,
-              device_id: deviceId,
-              device_name: deviceName,
-              status: 'approved',
-              approved_duration_hours: 168,
-              expires_at: expiresAt,
-              reviewed_by: user?.id,
-              reviewed_at: now,
-              updated_at: now,
-            }, { onConflict: 'user_id,device_id' })
-          }
-        }
       }
 
       setModalOpen(false)
@@ -153,86 +149,6 @@ export default function StaffPage() {
     }
   }
 
-  async function deleteStaff(member: User) {
-    if (member.id === user?.id) {
-      toast.error('You cannot delete your own account')
-      return
-    }
-    try {
-      const { error } = await supabase.from('users').delete().eq('id', member.id)
-      if (error) throw error
-      toast.success(`Deleted ${member.full_name}`)
-      setDeletingStaff(null)
-      fetchStaff()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to delete staff'
-      toast.error(message)
-    }
-  }
-
-  async function sendReviewNotice(request: PendingAccount, status: 'approved' | 'rejected') {
-    try {
-      const res = await fetch('/api/account-request/review-notice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-        },
-        body: JSON.stringify({
-          email: request.email,
-          fullName: request.full_name,
-          status,
-          note: reviewNote,
-        }),
-      })
-      if (!res.ok) {
-        toast.info('Account updated, but email notification was not sent.')
-      }
-    } catch {
-      toast.info('Account updated, but email notification was not sent.')
-    }
-  }
-
-  async function approveDevice(request: CashierDeviceApproval, hours: number) {
-    try {
-      const now = new Date()
-      const expiresAt = new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString()
-      const { error } = await supabase
-        .from('cashier_device_approvals')
-        .update({
-          status: 'approved',
-          approved_duration_hours: hours,
-          expires_at: expiresAt,
-          reviewed_by: user?.id,
-          reviewed_at: now.toISOString(),
-          updated_at: now.toISOString(),
-        })
-        .eq('id', request.id)
-      if (error) throw error
-      toast.success('Cashier device approved')
-      fetchStaff()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to approve device'
-      toast.error(message)
-    }
-  }
-
-  async function updateDeviceStatus(request: CashierDeviceApproval, status: 'rejected' | 'revoked') {
-    try {
-      const now = new Date().toISOString()
-      const { error } = await supabase
-        .from('cashier_device_approvals')
-        .update({ status, reviewed_by: user?.id, reviewed_at: now, updated_at: now })
-        .eq('id', request.id)
-      if (error) throw error
-      toast.success(status === 'rejected' ? 'Device request rejected' : 'Device access revoked')
-      fetchStaff()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to update device'
-      toast.error(message)
-    }
-  }
-
   async function handleApproveRequest(request: PendingAccount) {
     if (!newPin.trim() || newPin.trim().length < 4) {
       toast.error('Set a PIN (at least 4 characters) for the new account')
@@ -240,13 +156,12 @@ export default function StaffPage() {
     }
 
     try {
-      const pinHash = await hashPin(newPin.trim())
       const { error: userError } = await supabase.from('users').insert([
         {
           full_name: request.full_name,
           email: request.email,
           role: request.requested_role,
-          pin: pinHash,
+          pin: newPin.trim(),
           is_active: true,
         },
       ])
@@ -259,7 +174,6 @@ export default function StaffPage() {
       if (updateError) throw updateError
 
       toast.success(`Account created for ${request.full_name}`)
-      await sendReviewNotice(request, 'approved')
       setReviewingRequest(null)
       setReviewNote('')
       setNewPin('')
@@ -279,7 +193,6 @@ export default function StaffPage() {
       if (error) throw error
 
       toast.success(`Request from ${request.full_name} rejected`)
-      await sendReviewNotice(request, 'rejected')
       setReviewingRequest(null)
       setReviewNote('')
       fetchStaff()
@@ -292,23 +205,45 @@ export default function StaffPage() {
   async function fetchStaff() {
     setLoading(true)
     try {
-      const [{ data: staffData, error: staffError }, { data: pendingData, error: pendingError }, { data: deviceData, error: deviceError }] = await Promise.all([
+      const [{ data: staffData, error: staffError }, { data: pendingData, error: pendingError }, { data: devicesData, error: devicesError }] = await Promise.all([
         supabase.from('users').select('id, full_name, email, role, is_active, last_login, created_at').order('full_name'),
         supabase.from('pending_accounts').select('*').eq('status', 'pending').order('created_at'),
         supabase
           .from('cashier_device_approvals')
-          .select('*, user:users(id, full_name, email, role, is_active, created_at)')
-          .in('status', ['pending', 'approved'])
-          .order('updated_at', { ascending: false }),
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false }),
       ])
 
       if (staffError) throw staffError
       if (pendingError) console.error('Failed to load pending requests', pendingError)
-      if (deviceError) console.error('Failed to load device approvals', deviceError)
+      if (devicesError) console.error('Failed to load device approvals', devicesError)
 
       setStaff((staffData || []) as User[])
       setPendingRequests((pendingData || []) as PendingAccount[])
-      setDeviceApprovals((deviceData || []) as CashierDeviceApproval[])
+      
+      // Fetch user data for devices and map them
+      if (devicesData && devicesData.length > 0) {
+        const userIds = [...new Set((devicesData as any[]).map(d => d.user_id))]
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, full_name, email')
+          .in('id', userIds)
+        
+        if (!usersError && usersData) {
+          const userMap = Object.fromEntries((usersData as any[]).map(u => [u.id, u]))
+          const devices = (devicesData as any[]).map(device => ({
+            ...device,
+            user: userMap[device.user_id]
+          })) as CashierDeviceApproval[]
+          setPendingDevices(devices)
+        } else {
+          setPendingDevices(devicesData as any)
+        }
+      } else {
+        setPendingDevices([])
+      }
+      
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load staff'
@@ -316,6 +251,54 @@ export default function StaffPage() {
       toast.error(`❌ ${message}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleApproveDevice(device: CashierDeviceApproval) {
+    const duration = parseInt(deviceApprovalDuration) || 12
+    try {
+      const expiresAt = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString()
+      const { error } = await supabase
+        .from('cashier_device_approvals')
+        .update({
+          status: 'approved',
+          approved_duration_hours: duration,
+          expires_at: expiresAt,
+          reviewed_by: user?.id,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', device.id)
+
+      if (error) throw error
+      toast.success(`Device approved for ${duration} hours`)
+      setReviewingDevice(null)
+      setDeviceApprovalDuration('12')
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to approve device'
+      toast.error(message)
+    }
+  }
+
+  async function handleRejectDevice(device: CashierDeviceApproval) {
+    try {
+      const { error } = await supabase
+        .from('cashier_device_approvals')
+        .update({
+          status: 'rejected',
+          reviewed_by: user?.id,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', device.id)
+
+      if (error) throw error
+      toast.success('Device approval rejected')
+      setReviewingDevice(null)
+      setDeviceApprovalDuration('12')
+      fetchStaff()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to reject device'
+      toast.error(message)
     }
   }
 
@@ -337,21 +320,6 @@ export default function StaffPage() {
       member.role.toLowerCase().includes(search.toLowerCase())
     ),
     [staff, search]
-  )
-
-  const deviceAccessByUser = useMemo(() => {
-    const map = new Map<string, CashierDeviceApproval[]>()
-    deviceApprovals.forEach(item => {
-      const existing = map.get(item.user_id) || []
-      existing.push(item)
-      map.set(item.user_id, existing)
-    })
-    return map
-  }, [deviceApprovals])
-
-  const pendingDeviceApprovals = useMemo(
-    () => deviceApprovals.filter(item => item.status === 'pending'),
-    [deviceApprovals]
   )
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading staff..." /></div>
@@ -400,174 +368,52 @@ export default function StaffPage() {
                 placeholder="Search staff by name, email, or role"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-              />
+        />
+
+        {pendingRequests.length > 0 && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{pendingRequests.length} pending account request{pendingRequests.length === 1 ? '' : 's'}</p>
+                <p className="text-xs text-slate-500">Review and approve access for new staff</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPending(true)}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" /> Review Requests
+            </button>
+          </div>
+        )}
+
+        {pendingDevices.length > 0 && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-5 h-5 text-red-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{pendingDevices.length} pending device approval{pendingDevices.length === 1 ? '' : 's'}</p>
+                <p className="text-xs text-slate-500">Cashiers waiting to access from new devices</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDevices(true)}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <Smartphone className="w-4 h-4" /> Review Devices
+            </button>
+          </div>
+        )}
             </div>
             <p className="text-sm text-slate-500">{filtered.length} of {staff.length} members</p>
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="card p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-amber-50 p-2 text-amber-700">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Account Approvals</h3>
-                  <p className="text-sm text-slate-500">Review cashier signup requests.</p>
-                </div>
-              </div>
-              <button type="button" onClick={() => setShowPending(true)} className="btn-primary text-sm">
-                Review {pendingRequests.length ? `(${pendingRequests.length})` : ''}
-              </button>
-            </div>
-            <div className="mt-4 space-y-2">
-              {pendingRequests.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-                  No pending account requests. Requests submitted from the Request Account page will appear here.
-                </div>
-              ) : (
-                pendingRequests.slice(0, 3).map(request => (
-                  <div key={request.id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{request.full_name}</p>
-                      <p className="text-xs text-slate-500">{request.email}</p>
-                    </div>
-                    <button type="button" onClick={() => setReviewingRequest(request)} className="btn-primary text-xs">
-                      Approve
-                    </button>
-                  </div>
-                ))
-              )}
-              {pendingRequests.length > 3 && (
-                <button type="button" onClick={() => setShowPending(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">
-                  View all {pendingRequests.length} requests
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="card p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-blue-50 p-2 text-blue-700">
-                  <Clock className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Device Access</h3>
-                  <p className="text-sm text-slate-500">Approve cashier browsers/devices for limited time.</p>
-                </div>
-              </div>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                {pendingDeviceApprovals.length} pending
-              </span>
-            </div>
-            <div className="mt-4 space-y-2">
-              {pendingDeviceApprovals.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-                  No pending device requests.
-                </div>
-              ) : (
-                pendingDeviceApprovals.slice(0, 3).map(item => {
-                  const cashier = item.user as User | undefined
-                  return (
-                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{cashier?.full_name || 'Unknown cashier'}</p>
-                        <p className="text-xs text-slate-500">{cashier?.email}</p>
-                        <p className="text-xs text-slate-400">{item.device_name || 'Unknown device'}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {[2, 8, 24, 168].map(hours => (
-                          <button
-                            key={hours}
-                            type="button"
-                            onClick={() => approveDevice(item, hours)}
-                            className="btn-secondary text-xs"
-                          >
-                            {hours === 168 ? '7 days' : `${hours}h`}
-                          </button>
-                        ))}
-                        <button type="button" onClick={() => updateDeviceStatus(item, 'rejected')} className="btn-danger text-xs">
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-              {pendingDeviceApprovals.length > 3 && (
-                <button type="button" onClick={() => document.getElementById('cashier-device-access-list')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
-                  View all {pendingDeviceApprovals.length} requests
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div id="cashier-device-access-list" className="card p-4">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Cashier Device Access</h3>
-              <p className="text-sm text-slate-500">Devices appear here after a cashier tries to log in from a browser.</p>
-            </div>
-          </div>
-          {deviceApprovals.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-              No cashier device requests yet.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {deviceApprovals.map(item => {
-                const cashier = item.user as User | undefined
-                const expired = item.expires_at ? new Date(item.expires_at).getTime() <= Date.now() : false
-                return (
-                  <div key={item.id} className="rounded-xl border border-slate-200 p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="font-semibold text-slate-900">{cashier?.full_name || 'Unknown cashier'}</p>
-                        <p className="text-sm text-slate-500">{cashier?.email}</p>
-                        <p className="text-xs text-slate-400">{item.device_name || 'Unknown device'}</p>
-                        {item.status === 'approved' && item.expires_at && (
-                          <p className={`text-xs ${expired ? 'text-red-600' : 'text-emerald-600'}`}>
-                            {expired ? 'Expired' : 'Approved'} until {new Date(item.expires_at).toLocaleString('en-KE')}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {item.status === 'pending' ? (
-                          <>
-                            {[2, 8, 24, 168].map(hours => (
-                              <button
-                                key={hours}
-                                type="button"
-                                onClick={() => approveDevice(item, hours)}
-                                className="btn-secondary text-xs"
-                              >
-                                {hours === 168 ? '7 days' : `${hours}h`}
-                              </button>
-                            ))}
-                            <button type="button" onClick={() => updateDeviceStatus(item, 'rejected')} className="btn-danger text-xs">
-                              Reject
-                            </button>
-                          </>
-                        ) : (
-                          <button type="button" onClick={() => updateDeviceStatus(item, 'revoked')} className="btn-danger text-xs">
-                            Revoke
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
         <div className="card overflow-x-auto">
-          <table className="w-full min-w-[900px]">
+          <table className="w-full min-w-[700px]">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
               <tr>
                 <th className="table-head">Name</th>
@@ -575,80 +421,31 @@ export default function StaffPage() {
                 <th className="table-head">Role</th>
                 <th className="table-head">Status</th>
                 <th className="table-head">Last login</th>
-                <th className="table-head">Device access</th>
-                <th className="table-head text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500">No matching staff found.</td>
+                  <td colSpan={5} className="p-8 text-center text-slate-500">No matching staff found.</td>
                 </tr>
               ) : (
-                filtered.map(member => {
-                  const memberDevices = deviceAccessByUser.get(member.id) || []
-                  const pendingDevices = memberDevices.filter(item => item.status === 'pending').length
-                  const approvedDevices = memberDevices.filter(item => item.status === 'approved' && (!item.expires_at || new Date(item.expires_at).getTime() > Date.now())).length
-                  return (
-                    <tr key={member.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                      <td className="table-cell font-medium text-slate-900">{member.full_name}</td>
-                      <td className="table-cell text-slate-500">{member.email || '—'}</td>
-                      <td className="table-cell capitalize">{member.role}</td>
-                      <td className="table-cell">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${member.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                          {member.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="table-cell text-slate-500">{member.last_login ? formatDateTime(member.last_login) : 'Never'}</td>
-                      <td className="table-cell">
-                        {member.role === 'cashier' ? (
-                          pendingDevices > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {memberDevices.filter(d => d.status === 'pending').slice(0, 1).map(device => (
-                                <div key={device.id} className="flex flex-wrap gap-1">
-                                  {[2, 8, 24, 168].map(hours => (
-                                    <button
-                                      key={hours}
-                                      type="button"
-                                      onClick={() => approveDevice(device, hours)}
-                                      className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-blue-700"
-                                    >
-                                      {hours === 168 ? '7d' : `${hours}h`}
-                                    </button>
-                                  ))}
-                                  <button
-                                    type="button"
-                                    onClick={() => updateDeviceStatus(device, 'rejected')}
-                                    className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-700"
-                                  >
-                                    Reject
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : approvedDevices > 0 ? (
-                            <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold bg-blue-100 text-blue-700">
-                              {approvedDevices} approved
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400">No device</span>
-                          )
-                        ) : (
-                          <span className="text-xs text-slate-400">Owner</span>
-                        )}
-                      </td>
-                      <td className="table-cell text-right space-x-2">
-                        <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
-                        <button onClick={() => toggleStaffStatus(member)} className={member.is_active ? 'text-slate-600 hover:text-amber-600' : 'text-slate-600 hover:text-emerald-600'} title={member.is_active ? 'Deactivate' : 'Activate'}>
-                          {member.is_active ? <Slash className="inline w-4 h-4" /> : <CheckCircle2 className="inline w-4 h-4" />}
-                        </button>
-                        {member.id !== user?.id && (
-                          <button onClick={() => setDeletingStaff(member)} className="text-slate-600 hover:text-red-600" title="Delete staff"><Trash2 className="inline w-4 h-4" /></button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })
+                filtered.map(member => (
+                  <tr key={member.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                    <td className="table-cell font-medium text-slate-900">{member.full_name}</td>
+                    <td className="table-cell text-slate-500">{member.email || '—'}</td>
+                    <td className="table-cell capitalize">{member.role}</td>
+                    <td className="table-cell">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${member.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {member.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="table-cell text-slate-500">{member.last_login ? formatDate(member.last_login) : '—'}</td>
+                    <td className="table-cell text-right space-x-2">
+                      <button onClick={() => openEditStaff(member)} className="text-slate-600 hover:text-brand-600" title="Edit staff"><Edit3 className="inline w-4 h-4" /></button>
+                      <button onClick={() => toggleStaffStatus(member)} className="text-slate-600 hover:text-red-600" title={member.is_active ? 'Deactivate' : 'Activate'}><Trash2 className="inline w-4 h-4" /></button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -814,26 +611,112 @@ export default function StaffPage() {
           </Modal>
         )}
 
-        {deletingStaff && (
+        {showDevices && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Pending Device Approvals</h3>
+                  <p className="text-sm text-slate-500">Cashiers requesting access from new devices</p>
+                </div>
+                <button onClick={() => { setShowDevices(false); setReviewingDevice(null) }} className="rounded-lg p-2 hover:bg-slate-100">
+                  <XCircle className="w-5 h-5 text-slate-600" />
+                </button>
+              </div>
+
+              {pendingDevices.length === 0 ? (
+                <div className="py-12 text-center text-slate-500">No pending device approvals</div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingDevices.map(device => (
+                    <div key={device.id} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <p className="font-semibold text-slate-900">{device.user?.full_name || 'Unknown'}</p>
+                          <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
+                          <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
+                          <p className="text-xs text-slate-400">Requested: {formatDate(device.created_at)}</p>
+                          <p className="text-xs text-slate-400">Duration: {device.requested_duration_hours} hours</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          type="button"
+                          onClick={() => setReviewingDevice(device)}
+                          className="btn-primary inline-flex items-center gap-2 text-sm"
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> Review
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {reviewingDevice && (
           <Modal
-            isOpen={!!deletingStaff}
-            onClose={() => setDeletingStaff(null)}
-            title="Delete Staff Account"
-            description={`This will permanently remove ${deletingStaff.full_name}.`}
+            isOpen={!!reviewingDevice}
+            onClose={() => { setReviewingDevice(null); setDeviceApprovalDuration('12') }}
+            title="Review Device Approval"
+            description={`Review device access request from ${reviewingDevice.user?.full_name || 'Unknown'}`}
             footer={
               <div className="flex justify-end gap-3">
-                <button onClick={() => setDeletingStaff(null)} className="btn-secondary">Cancel</button>
-                <button onClick={() => deleteStaff(deletingStaff)} className="btn-danger inline-flex items-center gap-2">
-                  <Trash2 className="w-4 h-4" /> Delete
+                <button onClick={() => { setReviewingDevice(null); setDeviceApprovalDuration('12') }} className="btn-secondary">Cancel</button>
+                <button onClick={() => handleRejectDevice(reviewingDevice)} className="btn-danger inline-flex items-center gap-2">
+                  <XCircle className="w-4 h-4" /> Reject
+                </button>
+                <button onClick={() => handleApproveDevice(reviewingDevice)} disabled={approvingDevice} className="btn-primary inline-flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> {approvingDevice ? 'Approving...' : 'Approve'}
                 </button>
               </div>
             }
             size="md"
           >
-            <p className="text-sm text-slate-600">This action cannot be undone. All associated device approvals will also be removed.</p>
+            <div className="space-y-4">
+              <div className="rounded-xl bg-slate-50 p-4 space-y-2">
+                <div>
+                  <p className="text-xs text-slate-500">Cashier</p>
+                  <p className="text-sm font-semibold text-slate-900">{reviewingDevice.user?.full_name || 'Unknown'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Email</p>
+                  <p className="text-sm font-semibold text-slate-900">{reviewingDevice.user?.email || 'Unknown'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Device</p>
+                  <p className="text-sm font-semibold text-slate-900 break-all">{reviewingDevice.device_name || reviewingDevice.device_id}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Requested Duration</p>
+                  <p className="text-sm font-semibold text-slate-900">{reviewingDevice.requested_duration_hours} hours</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Submitted</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatDate(reviewingDevice.created_at)}</p>
+                </div>
+              </div>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Approval Duration (hours)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="720"
+                  className="input w-full"
+                  placeholder="Enter approval duration in hours"
+                  value={deviceApprovalDuration}
+                  onChange={e => setDeviceApprovalDuration(e.target.value)}
+                />
+                <p className="text-xs text-slate-500">The device will be approved for this duration. Default: 12 hours</p>
+              </label>
+            </div>
           </Modal>
         )}
       </div>
     </RoleGuard>
   )
 }
+

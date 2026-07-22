@@ -7,24 +7,14 @@ import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { RoleGuard } from '@/components/RoleGuard'
-import { Modal } from '@/components/Modal'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { getSession } from '@/lib/auth'
-import { formatDate, formatMoney, getLocalDateString } from '@/lib/format'
+import { formatDate, formatMoney } from '@/lib/format'
 import { Expense, SessionUser } from '@/types'
 import { Search, Filter, Plus, ArrowDownRight, ArrowUpRight, Trash2 } from 'lucide-react'
 
 type PaymentMethod = 'cash' | 'coin' | 'till'
-
-interface ConfirmState {
-  title: string
-  description: string
-  onConfirm: () => void
-  confirmLabel?: string
-  cancelLabel?: string
-  tone?: 'default' | 'danger'
-}
 
 export default function ExpensesPage() {
   const [user, setUser] = useState<SessionUser | null>(null)
@@ -35,7 +25,6 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState('')
   const [filterPayment, setFilterPayment] = useState('all')
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null)
-  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [form, setForm] = useState({
     item_name: '',
     amount: '',
@@ -44,7 +33,7 @@ export default function ExpensesPage() {
     category: '',
     payment_note: '',
   })
-  const today = useRef(getLocalDateString())
+  const today = useRef(new Date().toISOString().split('T')[0])
   const { settings } = useShopSettings()
   const toast = useToast()
   const router = useRouter()
@@ -117,54 +106,41 @@ export default function ExpensesPage() {
   )
 
   async function handleDeleteExpense(expense: Expense) {
-    if (user?.role !== 'owner') {
-      toast.error('Only owners can delete expenses')
-      return
+    const confirmed = window.confirm(`Delete expense "${expense.item_name}"? This will also adjust the drawer balance for ${expense.expense_date}.`)
+    if (!confirmed) return
+
+    setDeletingExpenseId(expense.id)
+    try {
+      const { data: existing } = await supabase
+        .from('drawer_balances')
+        .select('cash, coin, till')
+        .eq('date', expense.expense_date)
+        .is('shift_id', null)
+        .maybeSingle()
+
+      const current = existing || { cash: 0, coin: 0, till: 0 }
+      const nextBalance: any = { date: expense.expense_date, shift_id: null, cash: current.cash, coin: current.coin, till: current.till }
+
+      if (expense.payment_method === 'cash') {
+        nextBalance.cash = Number(current.cash || 0) + Number(expense.amount)
+      } else if (expense.payment_method === 'coin') {
+        nextBalance.coin = Number(current.coin || 0) + Number(expense.amount)
+      } else {
+        nextBalance.till = Number(current.till || 0) + Number(expense.amount)
+      }
+
+      await supabase.from('drawer_balances').upsert(nextBalance)
+      const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
+      if (error) throw error
+
+      toast.success('Expense removed and drawer balance updated')
+      await fetchExpenses()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete expense'
+      toast.error(`❌ ${message}`)
+    } finally {
+      setDeletingExpenseId(null)
     }
-    setConfirm({
-      title: 'Delete expense',
-      description: `Delete "${expense.item_name}"?${expense.cash_deducted ? ` Cash ${formatMoney(Number(expense.cash_deducted), settings.currency)} will be restored to cash drawer.` : ''}${expense.coin_deducted ? ` Coin ${formatMoney(Number(expense.coin_deducted), settings.currency)} will be restored to coin drawer.` : ''}${expense.till_deducted ? ` Till ${formatMoney(Number(expense.till_deducted), settings.currency)} will be restored to till drawer.` : ''}`,
-      confirmLabel: 'Delete',
-      cancelLabel: 'Keep it',
-      tone: 'danger',
-      onConfirm: async () => {
-        setDeletingExpenseId(expense.id)
-        try {
-          const { data: existing } = await supabase
-            .from('drawer_balances')
-            .select('id, cash, coin, till')
-            .eq('date', expense.expense_date)
-            .is('shift_id', null)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-
-          const current = existing || { cash: 0, coin: 0, till: 0 }
-          const nextBalance: any = { date: expense.expense_date, shift_id: null }
-          if (Number(expense.cash_deducted || 0) > 0) nextBalance.cash = Number(current.cash || 0) + Number(expense.cash_deducted)
-          if (Number(expense.coin_deducted || 0) > 0) nextBalance.coin = Number(current.coin || 0) + Number(expense.coin_deducted)
-          if (Number(expense.till_deducted || 0) > 0) nextBalance.till = Number(current.till || 0) + Number(expense.till_deducted)
-
-          if (existing) {
-            await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
-          } else if (nextBalance.cash || nextBalance.coin || nextBalance.till) {
-            await supabase.from('drawer_balances').insert(nextBalance)
-          }
-          const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
-          if (error) throw error
-
-          window.dispatchEvent(new Event('drawer-update'))
-          toast.success('Expense deleted — split payment amounts restored')
-          await fetchExpenses()
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Unable to delete expense'
-          toast.error(`❌ ${message}`)
-        } finally {
-          setDeletingExpenseId(null)
-          setConfirm(null)
-        }
-      },
-    })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -173,7 +149,7 @@ export default function ExpensesPage() {
       toast.error('❌ Item name is required')
       return
     }
-
+    
     if (!form.amount) {
       toast.error('❌ Amount is required')
       return
@@ -185,6 +161,14 @@ export default function ExpensesPage() {
       return
     }
 
+    if (amount > 10000) {
+      const confirm = window.confirm(`⚠️ Large expense detected (${formatMoney(amount, settings.currency)}). Confirm this transaction?`)
+      if (!confirm) {
+        toast.info('💭 Expense cancelled')
+        return
+      }
+    }
+
     if (!form.category.trim()) {
       toast.info('ℹ️ No category selected - expense recorded as miscellaneous')
     }
@@ -192,147 +176,65 @@ export default function ExpensesPage() {
     setSubmitting(true)
     const todayString = today.current
 
-    const { data: existing } = await supabase
-      .from('drawer_balances')
-      .select('id, cash, coin, till')
-      .eq('date', todayString)
-      .is('shift_id', null)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    const { error: insertError } = await supabase.from('expenses').insert({
+      item_name: form.item_name.trim(),
+      amount,
+      payment_method: form.payment_method,
+      vendor: form.vendor.trim() || null,
+      category: form.category.trim() || 'Miscellaneous',
+      payment_note: form.payment_note.trim() || null,
+      expense_date: todayString,
+      created_by: user?.id,
+    })
 
-    const drawer = existing || { cash: 0, coin: 0, till: 0 }
-    const cashBalance = Number(drawer.cash || 0)
-    const coinBalance = Number(drawer.coin || 0)
-    const tillBalance = Number(drawer.till || 0)
-    const totalDrawer = cashBalance + coinBalance + tillBalance
-
-    const selectedBalance = Number(drawer[form.payment_method] || 0)
-    const shortage = amount - selectedBalance
-    const otherMethods: PaymentMethod[] = ['cash', 'coin', 'till'].filter(m => m !== form.payment_method) as PaymentMethod[]
-    const methodLabel = form.payment_method.toUpperCase()
-
-    let cashDeducted = 0
-    let coinDeducted = 0
-    let tillDeducted = 0
-
-    if (shortage <= 0) {
-      if (form.payment_method === 'cash') cashDeducted = amount
-      else if (form.payment_method === 'coin') coinDeducted = amount
-      else tillDeducted = amount
-    } else if (totalDrawer >= amount) {
-      const fallback = otherMethods.find(method => Number(drawer[method] || 0) >= shortage)
-      if (fallback) {
-        const fallbackLabel = fallback.toUpperCase()
-        const usedFromFallback = Math.min(shortage, Number(drawer[fallback] || 0))
-        const usedFromSelected = Math.max(0, amount - usedFromFallback)
-        if (form.payment_method === 'cash') cashDeducted = usedFromSelected
-        else if (form.payment_method === 'coin') coinDeducted = usedFromSelected
-        else tillDeducted = usedFromSelected
-        if (fallback === 'cash') cashDeducted += usedFromFallback
-        else if (fallback === 'coin') coinDeducted += usedFromFallback
-        else tillDeducted += usedFromFallback
-      } else {
-        const totalOther = otherMethods.reduce((sum, method) => sum + Number(drawer[method] || 0), 0)
-        if (totalOther >= shortage) {
-          const remaining = amount
-          let availableCash = cashBalance
-          let availableCoin = coinBalance
-          let availableTill = tillBalance
-          let stillNeed = remaining
-          const useFrom = (key: string) => {
-            const balance = key === 'cash' ? availableCash : key === 'coin' ? availableCoin : availableTill
-            const use = Math.min(balance, stillNeed)
-            stillNeed -= use
-            if (key === 'cash') { cashDeducted += use; availableCash -= use }
-            if (key === 'coin') { coinDeducted += use; availableCoin -= use }
-            if (key === 'till') { tillDeducted += use; availableTill -= use }
-            return use
-          }
-          useFrom(form.payment_method)
-          for (const method of otherMethods) {
-            if (stillNeed <= 0) break
-            useFrom(method)
-          }
-        } else {
-          setConfirm({
-            title: 'Insufficient funds',
-            description: `Total drawer ${formatMoney(totalDrawer, settings.currency)} is less than expense ${formatMoney(amount, settings.currency)}. This expense cannot be recorded.`,
-            confirmLabel: 'Close',
-            cancelLabel: 'Close',
-            tone: 'danger',
-            onConfirm: () => setConfirm(null),
-          })
-          setSubmitting(false)
-          return
-        }
-      }
-    } else {
-      setConfirm({
-        title: 'Insufficient funds',
-        description: `Total drawer ${formatMoney(totalDrawer, settings.currency)} is less than expense ${formatMoney(amount, settings.currency)}. This expense cannot be recorded.`,
-        confirmLabel: 'Close',
-        cancelLabel: 'Close',
-        tone: 'danger',
-        onConfirm: () => setConfirm(null),
-      })
+    if (insertError) {
+      toast.error(`❌ Failed to record expense: ${insertError.message}`)
       setSubmitting(false)
       return
     }
 
-    setConfirm({
-      title: 'Confirm expense',
-      description: `Record ${formatMoney(amount, settings.currency)} expense${cashDeducted ? ` (${formatMoney(cashDeducted, settings.currency)} from Cash)` : ''}${coinDeducted ? ` (${formatMoney(coinDeducted, settings.currency)} from Coin)` : ''}${tillDeducted ? ` (${formatMoney(tillDeducted, settings.currency)} from Till)` : ''}?`,
-      confirmLabel: 'Record',
-      cancelLabel: 'Cancel',
-      tone: 'default',
-      onConfirm: async () => {
-        setConfirm(null)
-        const { error: insertError } = await supabase.from('expenses').insert({
-          item_name: form.item_name.trim(),
-          amount,
-          payment_method: form.payment_method,
-          vendor: form.vendor.trim() || null,
-          category: form.category.trim() || 'Miscellaneous',
-          payment_note: form.payment_note.trim() || null,
-          expense_date: todayString,
-          created_by: user?.id,
-          cash_deducted: cashDeducted,
-          coin_deducted: coinDeducted,
-          till_deducted: tillDeducted,
-        })
+    const { data: existing } = await supabase
+      .from('drawer_balances')
+      .select('cash, coin, till')
+      .eq('date', todayString)
+      .is('shift_id', null)
+      .maybeSingle()
 
-        if (insertError) {
-          toast.error(`❌ Failed to record expense: ${insertError.message}`)
-          setSubmitting(false)
-          return
-        }
+    const current = existing || { cash: 0, coin: 0, till: 0 }
+    const nextBalance: any = { date: todayString, shift_id: null, cash: current.cash, coin: current.coin, till: current.till }
 
-        const nextBalance: any = { date: todayString, shift_id: null, cash: cashBalance, coin: coinBalance, till: tillBalance }
-        if (cashDeducted > 0) nextBalance.cash = cashBalance - cashDeducted
-        if (coinDeducted > 0) nextBalance.coin = coinBalance - coinDeducted
-        if (tillDeducted > 0) nextBalance.till = tillBalance - tillDeducted
+    if (form.payment_method === 'cash') {
+      if (current.cash < amount) {
+        toast.warning(`⚠️ Cash balance (${formatMoney(current.cash, settings.currency)}) is less than expense amount`)
+      }
+      nextBalance.cash = current.cash - amount
+    }
+    else if (form.payment_method === 'coin') {
+      if (current.coin < amount) {
+        toast.warning(`⚠️ Coin balance (${formatMoney(current.coin, settings.currency)}) is less than expense amount`)
+      }
+      nextBalance.coin = current.coin - amount
+    }
+    else {
+      if (current.till < amount) {
+        toast.warning(`⚠️ Till balance (${formatMoney(current.till, settings.currency)}) is less than expense amount`)
+      }
+      nextBalance.till = current.till - amount
+    }
 
-        if (existing) {
-          await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
-        } else {
-          await supabase.from('drawer_balances').insert(nextBalance)
-        }
+    await supabase.from('drawer_balances').upsert(nextBalance)
 
-        window.dispatchEvent(new Event('drawer-update'))
-        toast.success(`✓ Expense recorded: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)}`)
-        setForm({ ...form, item_name: '', amount: '', vendor: '', category: '', payment_note: '' })
-        setSubmitting(false)
-        fetchExpenses()
-      },
-    })
+    toast.success(`✓ Expense recorded: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)}`)
+    setForm({ ...form, item_name: '', amount: '', vendor: '', category: '', payment_note: '' })
+    setSubmitting(false)
+    fetchExpenses()
   }
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading expenses..." /></div>
   if (error) return <div className="flex items-center justify-center py-20 text-center text-sm text-red-600">{error}</div>
 
   return (
-    <RoleGuard allowed={['owner', 'cashier']}>
+    <RoleGuard allowed={['owner']}>
       <div className="space-y-6">
         <PageHeader title="Expenses" description="Record and monitor shop costs" />
 
@@ -464,7 +366,7 @@ export default function ExpensesPage() {
                   <th className="table-head">Category</th>
                   <th className="table-head">Method</th>
                   <th className="table-head text-right">Amount</th>
-                  {user?.role === 'owner' && <th className="table-head text-right">Actions</th>}
+                  <th className="table-head text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -476,17 +378,15 @@ export default function ExpensesPage() {
                     <td className="table-cell text-slate-500">{expense.category || '—'}</td>
                     <td className="table-cell capitalize">{expense.payment_method}</td>
                     <td className="table-cell text-right font-semibold text-red-600">-{formatMoney(Number(expense.amount), settings.currency)}</td>
-                    {user?.role === 'owner' && (
-                      <td className="table-cell text-right">
-                        <button
-                          onClick={() => handleDeleteExpense(expense)}
-                          disabled={deletingExpenseId === expense.id}
-                          className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 disabled:opacity-60"
-                        >
-                          <Trash2 className="w-4 h-4" /> {deletingExpenseId === expense.id ? 'Removing...' : 'Delete'}
-                        </button>
-                      </td>
-                    )}
+                    <td className="table-cell text-right">
+                      <button
+                        onClick={() => handleDeleteExpense(expense)}
+                        disabled={deletingExpenseId === expense.id}
+                        className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-4 h-4" /> {deletingExpenseId === expense.id ? 'Removing...' : 'Delete'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -494,23 +394,6 @@ export default function ExpensesPage() {
           </div>
         )}
       </div>
-      {confirm && (
-      <Modal
-        isOpen={!!confirm}
-        onClose={() => setConfirm(null)}
-        title={confirm.title}
-        description={confirm.description}
-        footer={
-          confirm.confirmLabel !== 'Close' ? (
-            <div className="flex justify-end gap-3">
-              <button onClick={confirm.onConfirm} className={confirm.tone === 'danger' ? 'btn-danger' : 'btn-primary'}>{confirm.confirmLabel || 'Confirm'}</button>
-            </div>
-          ) : undefined
-        }
-      >
-        <p className="text-sm text-slate-600">{confirm.description}</p>
-      </Modal>
-      )}
     </RoleGuard>
   )
 }

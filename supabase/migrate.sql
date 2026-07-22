@@ -97,47 +97,19 @@ CREATE POLICY "pos_public_expenses" ON expenses FOR ALL USING (true) WITH CHECK 
 ALTER TABLE products ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_product_id uuid REFERENCES products(id) ON DELETE CASCADE;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode text;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS initial_stock numeric(12,2) DEFAULT 0;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price numeric(12,2) NOT NULL DEFAULT 0;
-UPDATE products SET initial_stock = stock_qty WHERE initial_stock = 0 OR initial_stock IS NULL;
 
 -- Staff account support
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin text;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login timestamptz;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
-ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
 
-ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
-ALTER TABLE pending_accounts ADD COLUMN IF NOT EXISTS note text;
+-- Support decimal quantities for items sold by weight/volume
+ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);
+ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,2) USING change_qty::numeric(12,2);
+ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,2) USING quantity::numeric(12,2);
 
--- Support decimal quantities for items sold by weight/volume (drop views first)
+-- Refresh report views
 DROP VIEW IF EXISTS daily_sales_summary;
 DROP VIEW IF EXISTS product_sales_summary;
 
-ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,1) USING stock_qty::numeric(12,1);
-ALTER TABLE stock_log ALTER COLUMN change_qty TYPE numeric(12,1) USING stock_log.change_qty::numeric(12,1);
-ALTER TABLE sale_items ALTER COLUMN quantity TYPE numeric(12,1) USING sale_items.quantity::numeric(12,1);
-
--- Drawer balances: track cash/coin/till per date and shift
-CREATE TABLE IF NOT EXISTS drawer_balances (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  date date NOT NULL DEFAULT CURRENT_DATE,
-  shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
-  cash numeric(12,2) NOT NULL DEFAULT 0,
-  coin numeric(12,2) NOT NULL DEFAULT 0,
-  till numeric(12,2) NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(date, shift_id)
-);
-
--- Ensure drawer balances has numeric types (for existing tables that may have integer types)
-ALTER TABLE drawer_balances ALTER COLUMN cash TYPE numeric(12,2) USING COALESCE(cash::numeric, 0);
-ALTER TABLE drawer_balances ALTER COLUMN coin TYPE numeric(12,2) USING COALESCE(coin::numeric, 0);
-ALTER TABLE drawer_balances ALTER COLUMN till TYPE numeric(12,2) USING COALESCE(till::numeric, 0);
-
--- Recreate report views
 CREATE VIEW daily_sales_summary AS
 SELECT
   date(created_at) AS sale_date,
@@ -155,9 +127,8 @@ CREATE VIEW product_sales_summary AS
 SELECT
   si.product_name AS name,
   coalesce(p.unit, 'piece') AS unit,
-  sum(si.quantity)::numeric AS units_sold,
-  coalesce(sum(si.subtotal), 0) AS total_revenue,
-  coalesce(sum(si.quantity * p.cost_price), 0) AS total_cost
+  sum(si.quantity)::integer AS units_sold,
+  coalesce(sum(si.subtotal), 0) AS total_revenue
 FROM sale_items si
 JOIN sales s ON s.id = si.sale_id AND s.is_voided = false
 LEFT JOIN products p ON p.id = si.product_id
@@ -168,6 +139,19 @@ ORDER BY total_revenue DESC;
 ALTER TABLE shop_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pos_public_shop_settings" ON shop_settings;
 CREATE POLICY "pos_public_shop_settings" ON shop_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- Drawer balances: track cash/coin/till per date and shift
+CREATE TABLE IF NOT EXISTS drawer_balances (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  date date NOT NULL,
+  shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
+  cash numeric(12,2) NOT NULL DEFAULT 0,
+  coin numeric(12,2) NOT NULL DEFAULT 0,
+  till numeric(12,2) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(date, shift_id)
+);
 
 -- Function to adjust drawer balances (decrement when expenses occur)
 CREATE OR REPLACE FUNCTION adjust_drawer_balance(p_method text, p_amount numeric, p_date date, p_shift_id uuid)
@@ -204,56 +188,6 @@ $$ LANGUAGE plpgsql;
 ALTER TABLE drawer_balances ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pos_public_drawer_balances" ON drawer_balances;
 CREATE POLICY "pos_public_drawer_balances" ON drawer_balances FOR ALL USING (true) WITH CHECK (true);
-
-CREATE TABLE IF NOT EXISTS drawer_balance_logs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  drawer_balance_id uuid REFERENCES drawer_balances(id) ON DELETE SET NULL,
-  date date NOT NULL DEFAULT CURRENT_DATE,
-  shift_id uuid REFERENCES shifts(id) ON DELETE SET NULL,
-  action text NOT NULL DEFAULT 'manual_count',
-  cash_before numeric(12,2) NOT NULL DEFAULT 0,
-  coin_before numeric(12,2) NOT NULL DEFAULT 0,
-  till_before numeric(12,2) NOT NULL DEFAULT 0,
-  cash_after numeric(12,2) NOT NULL DEFAULT 0,
-  coin_after numeric(12,2) NOT NULL DEFAULT 0,
-  till_after numeric(12,2) NOT NULL DEFAULT 0,
-  cash_delta numeric(12,2) NOT NULL DEFAULT 0,
-  coin_delta numeric(12,2) NOT NULL DEFAULT 0,
-  till_delta numeric(12,2) NOT NULL DEFAULT 0,
-  note text,
-  user_id uuid REFERENCES users(id) ON DELETE SET NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_drawer_balance_logs_date ON drawer_balance_logs(date);
-CREATE INDEX IF NOT EXISTS idx_drawer_balance_logs_balance_id ON drawer_balance_logs(drawer_balance_id);
-
-ALTER TABLE drawer_balance_logs ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "pos_public_drawer_balance_logs" ON drawer_balance_logs;
-CREATE POLICY "pos_public_drawer_balance_logs" ON drawer_balance_logs FOR ALL USING (true) WITH CHECK (true);
-
-CREATE TABLE IF NOT EXISTS cashier_device_approvals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  device_id text NOT NULL,
-  device_name text,
-  status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'revoked')) DEFAULT 'pending',
-  requested_duration_hours integer NOT NULL DEFAULT 12,
-  approved_duration_hours integer,
-  expires_at timestamptz,
-  reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL,
-  reviewed_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(user_id, device_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_status ON cashier_device_approvals(status);
-CREATE INDEX IF NOT EXISTS idx_cashier_device_approvals_user_id ON cashier_device_approvals(user_id);
-
-ALTER TABLE cashier_device_approvals ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "pos_public_cashier_device_approvals" ON cashier_device_approvals;
-CREATE POLICY "pos_public_cashier_device_approvals" ON cashier_device_approvals FOR ALL USING (true) WITH CHECK (true);
 
 -- Atomic sale recording: sale + items + drawer balance
 -- Stock deduction and stock_log are handled by trg_sale_items_deduct_stock trigger
@@ -299,7 +233,7 @@ BEGIN
       v_sale_id,
       (v_item->>'product_id')::uuid,
       v_item->>'product_name',
-      (v_item->>'quantity')::numeric,
+      (v_item->>'quantity')::integer,
       (v_item->>'unit_price')::numeric,
       (v_item->>'subtotal')::numeric
     );
@@ -406,35 +340,5 @@ BEGIN
       VALUES (p_date, p_shift_id, 0, 0, p_amount);
     END IF;
   END IF;
-END;
-$$ LANGUAGE plpgsql;
-
--- Atomically adjust product stock and log the change
-CREATE OR REPLACE FUNCTION adjust_product_stock(
-  p_product_id uuid,
-  p_change_qty numeric,
-  p_reason text DEFAULT 'adjustment',
-  p_note text DEFAULT '',
-  p_user_id uuid DEFAULT NULL
-)
-RETURNS numeric AS $$
-DECLARE
-  v_new_stock numeric;
-  v_rounded_qty numeric;
-BEGIN
-  v_rounded_qty := round(p_change_qty::numeric, 1);
-  UPDATE products
-  SET stock_qty = stock_qty + v_rounded_qty, updated_at = now()
-  WHERE id = p_product_id
-  RETURNING stock_qty INTO v_new_stock;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Product % not found', p_product_id;
-  END IF;
-
-  INSERT INTO stock_log(product_id, user_id, change_qty, reason, note, created_at)
-  VALUES (p_product_id, p_user_id, v_rounded_qty, p_reason, p_note, now());
-
-  RETURN v_new_stock;
 END;
 $$ LANGUAGE plpgsql;

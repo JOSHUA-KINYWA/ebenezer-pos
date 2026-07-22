@@ -5,15 +5,16 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   ShoppingBag, ShoppingCart, BarChart2, Package,
-  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag, Bell, AlertTriangle
+  Users, Settings, LogOut, Menu, X, Clock, Wallet, DollarSign, Box, Tag, Bell
 } from 'lucide-react'
 import { SessionUser } from '@/types'
-import { clearSession, getDeviceId, getSession, refreshSession } from '@/lib/auth'
+import { clearSession, getSession, refreshSession } from '@/lib/auth'
 import { canAccessRoute } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { formatMoney, getLocalDateString } from '@/lib/format'
+import { DeviceApprovalGuard } from '@/components/DeviceApprovalGuard'
+import { formatMoney } from '@/lib/format'
 
 const nav = [
   { href: '/dashboard', icon: ShoppingBag, label: 'Dashboard', roles: ['owner', 'cashier'] },
@@ -22,7 +23,7 @@ const nav = [
   { href: '/dashboard/products', icon: Box, label: 'Products', roles: ['owner'] },
   { href: '/dashboard/stock', icon: Package, label: 'Stock', roles: ['owner', 'cashier'] },
   { href: '/dashboard/drawer', icon: Wallet, label: 'Drawer', roles: ['owner', 'cashier'] },
-  { href: '/dashboard/expenses', icon: Package, label: 'Expenses', roles: ['owner', 'cashier'] },
+  { href: '/dashboard/expenses', icon: Package, label: 'Expenses', roles: ['owner'] },
   { href: '/dashboard/staff', icon: Users, label: 'Staff', roles: ['owner'] },
   { href: '/dashboard/settings', icon: Settings, label: 'Settings', roles: ['owner'] },
 ]
@@ -39,8 +40,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [drawerLoaded, setDrawerLoaded] = useState(false)
   const [cartCount, setCartCount] = useState(0)
   const [pendingCount, setPendingCount] = useState(0)
-  const [lowStockCount, setLowStockCount] = useState(0)
-  const [deviceApproved, setDeviceApproved] = useState(true)
   const supabase = createClient()
   const { settings } = useShopSettings()
 
@@ -68,23 +67,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       setUser(data as SessionUser)
 
-      if (data.role === 'cashier') {
-        const deviceId = getDeviceId()
-        const now = new Date().toISOString()
-        const { data: approval } = await supabase
-          .from('cashier_device_approvals')
-          .select('id, status, expires_at')
-          .eq('user_id', data.id)
-          .eq('device_id', deviceId)
-          .eq('status', 'approved')
-          .gt('expires_at', now)
-          .maybeSingle()
-
-        setDeviceApproved(!!approval)
-      } else {
-        setDeviceApproved(true)
-      }
-
       if (!canAccessRoute(pathname, data.role)) {
         setChecking(false)
         router.replace('/dashboard/sell')
@@ -104,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   async function fetchDrawer() {
-    const today = getLocalDateString()
+    const today = new Date().toISOString().split('T')[0]
     const { data } = await supabase
       .from('drawer_balances')
       .select('cash, coin, till')
@@ -121,44 +103,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   async function fetchPendingCount() {
     if (!user || user.role !== 'owner') return
-    const [{ count: accountCount }, { count: deviceCount }] = await Promise.all([
-      supabase.from('pending_accounts').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('cashier_device_approvals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-    ])
-    const total = (typeof accountCount === 'number' ? accountCount : 0) + (typeof deviceCount === 'number' ? deviceCount : 0)
-    setPendingCount(total)
-  }
-
-  async function fetchLowStockCount() {
-    if (!user) return
-    try {
-      const { data } = await supabase
-        .from('products')
-        .select('id, stock_qty, stock_alert, parent_product_id')
-        .eq('is_active', true)
-
-      if (!data) {
-        setLowStockCount(0)
-        return
-      }
-
-      const stockMap = new Map<string, { stock_qty: number; stock_alert: number }>()
-      data.forEach((product: any) => {
-        if (product.parent_product_id) {
-          const parent = stockMap.get(product.parent_product_id)
-          if (parent) {
-            parent.stock_qty += Number(product.stock_qty || 0)
-          }
-        } else {
-          stockMap.set(product.id, { stock_qty: Number(product.stock_qty || 0), stock_alert: Number(product.stock_alert || 0) })
-        }
-      })
-
-      const outOfStock = Array.from(stockMap.values()).filter(p => p.stock_qty === 0).length
-      const lowStock = Array.from(stockMap.values()).filter(p => p.stock_qty > 0 && p.stock_qty <= p.stock_alert).length
-      setLowStockCount(outOfStock + lowStock)
-    } catch {
-      setLowStockCount(0)
+    const { count } = await supabase
+      .from('pending_accounts')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+    if (typeof count === 'number') {
+      setPendingCount(count)
     }
   }
 
@@ -166,47 +116,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (user) {
       fetchDrawer()
       fetchPendingCount()
-      fetchLowStockCount()
-      const interval = window.setInterval(() => {
-        fetchDrawer()
-        fetchLowStockCount()
-      }, 15000)
-
-      const handleDrawerUpdate = () => {
-        fetchDrawer()
-      }
-      window.addEventListener('drawer-update', handleDrawerUpdate)
-
-      return () => {
-        window.clearInterval(interval)
-        window.removeEventListener('drawer-update', handleDrawerUpdate)
-      }
+      const interval = window.setInterval(fetchDrawer, 15000)
+      return () => window.clearInterval(interval)
     }
-  }, [user, supabase])
-
-  useEffect(() => {
-    if (!user || user.role !== 'cashier') return
-    const currentUser = user
-
-    async function checkDeviceApproval() {
-      const deviceId = getDeviceId()
-      const now = new Date().toISOString()
-      const { data: approval } = await supabase
-        .from('cashier_device_approvals')
-        .select('status, expires_at')
-        .eq('user_id', currentUser.id)
-        .eq('device_id', deviceId)
-        .eq('status', 'approved')
-        .gt('expires_at', now)
-        .maybeSingle()
-
-      setDeviceApproved(!!approval)
-    }
-
-    checkDeviceApproval()
-    const interval = window.setInterval(checkDeviceApproval, 10000)
-
-    return () => window.clearInterval(interval)
   }, [user, supabase])
 
   useEffect(() => {
@@ -265,21 +177,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <LoadingSpinner label="Loading workspace..." />
-      </div>
-    )
-  }
-
-  if (!deviceApproved && user.role === 'cashier') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="max-w-md w-full card p-8 text-center">
-          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Clock className="w-8 h-8 text-amber-600" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Approval Required</h2>
-          <p className="text-sm text-slate-600 mb-6">This device is awaiting owner approval. Please wait for the owner to approve your device access.</p>
-          <button onClick={() => window.location.reload()} className="btn-primary w-full">Refresh</button>
-        </div>
       </div>
     )
   }
@@ -390,18 +287,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
             </Link>
           )}
-          <Link href="/dashboard/stock" className="relative rounded-lg p-2 hover:bg-slate-100">
-            <AlertTriangle className="w-5 h-5 text-slate-600" />
-            {lowStockCount > 0 && (
-              <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                {lowStockCount}
-              </span>
-            )}
-          </Link>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto">{children}</div>
+          <div className="max-w-7xl mx-auto">
+            <DeviceApprovalGuard>
+              {children}
+            </DeviceApprovalGuard>
+          </div>
         </main>
       </div>
     </div>
