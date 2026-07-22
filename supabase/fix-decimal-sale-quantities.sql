@@ -34,6 +34,32 @@ CREATE TABLE IF NOT EXISTS drawer_balance_logs (
 CREATE INDEX IF NOT EXISTS idx_drawer_balance_logs_date ON drawer_balance_logs(date);
 CREATE INDEX IF NOT EXISTS idx_drawer_balance_logs_balance_id ON drawer_balance_logs(drawer_balance_id);
 
+WITH ranked_balances AS (
+  SELECT
+    id,
+    first_value(id) OVER (
+      PARTITION BY date, coalesce(shift_id, '00000000-0000-0000-0000-000000000000'::uuid)
+      ORDER BY updated_at DESC, created_at DESC
+    ) AS keep_id,
+    sum(cash) OVER (PARTITION BY date, coalesce(shift_id, '00000000-0000-0000-0000-000000000000'::uuid)) AS total_cash,
+    sum(coin) OVER (PARTITION BY date, coalesce(shift_id, '00000000-0000-0000-0000-000000000000'::uuid)) AS total_coin,
+    sum(till) OVER (PARTITION BY date, coalesce(shift_id, '00000000-0000-0000-0000-000000000000'::uuid)) AS total_till
+  FROM drawer_balances
+),
+keepers AS (
+  UPDATE drawer_balances db
+  SET cash = rb.total_cash, coin = rb.total_coin, till = rb.total_till, updated_at = now()
+  FROM ranked_balances rb
+  WHERE db.id = rb.id AND rb.id = rb.keep_id
+  RETURNING db.id
+)
+DELETE FROM drawer_balances db
+USING ranked_balances rb
+WHERE db.id = rb.id AND rb.id <> rb.keep_id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_drawer_balances_date_shift_unique
+  ON drawer_balances(date, coalesce(shift_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
 ALTER TABLE drawer_balance_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pos_public_drawer_balance_logs" ON drawer_balance_logs;
 CREATE POLICY "pos_public_drawer_balance_logs" ON drawer_balance_logs FOR ALL USING (true) WITH CHECK (true);
@@ -145,6 +171,7 @@ RETURNS uuid AS $$
 DECLARE
   v_sale_id uuid;
   v_item jsonb;
+  v_drawer_id uuid;
 BEGIN
   INSERT INTO sales(
     user_id, shift_id, customer_id, subtotal, tax_amount, total_amount,
@@ -170,30 +197,30 @@ BEGIN
     );
   END LOOP;
 
-  IF p_payment_method = 'cash' THEN
+  SELECT id INTO v_drawer_id
+  FROM drawer_balances
+  WHERE date = p_date AND shift_id IS NOT DISTINCT FROM p_shift_id
+  ORDER BY updated_at DESC, created_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF v_drawer_id IS NULL THEN
+    INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
+    VALUES (
+      p_date,
+      p_shift_id,
+      CASE WHEN p_payment_method = 'cash' THEN p_total_amount ELSE 0 END,
+      CASE WHEN p_payment_method = 'coin' THEN p_total_amount ELSE 0 END,
+      CASE WHEN p_payment_method = 'till' THEN p_total_amount ELSE 0 END
+    );
+  ELSE
     UPDATE drawer_balances
-    SET cash = cash + p_total_amount, updated_at = now()
-    WHERE date = p_date AND shift_id IS NOT DISTINCT FROM p_shift_id;
-    IF NOT FOUND THEN
-      INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
-      VALUES (p_date, p_shift_id, p_total_amount, 0, 0);
-    END IF;
-  ELSIF p_payment_method = 'coin' THEN
-    UPDATE drawer_balances
-    SET coin = coin + p_total_amount, updated_at = now()
-    WHERE date = p_date AND shift_id IS NOT DISTINCT FROM p_shift_id;
-    IF NOT FOUND THEN
-      INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
-      VALUES (p_date, p_shift_id, 0, p_total_amount, 0);
-    END IF;
-  ELSIF p_payment_method = 'till' THEN
-    UPDATE drawer_balances
-    SET till = till + p_total_amount, updated_at = now()
-    WHERE date = p_date AND shift_id IS NOT DISTINCT FROM p_shift_id;
-    IF NOT FOUND THEN
-      INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
-      VALUES (p_date, p_shift_id, 0, 0, p_total_amount);
-    END IF;
+    SET
+      cash = cash + CASE WHEN p_payment_method = 'cash' THEN p_total_amount ELSE 0 END,
+      coin = coin + CASE WHEN p_payment_method = 'coin' THEN p_total_amount ELSE 0 END,
+      till = till + CASE WHEN p_payment_method = 'till' THEN p_total_amount ELSE 0 END,
+      updated_at = now()
+    WHERE id = v_drawer_id;
   END IF;
 
   RETURN v_sale_id;

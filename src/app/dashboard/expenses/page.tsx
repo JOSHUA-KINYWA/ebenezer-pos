@@ -113,13 +113,15 @@ export default function ExpensesPage() {
     try {
       const { data: existing } = await supabase
         .from('drawer_balances')
-        .select('cash, coin, till')
+        .select('id, cash, coin, till')
         .eq('date', expense.expense_date)
         .is('shift_id', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
 
       const current = existing || { cash: 0, coin: 0, till: 0 }
-      const nextBalance: any = { date: expense.expense_date, shift_id: null, cash: current.cash, coin: current.coin, till: current.till }
+      const nextBalance: any = { cash: current.cash, coin: current.coin, till: current.till, updated_at: new Date().toISOString() }
 
       if (expense.payment_method === 'cash') {
         nextBalance.cash = Number(current.cash || 0) + Number(expense.amount)
@@ -129,7 +131,10 @@ export default function ExpensesPage() {
         nextBalance.till = Number(current.till || 0) + Number(expense.amount)
       }
 
-      await supabase.from('drawer_balances').upsert(nextBalance)
+      const drawerResult = existing?.id
+        ? await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
+        : await supabase.from('drawer_balances').insert({ date: expense.expense_date, shift_id: null, ...nextBalance })
+      if (drawerResult.error) throw drawerResult.error
       const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
       if (error) throw error
 
@@ -176,32 +181,30 @@ export default function ExpensesPage() {
     setSubmitting(true)
     const todayString = today.current
 
-    const { error: insertError } = await supabase.from('expenses').insert({
-      item_name: form.item_name.trim(),
-      amount,
-      payment_method: form.payment_method,
-      vendor: form.vendor.trim() || null,
-      category: form.category.trim() || 'Miscellaneous',
-      payment_note: form.payment_note.trim() || null,
-      expense_date: todayString,
-      created_by: user?.id,
-    })
+    try {
+      const { error: insertError } = await supabase.from('expenses').insert({
+        item_name: form.item_name.trim(),
+        amount,
+        payment_method: form.payment_method,
+        vendor: form.vendor.trim() || null,
+        category: form.category.trim() || 'Miscellaneous',
+        payment_note: form.payment_note.trim() || null,
+        expense_date: todayString,
+        created_by: user?.id,
+      })
 
-    if (insertError) {
-      toast.error(`❌ Failed to record expense: ${insertError.message}`)
-      setSubmitting(false)
-      return
-    }
-
+      if (insertError) throw insertError
     const { data: existing } = await supabase
       .from('drawer_balances')
-      .select('cash, coin, till')
+      .select('id, cash, coin, till')
       .eq('date', todayString)
       .is('shift_id', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     const current = existing || { cash: 0, coin: 0, till: 0 }
-    const nextBalance: any = { date: todayString, shift_id: null, cash: current.cash, coin: current.coin, till: current.till }
+    const nextBalance: any = { cash: current.cash, coin: current.coin, till: current.till, updated_at: new Date().toISOString() }
 
     if (form.payment_method === 'cash') {
       if (current.cash < amount) {
@@ -222,12 +225,20 @@ export default function ExpensesPage() {
       nextBalance.till = current.till - amount
     }
 
-    await supabase.from('drawer_balances').upsert(nextBalance)
+    const drawerResult = existing?.id
+      ? await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
+      : await supabase.from('drawer_balances').insert({ date: todayString, shift_id: null, ...nextBalance })
+    if (drawerResult.error) throw drawerResult.error
 
     toast.success(`✓ Expense recorded: ${form.item_name.trim()} for ${formatMoney(amount, settings.currency)}`)
     setForm({ ...form, item_name: '', amount: '', vendor: '', category: '', payment_note: '' })
-    setSubmitting(false)
     fetchExpenses()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to record expense'
+      toast.error(`âŒ ${message}`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading expenses..." /></div>

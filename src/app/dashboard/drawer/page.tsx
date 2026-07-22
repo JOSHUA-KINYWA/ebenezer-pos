@@ -27,6 +27,10 @@ export default function DrawerPage() {
   const [confirm, setConfirm] = useState<{ title: string; description: string; onConfirm: () => void; cancelLabel?: string; confirmLabel?: string; tone?: 'default' | 'danger' } | null>(null)
   const [history, setHistory] = useState<any[]>([])
   const [balanceId, setBalanceId] = useState<string | null>(null)
+  const [expectedTill, setExpectedTill] = useState(0)
+  const [expectedCash, setExpectedCash] = useState(0)
+  const [expectedCoin, setExpectedCoin] = useState(0)
+  const [todaySales, setTodaySales] = useState(0)
   const { settings } = useShopSettings()
   const toast = useToast()
   const supabase = createClient()
@@ -65,6 +69,7 @@ export default function DrawerPage() {
         setTill('0')
         setNote('')
       }
+
       const { data: logs } = await supabase
         .from('drawer_balance_logs')
         .select('*')
@@ -72,6 +77,31 @@ export default function DrawerPage() {
         .order('created_at', { ascending: false })
         .limit(100)
       setHistory(logs && logs.length > 0 ? logs : data || [])
+
+      const tomorrow = getLocalDateString(new Date(Date.now() + 86400000))
+      const { data: salesData } = await supabase
+        .from('sales')
+        .select('payment_method, total_amount, amount_tendered, change_amount')
+        .gte('created_at', `${today}T00:00:00`)
+        .lt('created_at', `${tomorrow}T00:00:00`)
+        .eq('is_voided', false)
+
+      const salesList = salesData || []
+      setTodaySales(salesList.length)
+
+      let till = 0
+      let cash = 0
+      let coin = 0
+      salesList.forEach(sale => {
+        const amount = Number(sale.total_amount || 0)
+        if (sale.payment_method === 'till') till += amount
+        else if (sale.payment_method === 'cash') cash += amount
+        else if (sale.payment_method === 'coin') coin += amount
+      })
+      setExpectedTill(till)
+      setExpectedCash(cash)
+      setExpectedCoin(coin)
+
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load drawer data'
@@ -102,8 +132,9 @@ export default function DrawerPage() {
             .select('id, cash, coin, till')
             .eq('date', today)
             .is('shift_id', null)
+            .order('updated_at', { ascending: false })
+            .limit(1)
             .maybeSingle()
-
           const previousCash = existing ? Number(existing.cash || 0) : 0
           const previousCoin = existing ? Number(existing.coin || 0) : 0
           const previousTill = existing ? Number(existing.till || 0) : 0
@@ -169,6 +200,10 @@ export default function DrawerPage() {
   const totalTill = parseFloat(till) || 0
   const grandTotal = totalCash + totalCoin + totalTill
 
+  const tillVariance = totalTill - expectedTill
+  const cashVariance = totalCash - expectedCash
+  const coinVariance = totalCoin - expectedCoin
+
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>
 
   return (
@@ -223,8 +258,37 @@ export default function DrawerPage() {
             <div>
               <p className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Grand Total</p>
               <p className="text-4xl font-bold">{formatMoney(grandTotal, settings.currency)}</p>
+              <p className="text-xs text-slate-400 mt-1">{todaySales} sales today</p>
             </div>
             <DollarSign className="w-12 h-12 text-slate-700" />
+          </div>
+        </div>
+
+        {/* Expected vs Actual */}
+        <div className="card p-6">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">Expected vs Actual</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl border border-slate-200">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Expected Till</p>
+              <p className="text-xl font-bold text-slate-900">{formatMoney(expectedTill, settings.currency)}</p>
+              <p className={`text-xs font-semibold ${tillVariance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                Variance: {formatMoney(tillVariance, settings.currency)}
+              </p>
+            </div>
+            <div className="p-4 rounded-xl border border-slate-200">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Expected Cash</p>
+              <p className="text-xl font-bold text-slate-900">{formatMoney(expectedCash, settings.currency)}</p>
+              <p className={`text-xs font-semibold ${cashVariance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                Variance: {formatMoney(cashVariance, settings.currency)}
+              </p>
+            </div>
+            <div className="p-4 rounded-xl border border-slate-200">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Expected Coin</p>
+              <p className="text-xl font-bold text-slate-900">{formatMoney(expectedCoin, settings.currency)}</p>
+              <p className={`text-xs font-semibold ${coinVariance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                Variance: {formatMoney(coinVariance, settings.currency)}
+              </p>
+            </div>
           </div>
         </div>
 

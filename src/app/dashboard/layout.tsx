@@ -23,7 +23,6 @@ const nav = [
   { href: '/dashboard/reports', icon: BarChart2, label: 'Reports', roles: ['owner', 'cashier'] },
   { href: '/dashboard/products', icon: Box, label: 'Products', roles: ['owner'] },
   { href: '/dashboard/stock', icon: Package, label: 'Stock', roles: ['owner', 'cashier'] },
-  { href: '/dashboard/stock-analysis', icon: BarChart2, label: 'Stock Analysis', roles: ['owner', 'cashier'] },
   { href: '/dashboard/drawer', icon: Wallet, label: 'Drawer', roles: ['owner'] },
   { href: '/dashboard/expenses', icon: Package, label: 'Expenses', roles: ['owner'] },
   { href: '/dashboard/staff', icon: Users, label: 'Staff', roles: ['owner'] },
@@ -94,6 +93,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .select('cash, coin, till')
       .eq('date', today)
       .is('shift_id', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
     if (data) {
       setDrawerCash(data.cash || 0)

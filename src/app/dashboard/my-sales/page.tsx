@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatDate } from '@/lib/format'
+import { formatMoney, formatDate, formatSaleAttribution } from '@/lib/format'
+import { canEditSales } from '@/lib/permissions'
 import { PageHeader } from '@/components/PageHeader'
 import { RoleGuard } from '@/components/RoleGuard'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -27,7 +28,7 @@ interface Sale {
   id: string
   receipt_no: string
   user_id: string
-  user?: { full_name: string }
+  user?: { full_name: string; role?: string }
   total_amount: number
   subtotal: number
   tax_amount: number
@@ -56,10 +57,25 @@ export default function MySalesPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [cancelingId, setCancelingId] = useState<string | null>(null)
   const [voidReason, setVoidReason] = useState('')
+  const [viewScope, setViewScope] = useState<'mine' | 'all'>('mine')
+  const [staffFilter, setStaffFilter] = useState('all')
+  const [excludeStaffId, setExcludeStaffId] = useState('')
+
+  const [staffMembers, setStaffMembers] = useState<{ id: string; full_name: string; role: string }[]>([])
+
+  useEffect(() => {
+    supabase
+      .from('users')
+      .select('id, full_name, role')
+      .eq('is_active', true)
+      .in('role', ['owner', 'cashier'])
+      .order('full_name')
+      .then(({ data }) => setStaffMembers(data || []))
+  }, [])
 
   useEffect(() => {
     fetchSales()
-  }, [period, customStartDate, customEndDate, user])
+  }, [period, customStartDate, customEndDate, user, viewScope, staffFilter, excludeStaffId])
 
   async function fetchSales() {
     if (!user) return
@@ -100,9 +116,13 @@ export default function MySalesPage() {
         .gte('created_at', startISO)
         .lte('created_at', endISO)
 
-      // Cashiers see only their own sales, owners see all
-      if (user.role === 'cashier') {
+      // Scope: cashiers default to own sales; can switch to all shop sales
+      if (user.role === 'cashier' && viewScope === 'mine') {
         query = query.eq('user_id', user.id)
+      } else if (user.role === 'owner' && staffFilter !== 'all') {
+        query = query.eq('user_id', staffFilter)
+      } else if (user.role === 'cashier' && viewScope === 'all' && excludeStaffId) {
+        query = query.neq('user_id', excludeStaffId)
       }
 
       query = query.order('created_at', { ascending: false })
@@ -118,7 +138,7 @@ export default function MySalesPage() {
             // Get user details
             const { data: userData } = await supabase
               .from('users')
-              .select('full_name')
+              .select('full_name, role')
               .eq('id', sale.user_id)
               .maybeSingle()
 
@@ -254,12 +274,69 @@ export default function MySalesPage() {
       <div className="space-y-6">
         <PageHeader
           title="My Sales"
-          description={user?.role === 'cashier' ? 'Track your daily transactions' : 'View all sales'}
+          description={
+            user?.role === 'cashier'
+              ? viewScope === 'mine'
+                ? 'Your personal transactions'
+                : 'All shop sales with staff attribution'
+              : 'View and manage sales by staff member'
+          }
         />
 
         {error && <Alert type="error" title="Error" message={error} dismissible onDismiss={() => setError('')} />}
 
-        <div className="card p-4">
+        <div className="card p-4 space-y-4">
+          <div className="flex flex-wrap gap-2 items-center">
+            {user?.role === 'cashier' && (
+              <>
+                <button
+                  onClick={() => { setViewScope('mine'); setExcludeStaffId('') }}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${viewScope === 'mine' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  My sales
+                </button>
+                <button
+                  onClick={() => { setViewScope('all'); setExcludeStaffId('') }}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${viewScope === 'all' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  All shop sales
+                </button>
+                {viewScope === 'all' && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 mb-1 block">Exclude sales by</label>
+                    <select
+                      className="input w-auto min-w-[200px]"
+                      value={excludeStaffId}
+                      onChange={e => setExcludeStaffId(e.target.value)}
+                    >
+                      <option value="">No exclusion</option>
+                      {staffMembers
+                        .filter(member => member.id !== user?.id)
+                        .map(member => (
+                          <option key={member.id} value={member.id}>
+                            {formatSaleAttribution(member)}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
+            {user?.role === 'owner' && (
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Sold by</label>
+                <select className="input w-auto min-w-[200px]" value={staffFilter} onChange={e => setStaffFilter(e.target.value)}>
+                  <option value="all">All staff</option>
+                  {staffMembers.map(member => (
+                    <option key={member.id} value={member.id}>
+                      {formatSaleAttribution(member)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-2">
             {(['day', 'week', 'month'] as const).map(p => (
               <button
@@ -360,7 +437,9 @@ export default function MySalesPage() {
                         )}
                       </div>
                       <p className="text-sm text-slate-500">
-                        {user?.role === 'owner' && sale.user?.full_name && `${sale.user.full_name} • `}
+                        {(viewScope === 'all' || user?.role === 'owner') && sale.user && (
+                          <span>{formatSaleAttribution(sale.user)} • </span>
+                        )}
                         {formatDate(sale.created_at)} • {sale.payment_type}
                       </p>
                     </div>
@@ -408,7 +487,7 @@ export default function MySalesPage() {
                         </div>
                       )}
 
-                      {!sale.is_voided && (
+                      {!sale.is_voided && canEditSales(user?.role) && (
                         <div className="pt-3 border-t border-slate-200 flex gap-2">
                           <button
                             onClick={() => {

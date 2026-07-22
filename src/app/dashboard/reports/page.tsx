@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { DailySalesSummary, ProductSalesSummary, Sale, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatDateTime } from '@/lib/format'
+import { formatMoney, formatDateTime, formatSaleAttribution, normalizeSaleUser } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -35,7 +35,7 @@ export default function ReportsPage() {
   const [daily, setDaily] = useState<DailySalesSummary[]>([])
   const [products, setProducts] = useState<ProductSalesSummary[]>([])
   const [transactions, setTransactions] = useState<Sale[]>([])
-  const [cashiers, setCashiers] = useState<SessionUser[]>([])
+  const [staffMembers, setStaffMembers] = useState<(SessionUser & { role: SessionUser['role'] })[]>([])
   const { settings } = useShopSettings()
   const toast = useToast()
   const supabase = createClient()
@@ -47,10 +47,6 @@ export default function ReportsPage() {
       return
     }
     setUser(session)
-    // If cashier, auto-filter to their own sales
-    if (session.role === 'cashier') {
-      setFilterCashier(session.id)
-    }
   }, [])
 
   async function fetchAll() {
@@ -60,34 +56,69 @@ export default function ReportsPage() {
 
       let salesQuery = supabase
         .from('sales')
-        .select('*, sale_items(*), user:users(full_name)')
+        .select('*, sale_items(*), user:users(full_name, role)')
         .order('created_at', { ascending: false })
 
       if (since) salesQuery = salesQuery.gte('created_at', since)
-      if (filterCashier !== 'all') salesQuery = salesQuery.eq('user_id', filterCashier)
-      if (filterPayment !== 'all') salesQuery = salesQuery.eq('payment_type', filterPayment)
+      if (filterCashier === 'mine' && user) {
+        salesQuery = salesQuery.eq('user_id', user.id)
+      } else if (filterCashier !== 'all') {
+        salesQuery = salesQuery.eq('user_id', filterCashier)
+      }
+      if (filterPayment !== 'all') salesQuery = salesQuery.eq('payment_method', filterPayment)
 
-      const fromDate = since ? since.split('T')[0] : '2000-01-01'
-      const todayDate = new Date().toISOString().split('T')[0]
-
-      const [{ data: d, error: dError }, { data: p, error: pError }, { data: txns, error: txnError }] = await Promise.all([
-        supabase.from('daily_sales_summary').select('*').gte('sale_date', fromDate).lte('sale_date', todayDate).order('sale_date', { ascending: false }).limit(range === 'all' ? 365 : parseInt(range)),
-        supabase.from('product_sales_summary').select('*').limit(50),
-        salesQuery,
-      ])
-
-      if (dError) throw dError
-      if (pError) throw pError
+      const { data: txns, error: txnError } = await salesQuery
       if (txnError) throw txnError
 
-      const { data: cashierData, error: cashierErr } = await supabase.from('users').select('id, full_name').eq('is_active', true).eq('role', 'cashier')
-      if (cashierErr) throw cashierErr
+      const { data: staffData, error: staffErr } = await supabase
+        .from('users')
+        .select('id, full_name, role')
+        .eq('is_active', true)
+        .in('role', ['owner', 'cashier'])
+        .order('full_name')
+      if (staffErr) throw staffErr
 
-      // Filter to cash-only payments
-      setDaily(d || [])
-      setProducts(p || [])
-      setTransactions((txns || []) as Sale[])
-      setCashiers((cashierData || []) as SessionUser[])
+      const sales = (txns || []) as Sale[]
+      const activeTransactions = sales.filter(sale => !sale.is_voided)
+      const dailyMap = new Map<string, DailySalesSummary>()
+      const productMap = new Map<string, ProductSalesSummary>()
+
+      activeTransactions.forEach(sale => {
+        const saleDate = sale.created_at.split('T')[0]
+        const currentDay = dailyMap.get(saleDate) || {
+          sale_date: saleDate,
+          total_transactions: 0,
+          total_revenue: 0,
+          cash_total: 0,
+          mpesa_total: 0,
+          card_total: 0,
+        }
+        const amount = Number(sale.total_amount || 0)
+        currentDay.total_transactions += 1
+        currentDay.total_revenue += amount
+        if (sale.payment_method === 'cash') currentDay.cash_total += amount
+        else if (sale.payment_method === 'till') currentDay.mpesa_total += amount
+        else if (sale.payment_method === 'coin') currentDay.card_total += amount
+        dailyMap.set(saleDate, currentDay)
+
+        ;(sale.sale_items || []).forEach(item => {
+          const key = item.product_id || item.product_name
+          const currentProduct = productMap.get(key) || {
+            name: item.product_name,
+            unit: item.product?.unit || 'piece',
+            units_sold: 0,
+            total_revenue: 0,
+          }
+          currentProduct.units_sold += Number(item.quantity || 0)
+          currentProduct.total_revenue += Number(item.subtotal || 0)
+          productMap.set(key, currentProduct)
+        })
+      })
+
+      setDaily(Array.from(dailyMap.values()).sort((a, b) => b.sale_date.localeCompare(a.sale_date)))
+      setProducts(Array.from(productMap.values()).sort((a, b) => b.total_revenue - a.total_revenue).slice(0, 50))
+      setTransactions(sales)
+      setStaffMembers((staffData || []) as (SessionUser & { role: SessionUser['role'] })[])
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load reports'
@@ -98,7 +129,9 @@ export default function ReportsPage() {
     }
   }
 
-  useEffect(() => { fetchAll() }, [range, filterCashier, filterPayment])
+  useEffect(() => {
+    if (user) fetchAll()
+  }, [range, filterCashier, filterPayment, user])
 
   async function voidSale(sale: Sale) {
     if (!canVoidSales(user?.role)) return
@@ -109,7 +142,7 @@ export default function ReportsPage() {
     if (!confirm(`Void receipt ${sale.receipt_no}? Stock will be restored.`)) return
 
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const saleDate = sale.created_at.split('T')[0]
       if (sale.sale_items) {
         await Promise.all(
           (sale.sale_items || [])
@@ -134,21 +167,42 @@ export default function ReportsPage() {
         )
       }
 
-      const { data: existing } = await supabase
+      const query = supabase
         .from('drawer_balances')
-        .select('cash, coin, till')
-        .eq('date', today)
-        .or(sale.shift_id ? `shift_id.eq.${sale.shift_id}` : 'shift_id.is.null')
-        .maybeSingle()
+        .select('id, cash, coin, till')
+        .eq('date', saleDate)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+
+      const drawerQuery = sale.shift_id
+        ? query.eq('shift_id', sale.shift_id)
+        : query.is('shift_id', null)
+
+      const { data: existing } = await drawerQuery.maybeSingle()
       const curr = existing || { cash: 0, coin: 0, till: 0 }
-      const updated: any = { date: today, shift_id: sale.shift_id || null }
-      if (sale.payment_method === 'cash') updated.cash = curr.cash - sale.total_amount
-      else if (sale.payment_method === 'coin') updated.coin = curr.coin - sale.total_amount
-      else updated.till = curr.till - sale.total_amount
-      updated.cash = updated.cash ?? curr.cash
-      updated.coin = updated.coin ?? curr.coin
-      updated.till = updated.till ?? curr.till
-      const { error: drawerError } = await supabase.from('drawer_balances').upsert(updated)
+      const updated: any = {
+        cash: curr.cash,
+        coin: curr.coin,
+        till: curr.till,
+      }
+
+      if (sale.payment_method === 'cash') updated.cash -= sale.total_amount
+      else if (sale.payment_method === 'coin') updated.coin -= sale.total_amount
+      else updated.till -= sale.total_amount
+
+      let drawerError
+      if (existing?.id) {
+        const result = await supabase.from('drawer_balances').update(updated).eq('id', existing.id)
+        drawerError = result.error
+      } else {
+        const result = await supabase.from('drawer_balances').insert({
+          date: saleDate,
+          shift_id: sale.shift_id || null,
+          ...updated,
+        })
+        drawerError = result.error
+      }
+
       if (drawerError) throw drawerError
 
       const { error: saleError } = await supabase.from('sales').update({ is_voided: true, voided_by: user?.id, voided_at: new Date().toISOString() }).eq('id', sale.id)
@@ -200,7 +254,11 @@ export default function ReportsPage() {
   return (
     <RoleGuard allowed={['owner', 'cashier']}>
       <div className="space-y-6">
-        <PageHeader title="Reports & Analytics" description="Track revenue, sales trends, and transaction history" action={
+        <PageHeader title="Reports & Analytics" description={
+          user?.role === 'cashier'
+            ? 'Shop-wide totals with filters to view your sales or exclude other staff'
+            : 'Track revenue, sales trends, and transaction history by staff member'
+        } action={
           <div className="flex flex-wrap gap-2">
             <select className="input w-auto py-2" value={range} onChange={e => setRange(e.target.value as Range)}>
               <option value="7">Last 7 days</option>
@@ -208,13 +266,22 @@ export default function ReportsPage() {
               <option value="90">Last 90 days</option>
               <option value="all">All time</option>
             </select>
-            <select className="input w-auto py-2" value={filterCashier} onChange={e => setFilterCashier(e.target.value)} disabled={user?.role === 'cashier'}>
-              {user?.role === 'owner' && <option value="all">All cashiers</option>}
-              {cashiers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+            <select className="input w-auto py-2 min-w-[180px]" value={filterCashier} onChange={e => setFilterCashier(e.target.value)} title="Filter sales by staff member">
+              <option value="all">{user?.role === 'owner' ? 'All staff' : 'All shop sales'}</option>
+              <option value="mine">My sales only</option>
+              {staffMembers
+                .filter(member => member.id !== user?.id)
+                .map(member => (
+                  <option key={member.id} value={member.id}>
+                    {formatSaleAttribution(member)}
+                  </option>
+                ))}
             </select>
             <select className="input w-auto py-2" value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
               <option value="all">All payments</option>
-              <option value="cash">Cash only</option>
+              <option value="cash">Cash</option>
+              <option value="coin">Coin</option>
+              <option value="till">Till</option>
             </select>
             <button onClick={fetchAll} className="btn-secondary"><RefreshCw className="w-4 h-4" /> Refresh</button>
             <button onClick={exportDaily} className="btn-secondary"><Download className="w-4 h-4" /> Export CSV</button>
@@ -324,11 +391,13 @@ export default function ReportsPage() {
             <div className="overflow-x-auto">
               {transactions.length === 0 ? <EmptyState icon={FileText} title="No transactions" description="Sales will appear here" /> : (
                 <table className="w-full">
-                  <thead><tr className="border-b border-slate-100 text-slate-500 text-sm"><th className="py-2 text-left">ID</th><th className="py-2 text-left">Cashier</th><th className="py-2 text-left">Amount</th><th className="py-2 text-left">Payment</th><th className="py-2 text-left">Time</th><th className="py-2 text-left">Items</th><th className="py-2 text-right">Action</th></tr></thead>
+                  <thead><tr className="border-b border-slate-100 text-slate-500 text-sm"><th className="py-2 text-left">Receipt</th><th className="py-2 text-left">Sold by</th><th className="py-2 text-left">Amount</th><th className="py-2 text-left">Payment</th><th className="py-2 text-left">Time</th><th className="py-2 text-left">Items</th><th className="py-2 text-right">Action</th></tr></thead>
                   <tbody>{transactions.map(t => (
-                    <tr key={t.id} className="border-b border-slate-50">
-                      <td className="py-2 text-sm font-mono text-slate-900">#{t.id.slice(0, 8)}</td>
-                      <td className="py-2 text-sm text-slate-600">{(t.user as any)?.full_name || '—'}</td>
+                    <tr key={t.id} className={`border-b border-slate-50 ${t.is_voided ? 'opacity-60' : ''}`}>
+                      <td className="py-2 text-sm font-mono text-slate-900">{t.receipt_no || `#${t.id.slice(0, 8)}`}</td>
+                      <td className="py-2 text-sm text-slate-600">
+                        {formatSaleAttribution(normalizeSaleUser(t.user as Parameters<typeof normalizeSaleUser>[0]))}
+                      </td>
                       <td className="py-2 text-sm font-semibold text-slate-900">{formatMoney(Number(t.total_amount), settings.currency)}</td>
                       <td className="py-2 text-sm text-slate-500 capitalize">{t.payment_type}</td>
                       <td className="py-2 text-sm text-slate-400">{formatDateTime(t.created_at)}</td>

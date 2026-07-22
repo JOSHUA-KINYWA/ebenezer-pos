@@ -32,3 +32,13 @@ export function getLocalDateString(date = new Date()) {
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+export function formatSaleAttribution(user?: { full_name?: string; role?: string } | null) {
+  if (!user?.full_name) return 'Unknown'
+  return user.role === 'owner' ? `${user.full_name} (Owner)` : user.full_name
+}
+
+export function normalizeSaleUser(user?: { full_name?: string; role?: string } | { full_name?: string; role?: string }[] | null) {
+  if (!user) return undefined
+  return Array.isArray(user) ? user[0] : user
+}

@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { SessionUser, Sale, DailySalesSummary, User, Expense } from '@/types'
+import { SessionUser, DailySalesSummary, Expense, Role } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatDate, getLocalDateString } from '@/lib/format'
+import { formatMoney, formatDate, getLocalDateString, formatSaleAttribution } from '@/lib/format'
+import { isOwner } from '@/lib/permissions'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -34,7 +35,7 @@ interface DashboardStats {
   totalExpenses: number
   avgOrderValue: number
   paymentBreakdown: Record<string, number>
-  recentSales: { id: string; total_amount: number; created_at: string; payment_type: string }[]
+  recentSales: { id: string; receipt_no?: string; total_amount: number; created_at: string; payment_type: string; user?: { full_name?: string; role?: string } }[]
   recentExpenses: Expense[]
 }
 
@@ -64,6 +65,7 @@ export default function DashboardPage() {
   }, [])
 
   async function fetchDashboardData() {
+    const session = getSession()
     try {
       setLoading(true)
       const now = new Date()
@@ -72,7 +74,7 @@ export default function DashboardPage() {
 
       const { data: salesData } = await supabase
         .from('sales')
-        .select('id, total_amount, payment_type, payment_method, created_at')
+        .select('id, receipt_no, total_amount, payment_type, payment_method, created_at, user:users(full_name, role)')
         .gte('created_at', since)
         .eq('is_voided', false)
         .order('created_at', { ascending: false })
@@ -80,7 +82,7 @@ export default function DashboardPage() {
 
       const { data: allSales } = await supabase
         .from('sales')
-        .select('id, total_amount, payment_type, payment_method, sale_items(quantity, product_id, product_name, subtotal, unit_price)')
+        .select('id, total_amount, payment_type, payment_method, created_at, sale_items(quantity, product_id, product_name, subtotal, unit_price)')
         .gte('created_at', since)
         .eq('is_voided', false)
 
@@ -122,13 +124,26 @@ export default function DashboardPage() {
         .select('id')
         .eq('status', 'open')
 
-      const dailyLimit = range === 'today' ? 1 : range === '7d' ? 7 : 30
-      const { data: dailyData } = await supabase
-        .from('daily_sales_summary')
-        .select('*')
-        .gte('sale_date', since.split('T')[0])
-        .order('sale_date', { ascending: false })
-        .limit(dailyLimit)
+      const dailyMap = new Map<string, DailySalesSummary>()
+      ;(allSales || []).forEach((sale: any) => {
+        const saleDate = sale.created_at?.split('T')[0] || today
+        const current = dailyMap.get(saleDate) || {
+          sale_date: saleDate,
+          total_transactions: 0,
+          total_revenue: 0,
+          cash_total: 0,
+          mpesa_total: 0,
+          card_total: 0,
+        }
+        const amount = Number(sale.total_amount || 0)
+        current.total_transactions += 1
+        current.total_revenue += amount
+        if (sale.payment_method === 'cash') current.cash_total += amount
+        else if (sale.payment_method === 'till') current.mpesa_total += amount
+        else if (sale.payment_method === 'coin') current.card_total += amount
+        dailyMap.set(saleDate, current)
+      })
+      const dailyData = Array.from(dailyMap.values()).sort((a, b) => b.sale_date.localeCompare(a.sale_date))
 
       const { data: drawerData } = await supabase
         .from('drawer_balances')
@@ -139,11 +154,13 @@ export default function DashboardPage() {
         .limit(1)
       const drawerRow = drawerData && drawerData.length > 0 ? drawerData[0] : null
 
-      const { data: expenseData } = await supabase
-        .from('expenses')
-        .select('*')
-        .gte('expense_date', since.split('T')[0])
-        .lte('expense_date', today)
+      const { data: expenseData } = isOwner(session?.role)
+        ? await supabase
+            .from('expenses')
+            .select('*')
+            .gte('expense_date', since.split('T')[0])
+            .lte('expense_date', today)
+        : { data: [] as Expense[] }
 
       const totalExpenses = (expenseData || []).reduce((sum, e) => sum + Number(e.amount), 0)
 
@@ -160,6 +177,19 @@ export default function DashboardPage() {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 5)
 
+      const normalizedRecentSales = (salesData || []).slice(0, 10).map(sale => {
+        const rawUser = (sale as { user?: { full_name?: string; role?: string } | { full_name?: string; role?: string }[] }).user
+        const userInfo = Array.isArray(rawUser) ? rawUser[0] : rawUser
+        return {
+          id: sale.id,
+          receipt_no: sale.receipt_no,
+          total_amount: Number(sale.total_amount),
+          created_at: sale.created_at,
+          payment_type: sale.payment_type,
+          user: userInfo,
+        }
+      })
+
       setStats({
         revenue,
         transactions,
@@ -174,7 +204,7 @@ export default function DashboardPage() {
         totalExpenses,
         avgOrderValue,
         paymentBreakdown,
-        recentSales: (salesData || []).slice(0, 10),
+        recentSales: normalizedRecentSales,
         recentExpenses: (expenseData || []).slice(0, 10),
       })
     } catch (error) {
@@ -189,25 +219,26 @@ export default function DashboardPage() {
   const netProfit = stats ? stats.revenue - stats.totalExpenses : 0
 
   const kpiCards = [
-    { label: 'Revenue', value: formatMoney(stats?.revenue || 0, settings.currency), icon: DollarSign, color: 'bg-emerald-500', change: stats ? `${formatMoney(netProfit, settings.currency)} profit` : '' },
+    { label: 'Revenue', value: formatMoney(stats?.revenue || 0, settings.currency), icon: DollarSign, color: 'bg-emerald-500', change: stats && isOwner(user?.role) ? `${formatMoney(netProfit, settings.currency)} profit` : '' },
     { label: 'Transactions', value: (stats?.transactions || 0).toLocaleString(), icon: ShoppingCart, color: 'bg-blue-500', change: stats?.transactions ? `Avg ${formatMoney(stats.avgOrderValue, settings.currency)}` : '' },
-    { label: 'Expenses', value: formatMoney(stats?.totalExpenses || 0, settings.currency), icon: TrendingDown, color: 'bg-red-500', change: stats?.revenue ? `${((stats.totalExpenses / stats.revenue) * 100).toFixed(1)}% of revenue` : '' },
+    ...(isOwner(user?.role) ? [{ label: 'Expenses', value: formatMoney(stats?.totalExpenses || 0, settings.currency), icon: TrendingDown, color: 'bg-red-500', change: stats?.revenue ? `${((stats!.totalExpenses / stats!.revenue) * 100).toFixed(1)}% of revenue` : '' }] : []),
     { label: 'Low Stock', value: (stats?.lowStockItems || 0).toString(), icon: AlertTriangle, color: 'bg-amber-500', change: stats?.lowStockItems ? 'Needs attention' : 'All good' },
-    { label: 'Active Staff', value: (stats?.totalStaff || 0).toString(), icon: Users, color: 'bg-brand-600', change: stats?.totalStaff ? `${stats.totalStaff} registered` : 'No staff' },
-    { label: 'Drawer Total', value: formatMoney(drawerTotal, settings.currency), icon: Wallet, color: 'bg-violet-500', change: 'Cash + Coin + Till' },
+    ...(isOwner(user?.role) ? [{ label: 'Active Staff', value: (stats?.totalStaff || 0).toString(), icon: Users, color: 'bg-brand-600', change: stats?.totalStaff ? `${stats!.totalStaff} registered` : 'No staff' }] : []),
+    ...(isOwner(user?.role) ? [{ label: 'Drawer Total', value: formatMoney(drawerTotal, settings.currency), icon: Wallet, color: 'bg-violet-500', change: 'Cash + Coin + Till' }] : []),
   ]
 
   const rangeLabels: Record<DashboardRange, string> = { today: 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days' }
 
-  const quickActions = [
-    { label: 'New Sale', icon: ShoppingCart, href: '/dashboard/sell', color: 'bg-emerald-500' },
-    { label: 'Stock', icon: Package, href: '/dashboard/stock', color: 'bg-blue-500' },
-    { label: 'Expenses', icon: TrendingDown, href: '/dashboard/expenses', color: 'bg-red-500' },
-    { label: 'Reports', icon: BarChart2, href: '/dashboard/reports', color: 'bg-amber-500' },
-    { label: 'Drawer', icon: Wallet, href: '/dashboard/drawer', color: 'bg-violet-500' },
-    { label: 'Staff', icon: Users, href: '/dashboard/staff', color: 'bg-indigo-500' },
-    { label: 'Settings', icon: Settings, href: '/dashboard/settings', color: 'bg-slate-600' },
-  ]
+  const quickActions = ([
+    { label: 'New Sale', icon: ShoppingCart, href: '/dashboard/sell', color: 'bg-emerald-500', roles: ['owner', 'cashier'] as Role[] },
+    { label: 'Stock', icon: Package, href: '/dashboard/stock', color: 'bg-blue-500', roles: ['owner', 'cashier'] as Role[] },
+    { label: 'Reports', icon: BarChart2, href: '/dashboard/reports', color: 'bg-amber-500', roles: ['owner', 'cashier'] as Role[] },
+    { label: 'My Sales', icon: Receipt, href: '/dashboard/my-sales', color: 'bg-sky-500', roles: ['owner', 'cashier'] as Role[] },
+    { label: 'Expenses', icon: TrendingDown, href: '/dashboard/expenses', color: 'bg-red-500', roles: ['owner'] as Role[] },
+    { label: 'Drawer', icon: Wallet, href: '/dashboard/drawer', color: 'bg-violet-500', roles: ['owner'] as Role[] },
+    { label: 'Staff', icon: Users, href: '/dashboard/staff', color: 'bg-indigo-500', roles: ['owner'] as Role[] },
+    { label: 'Settings', icon: Settings, href: '/dashboard/settings', color: 'bg-slate-600', roles: ['owner'] as Role[] },
+  ]).filter(action => user && action.roles.includes(user.role))
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner label="Loading dashboard..." /></div>
 
@@ -316,7 +347,8 @@ export default function DashboardPage() {
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-slate-100 text-slate-500 text-sm">
-                          <th className="py-2 text-left">ID</th>
+                          <th className="py-2 text-left">Receipt</th>
+                          <th className="py-2 text-left">Sold by</th>
                           <th className="py-2 text-left">Amount</th>
                           <th className="py-2 text-left">Payment</th>
                           <th className="py-2 text-left">Time</th>
@@ -325,7 +357,8 @@ export default function DashboardPage() {
                       <tbody>
                         {stats.recentSales.map(sale => (
                           <tr key={sale.id} className="border-b border-slate-50">
-                            <td className="py-2 text-sm text-slate-900 font-mono">#{sale.id.slice(0, 8)}</td>
+                            <td className="py-2 text-sm text-slate-900 font-mono">{sale.receipt_no || `#${sale.id.slice(0, 8)}`}</td>
+                            <td className="py-2 text-sm text-slate-600">{formatSaleAttribution(sale.user)}</td>
                             <td className="py-2 text-sm font-semibold text-slate-900">{formatMoney(Number(sale.total_amount), settings.currency)}</td>
                             <td className="py-2 text-sm text-slate-500 capitalize">{sale.payment_type}</td>
                             <td className="py-2 text-sm text-slate-400">{formatDate(sale.created_at)}</td>
@@ -337,7 +370,7 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {stats?.recentExpenses && stats.recentExpenses.length > 0 && (
+              {isOwner(user?.role) && stats?.recentExpenses && stats.recentExpenses.length > 0 && (
                 <div className="card p-6">
                   <h3 className="text-base font-bold text-slate-900 mb-4">Recent Expenses</h3>
                   <div className="space-y-3">
@@ -356,6 +389,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-6">
+              {isOwner(user?.role) && (
               <div className="card p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-base font-bold text-slate-900">Drawer Balance</h3>
@@ -375,6 +409,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+              )}
 
               {stats?.lowStockItems > 0 && (
                 <div className="card p-6 border-red-100 bg-red-50/50">

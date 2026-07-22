@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { CartItem, Customer, Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatProductName } from '@/lib/format'
+import { formatMoney, formatProductName, getLocalDateString } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -349,33 +349,7 @@ export default function SellPage() {
     }
 
     try {
-      const { data: sale, error: saleErr } = await supabase
-        .from('sales')
-        .insert({
-          user_id: user.id,
-          shift_id: null,
-          customer_id: customerId || null,
-          subtotal: totalAmount,
-          tax_amount: 0,
-          total_amount: totalAmount,
-          payment_type: 'cash',
-          payment_method: paymentMethod,
-          discount: 0,
-          mpesa_ref: null,
-          card_ref: null,
-          amount_tendered: totalAmount,
-          change_amount: 0,
-          note: customer ? `Customer: ${customer}` : null,
-        })
-        .select('id')
-        .single()
-
-      if (saleErr || !sale) {
-        throw new Error(saleErr?.message ?? 'Failed to record sale')
-      }
-
       const saleItems = cart.map(item => ({
-        sale_id: sale.id,
         product_id: item.product.id,
         product_name: formatProductName(item.product),
         quantity: item.quantity,
@@ -383,49 +357,42 @@ export default function SellPage() {
         subtotal: item.subtotal,
       }))
 
-      const { error: itemsErr } = await supabase.from('sale_items').insert(saleItems)
-      if (itemsErr) {
-        throw new Error(itemsErr.message)
-      }
+      const { data: saleId, error: saleErr } = await supabase.rpc('record_sale', {
+        p_user_id: user.id,
+        p_shift_id: null,
+        p_customer_id: customerId || null,
+        p_subtotal: totalAmount,
+        p_tax_amount: 0,
+        p_total_amount: totalAmount,
+        p_payment_type: paymentType,
+        p_payment_method: paymentMethod,
+        p_discount: 0,
+        p_mpesa_ref: null,
+        p_card_ref: null,
+        p_amount_tendered: totalAmount,
+        p_change_amount: 0,
+        p_note: customer ? `Customer: ${customer}` : null,
+        p_receipt_no: null,
+        p_date: getLocalDateString(),
+        p_items: saleItems,
+      })
 
-      if (paymentType === 'cash') {
-        const today = new Date().toISOString().split('T')[0]
-        const { data: existing } = await supabase
-          .from('drawer_balances')
-          .select('cash, coin, till')
-          .eq('date', today)
-          .is('shift_id', null)
-          .maybeSingle()
-
-        const balance = existing ?? { cash: 0, coin: 0, till: 0 }
-        const updatedBalance: any = {
-          date: today,
-          shift_id: null,
-          cash: balance.cash,
-          coin: balance.coin,
-          till: balance.till,
-        }
-
-        if (paymentMethod === 'cash') updatedBalance.cash += totalAmount
-        if (paymentMethod === 'coin') updatedBalance.coin += totalAmount
-        if (paymentMethod === 'till') updatedBalance.till += totalAmount
-
-        const { error: drawerError } = await supabase.from('drawer_balances').upsert(updatedBalance)
-        if (drawerError) {
-          throw new Error(drawerError.message)
-        }
+      if (saleErr || !saleId) {
+        throw new Error(saleErr?.message ?? 'Failed to record sale')
       }
 
       await fetchProducts()
+      window.dispatchEvent(new Event('drawer-update'))
 
-      setCompletedSale({ id: sale.id, total: totalAmount, items: cart, customer })
+      const completedSaleId = String(saleId)
+      setCompletedSale({ id: completedSaleId, total: totalAmount, items: cart, customer })
       setCart([])
       setCustomer('')
       setPaymentType('cash')
       setPaymentMethod('cash')
       setIsReviewingPayment(false)
       setSubmitting(false)
-      toast.success(`✓ Sale completed! Receipt #${sale.id.slice(0, 8).toUpperCase()} for ${formatMoney(totalAmount, settings.currency)}`)
+      toast.success(`✓ Sale completed! Receipt #${completedSaleId.slice(0, 8).toUpperCase()} for ${formatMoney(totalAmount, settings.currency)}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to complete sale'
       toast.error(`❌ ${message}`)
