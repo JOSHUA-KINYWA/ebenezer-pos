@@ -224,7 +224,10 @@ export default function StaffPage() {
       
       // Fetch user data for devices and map them
       if (devicesData && devicesData.length > 0) {
-        const userIds = [...new Set((devicesData as any[]).map(d => d.user_id))]
+        const userIdSet = new Set<string>()
+        ;(devicesData as any[]).forEach(d => userIdSet.add(d.user_id))
+        const userIds = Array.from(userIdSet)
+        
         const { data: usersData, error: usersError } = await supabase
           .from('users')
           .select('id, full_name, email')
