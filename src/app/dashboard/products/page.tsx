@@ -25,6 +25,7 @@ interface ProductForm {
   cost_price: string
   unit: string
   stock_qty: string
+  initial_stock: string
   stock_alert: string
   is_active: boolean
   product_type: 'standalone' | 'parent'
@@ -41,6 +42,7 @@ const initialForm: ProductForm = {
   cost_price: '0.00',
   unit: 'piece',
   stock_qty: '0',
+  initial_stock: '0',
   stock_alert: '10',
   is_active: true,
   product_type: 'standalone',
@@ -130,6 +132,7 @@ export default function ProductsPage() {
       cost_price: parent?.cost_price?.toString() || initialForm.cost_price,
       unit: parent?.unit || initialForm.unit,
       stock_qty: '0',
+      initial_stock: '0',
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
       name: '',
       product_type: 'standalone',
@@ -155,6 +158,7 @@ export default function ProductsPage() {
       cost_price: product.cost_price?.toString() || '0.00',
       unit: product.unit || 'piece',
       stock_qty: product.stock_qty?.toString() || '0',
+      initial_stock: product.initial_stock?.toString() || '0',
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
       product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
@@ -179,6 +183,7 @@ export default function ProductsPage() {
         cost_price: form.cost_price,
         unit: form.unit,
         stock_qty: '0',
+        initial_stock: form.initial_stock,
         stock_alert: form.stock_alert,
         is_active: true,
         product_type: 'standalone',
@@ -221,6 +226,7 @@ export default function ProductsPage() {
       cost_price: parseFloat(form.cost_price),
       unit: form.unit.trim(),
       stock_qty: parseFloat(form.stock_qty),
+      initial_stock: editingProduct ? (editingProduct.initial_stock ?? parseFloat(form.initial_stock)) : parseFloat(form.initial_stock || form.stock_qty),
       stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
     }
@@ -247,6 +253,7 @@ export default function ProductsPage() {
               cost_price: parseFloat(v.cost_price) || 0,
               unit: v.unit.trim(),
               stock_qty: parseFloat(v.stock_qty) || 0,
+              initial_stock: parseFloat(v.initial_stock || v.stock_qty) || 0,
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: variantParentId,
@@ -276,6 +283,7 @@ export default function ProductsPage() {
               cost_price: parseFloat(v.cost_price) || 0,
               unit: v.unit.trim(),
               stock_qty: parseFloat(v.stock_qty) || 0,
+              initial_stock: parseFloat(v.initial_stock || v.stock_qty) || 0,
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: parentId,
@@ -803,6 +811,21 @@ export default function ProductsPage() {
             </label>
 
             <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Initial stock</span>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={form.initial_stock}
+                onChange={e => setForm({ ...form, initial_stock: e.target.value })}
+                className="input w-full"
+                placeholder="Starting stock quantity"
+              />
+              <p className="text-xs text-slate-400">Used to calculate expected profit when stock runs out</p>
+              {errors.initial_stock && <p className="text-xs text-red-600">{errors.initial_stock}</p>}
+            </label>
+
+            <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Low stock alert</span>
               <input
                 type="number"
@@ -914,6 +937,10 @@ export default function ProductsPage() {
                             <label className="space-y-2">
                               <span className="text-xs text-slate-500">Quantity</span>
                               <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs text-slate-500">Initial stock</span>
+                              <input type="number" min="0" step="0.1" value={v.initial_stock} onChange={e => updateVariantDraft(i, 'initial_stock', e.target.value)} className="input w-full" />
                             </label>
                             <label className="space-y-2">
                               <span className="text-xs text-slate-500">Unit</span>

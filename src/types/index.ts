@@ -46,6 +46,7 @@ export interface Product {
   unit: string
   stock_qty: number
   stock_alert: number
+  initial_stock?: number
   is_active: boolean
   created_at: string
   category?: Category | { name: string }

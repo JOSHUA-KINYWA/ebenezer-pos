@@ -71,6 +71,7 @@ export function validateProductForm(data: {
   cost_price?: string
   unit: string
   stock_qty?: string
+  initial_stock?: string
   stock_alert?: string
 }): ValidationResult {
   const result = new ValidationResult()
@@ -105,6 +106,17 @@ export function validateProductForm(data: {
       result.addError('stock_qty', 'Stock quantity must begin with a valid number')
     } else if (Math.round(stock * 10) / 10 !== stock) {
       result.addError('stock_qty', 'Stock quantity must have at most 1 decimal place')
+    }
+  }
+
+  if (isEmpty(data.initial_stock || '')) {
+    result.addError('initial_stock', 'Initial stock is required')
+  } else {
+    const initialStock = parseFloat(data.initial_stock!.trim())
+    if (isNaN(initialStock) || !isNonNegativeNumber(initialStock)) {
+      result.addError('initial_stock', 'Initial stock must be a valid number')
+    } else if (Math.round(initialStock * 10) / 10 !== initialStock) {
+      result.addError('initial_stock', 'Initial stock must have at most 1 decimal place')
     }
   }
 
