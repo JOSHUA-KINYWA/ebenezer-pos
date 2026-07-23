@@ -285,239 +285,250 @@ export default function MySalesPage() {
 
         {error && <Alert type="error" title="Error" message={error} dismissible onDismiss={() => setError('')} />}
 
-        <div className="card p-4 space-y-4">
-          <div className="flex flex-wrap gap-2 items-center">
-            {user?.role === 'cashier' && (
-              <>
-                <button
-                  onClick={() => { setViewScope('mine'); setExcludeStaffId('') }}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${viewScope === 'mine' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-                >
-                  My sales
-                </button>
-                <button
-                  onClick={() => { setViewScope('all'); setExcludeStaffId('') }}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${viewScope === 'all' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-                >
-                  All shop sales
-                </button>
-                {viewScope === 'all' && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 mb-1 block">Exclude sales by</label>
-                    <select
-                      className="input w-auto min-w-[200px]"
-                      value={excludeStaffId}
-                      onChange={e => setExcludeStaffId(e.target.value)}
-                    >
-                      <option value="">No exclusion</option>
-                      {staffMembers
-                        .filter(member => member.id !== user?.id)
-                        .map(member => (
-                          <option key={member.id} value={member.id}>
-                            {formatSaleAttribution(member)}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-              </>
-            )}
-            {user?.role === 'owner' && (
+        <div className="card border border-slate-200/80 shadow-sm">
+          <div className="p-4 border-b border-slate-100">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">Sold by</label>
-                <select className="input w-auto min-w-[200px]" value={staffFilter} onChange={e => setStaffFilter(e.target.value)}>
-                  <option value="all">All staff</option>
-                  {staffMembers.map(member => (
-                    <option key={member.id} value={member.id}>
-                      {formatSaleAttribution(member)}
-                    </option>
-                  ))}
-                </select>
+                <h3 className="text-base font-bold text-slate-900">Filters</h3>
+                <p className="text-xs text-slate-500">Refine the sales list below by period, staff, and date range.</p>
               </div>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            {(['day', 'week', 'month'] as const).map(p => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  period === p
-                    ? 'bg-brand-600 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                {p === 'day' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex gap-2 items-end flex-wrap">
-            <div>
-              <label className="text-xs font-medium text-slate-700 mb-1 block">From Date</label>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={e => setCustomStartDate(e.target.value)}
-                className="input"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex rounded-xl border border-slate-200 bg-white p-1">
+                  {(['day', 'week', 'month'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setPeriod(p)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        period === p
+                          ? 'bg-brand-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {p === 'day' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-slate-700 mb-1 block">To Date</label>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={e => setCustomEndDate(e.target.value)}
-                className="input"
-              />
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="flex flex-wrap items-end gap-3">
+              {user?.role === 'cashier' && (
+                <div className="flex rounded-xl border border-slate-200 bg-white p-1">
+                  <button
+                    onClick={() => { setViewScope('mine'); setExcludeStaffId('') }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      viewScope === 'mine'
+                        ? 'bg-brand-600 text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    My sales
+                  </button>
+                  <button
+                    onClick={() => { setViewScope('all'); setExcludeStaffId('') }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      viewScope === 'all'
+                        ? 'bg-brand-600 text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    All sales
+                  </button>
+                </div>
+              )}
+              {user?.role === 'owner' && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Sold by</label>
+                  <select className="input w-auto" value={staffFilter} onChange={e => setStaffFilter(e.target.value)}>
+                    <option value="all">All staff</option>
+                    {staffMembers.map(member => (
+                      <option key={member.id} value={member.id}>{formatSaleAttribution(member)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {user?.role === 'cashier' && viewScope === 'all' && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Exclude sales by</label>
+                  <select className="input w-auto" value={excludeStaffId} onChange={e => setExcludeStaffId(e.target.value)}>
+                    <option value="">No exclusion</option>
+                    {staffMembers.filter(member => member.id !== user?.id).map(member => (
+                      <option key={member.id} value={member.id}>{formatSaleAttribution(member)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">From</label>
+                  <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="input" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">To</label>
+                  <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="input" />
+                </div>
+                {(customStartDate || customEndDate) && (
+                  <button
+                    onClick={() => { setCustomStartDate(''); setCustomEndDate('') }}
+                    className="btn-secondary px-3 py-2 text-xs"
+                  >
+                    Clear dates
+                  </button>
+                )}
+              </div>
             </div>
-            {(customStartDate || customEndDate) && (
-              <button
-                onClick={() => {
-                  setCustomStartDate('')
-                  setCustomEndDate('')
-                }}
-                className="btn-secondary px-3 py-2 text-sm"
-              >
-                Clear Dates
-              </button>
-            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
           {[
-            { label: 'Transactions', value: stats.count.toString(), icon: ShoppingBag },
-            { label: 'Total', value: formatMoney(stats.total), icon: DollarSign, color: 'bg-brand-50 text-brand-700' },
-            { label: 'Cash', value: formatMoney(stats.cash), icon: Wallet, color: 'bg-green-50 text-green-700' },
+            { label: 'Transactions', value: stats.count.toString(), icon: ShoppingBag, color: 'bg-slate-50 text-slate-700' },
+            { label: 'Total Revenue', value: formatMoney(stats.total), icon: DollarSign, color: 'bg-brand-50 text-brand-700' },
+            { label: 'Cash', value: formatMoney(stats.cash), icon: Wallet, color: 'bg-emerald-50 text-emerald-700' },
             { label: 'Till', value: formatMoney(stats.till), icon: Wallet, color: 'bg-amber-50 text-amber-700' },
             { label: 'Coin', value: formatMoney(stats.coin), icon: Coins, color: 'bg-sky-50 text-sky-700' },
           ].map(item => (
-            <div key={item.label} className="card p-4">
-              <div className="flex items-center justify-between gap-4">
+            <div key={item.label} className="card p-5 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-2">{item.value}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{item.label}</p>
+                  <p className="text-xl font-bold text-slate-900 mt-2">{item.value}</p>
                 </div>
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${item.color || 'bg-slate-50 text-slate-900'}`}>
-                  <item.icon className="w-5 h-5" />
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${item.color}`}>
+                  <item.icon className="w-4 h-4" />
                 </div>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="card">
-          <div className="p-4 border-b border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900">Sales Transactions</h3>
-            <p className="text-sm text-slate-500">View, edit, or cancel sales</p>
+        <div className="card border border-slate-200/80 shadow-sm">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Sales Transactions</h3>
+              <p className="text-xs text-slate-500">Tap a receipt to view line items and actions.</p>
+            </div>
+            {sales.length > 0 && (
+              <span className="text-xs font-medium text-slate-500">{sales.length} record{sales.length === 1 ? '' : 's'}</span>
+            )}
           </div>
 
           {sales.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">
-              <Calendar className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>No sales in this period</p>
+            <div className="p-10 text-center text-slate-500">
+              <Calendar className="w-10 h-10 mx-auto mb-3 opacity-60" />
+              <p className="text-sm font-medium">No sales in this period</p>
+              <p className="text-xs text-slate-400 mt-1">Sales will appear here once transactions are recorded.</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-200">
-              {sales.map(sale => (
-                <div key={sale.id} className="hover:bg-slate-50 transition">
-                  <div
-                    className="p-4 cursor-pointer flex items-center justify-between gap-3"
-                    onClick={() => setExpandedSale(expandedSale === sale.id ? null : sale.id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-slate-900">{sale.receipt_no}</p>
-                        {sale.is_voided && (
-                          <span className="inline-flex rounded-full px-2 py-1 text-xs font-semibold bg-red-100 text-red-700">
-                            Canceled
-                          </span>
-                        )}
+            <div className="divide-y divide-slate-100">
+              {sales.map(sale => {
+                const isExpanded = expandedSale === sale.id
+                return (
+                  <div key={sale.id} className={`hover:bg-slate-50/70 transition ${sale.is_voided ? 'opacity-70' : ''}`}>
+                    <div
+                      className="p-4 cursor-pointer flex items-center justify-between gap-4"
+                      onClick={() => setExpandedSale(isExpanded ? null : sale.id)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-slate-900 text-sm">{sale.receipt_no}</p>
+                          {sale.is_voided ? (
+                            <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 border border-red-100">Canceled</span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-100">Active</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {(viewScope === 'all' || user?.role === 'owner') && sale.user && (
+                            <span>{formatSaleAttribution(sale.user)} • </span>
+                          )}
+                          {formatDate(sale.created_at)} • <span className="capitalize">{sale.payment_method}</span>
+                        </p>
                       </div>
-                      <p className="text-sm text-slate-500">
-                        {(viewScope === 'all' || user?.role === 'owner') && sale.user && (
-                          <span>{formatSaleAttribution(sale.user)} • </span>
-                        )}
-                        {formatDate(sale.created_at)} • <span className="capitalize">{sale.payment_method}</span>
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-slate-900">{formatMoney(sale.total_amount)}</p>
-                      <p className="text-xs text-slate-500">{sale.items?.length || 0} items</p>
-                    </div>
-                    <div className="text-slate-400">
-                      {expandedSale === sale.id ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </div>
-                  </div>
-
-                  {expandedSale === sale.id && (
-                    <div className="bg-slate-50 p-4 space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-xs text-slate-500">Payment Method</p>
-                          <p className="font-semibold text-slate-900 capitalize">{sale.payment_method}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500">Subtotal</p>
-                          <p className="font-semibold text-slate-900">{formatMoney(sale.subtotal)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500">Tax</p>
-                          <p className="font-semibold text-slate-900">{formatMoney(sale.tax_amount)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500">Discount</p>
-                          <p className="font-semibold text-slate-900">{formatMoney(sale.discount)}</p>
-                        </div>
-                        <div className="col-span-2">
-                          <p className="text-xs text-slate-500">Total</p>
-                          <p className="font-bold text-brand-600">{formatMoney(sale.total_amount)}</p>
-                        </div>
+                      <div className="text-right">
+                        <p className="font-bold text-slate-900 text-sm">{formatMoney(sale.total_amount)}</p>
+                        <p className="text-[11px] text-slate-500">{sale.items?.length || 0} item{sale.items?.length === 1 ? '' : 's'}</p>
                       </div>
+                      <div className="text-slate-400">
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </div>
+                    </div>
 
-                      {sale.items && sale.items.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-700 uppercase mb-2">Items</p>
-                          <div className="space-y-1">
-                            {sale.items.map(item => (
-                              <div key={item.id} className="text-sm text-slate-600 flex items-center justify-between">
-                                <span>{item.product_name} × {item.quantity}</span>
-                                <span className="font-medium">{formatMoney(item.subtotal)}</span>
-                              </div>
-                            ))}
+                    {isExpanded && (
+                      <div className="bg-slate-50/80 px-4 pb-4 pt-2">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                          <div className="rounded-xl border border-slate-200 bg-white p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Subtotal</p>
+                            <p className="text-sm font-semibold text-slate-900 mt-1">{formatMoney(sale.subtotal)}</p>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Tax</p>
+                            <p className="text-sm font-semibold text-slate-900 mt-1">{formatMoney(sale.tax_amount)}</p>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Discount</p>
+                            <p className="text-sm font-semibold text-slate-900 mt-1">{formatMoney(sale.discount)}</p>
+                          </div>
+                          <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-700">Total</p>
+                            <p className="text-sm font-bold text-brand-700 mt-1">{formatMoney(sale.total_amount)}</p>
                           </div>
                         </div>
-                      )}
 
-                      {!sale.is_voided && canEditSales(user?.role) && (
-                        <div className="pt-3 border-t border-slate-200 flex gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingSale(sale)
-                              setEditDiscount(sale.discount)
-                              setEditPaymentMethod(sale.payment_method)
-                            }}
-                            className="btn-primary inline-flex items-center gap-2 text-sm flex-1"
-                          >
-                            <Edit3 className="w-4 h-4" /> Edit
-                          </button>
-                          <button
-                            onClick={() => {
-                              setVoidReason('')
-                              setCancelingId(sale.id)
-                            }}
-                            className="btn-danger inline-flex items-center gap-2 text-sm flex-1"
-                          >
-                            <Trash2 className="w-4 h-4" /> Cancel
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                        {sale.items && sale.items.length > 0 && (
+                          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-500 text-xs">
+                                  <th className="py-2 px-3 text-left font-semibold">Item</th>
+                                  <th className="py-2 px-3 text-right font-semibold">Qty</th>
+                                  <th className="py-2 px-3 text-right font-semibold">Unit price</th>
+                                  <th className="py-2 px-3 text-right font-semibold">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {sale.items.map(item => (
+                                  <tr key={item.id} className="hover:bg-slate-50/60">
+                                    <td className="py-2 px-3 text-slate-900 font-medium">{item.product_name}</td>
+                                    <td className="py-2 px-3 text-right text-slate-600">{item.quantity}</td>
+                                    <td className="py-2 px-3 text-right text-slate-600">{formatMoney(item.unit_price)}</td>
+                                    <td className="py-2 px-3 text-right font-semibold text-slate-900">{formatMoney(item.subtotal)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {!sale.is_voided && canEditSales(user?.role) && (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingSale(sale)
+                                setEditDiscount(sale.discount)
+                                setEditPaymentMethod(sale.payment_method)
+                              }}
+                              className="btn-primary inline-flex items-center gap-2 text-xs"
+                            >
+                              <Edit3 className="w-4 h-4" /> Edit
+                            </button>
+                            <button
+                              onClick={() => {
+                                setVoidReason('')
+                                setCancelingId(sale.id)
+                              }}
+                              className="btn-danger inline-flex items-center gap-2 text-xs"
+                            >
+                              <Trash2 className="w-4 h-4" /> Cancel sale
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
