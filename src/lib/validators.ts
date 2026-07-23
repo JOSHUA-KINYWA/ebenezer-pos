@@ -68,11 +68,11 @@ export function isBetween(value: number, min: number, max: number): boolean {
 export function validateProductForm(data: {
   name: string
   price: string
-  cost_price?: string
+  cost_price: string
   unit: string
   stock_qty?: string
   initial_stock?: string
-  stock_alert?: string
+  stock_alert: string
 }): ValidationResult {
   const result = new ValidationResult()
 
@@ -89,9 +89,13 @@ export function validateProductForm(data: {
     result.addError('price', 'Price must be positive')
   }
 
-  const costPrice = parseFloat((data.cost_price || '0').trim())
-  if (!isNonNegativeNumber(costPrice)) {
-    result.addError('cost_price', 'Buying price must be a valid positive number')
+  if (isEmpty(data.cost_price)) {
+    result.addError('cost_price', 'Buying price is required')
+  } else {
+    const costPrice = parseFloat(data.cost_price.trim())
+    if (isNaN(costPrice) || !isNonNegativeNumber(costPrice)) {
+      result.addError('cost_price', 'Buying price must be a valid positive number')
+    }
   }
 
   if (isEmpty(data.unit)) {
@@ -120,9 +124,13 @@ export function validateProductForm(data: {
     }
   }
 
-  const alert = parseInt(data.stock_alert || '10', 10)
-  if (isNaN(alert) || !isNonNegativeNumber(alert)) {
-    result.addError('stock_alert', 'Stock alert must be a valid number')
+  if (isEmpty(data.stock_alert)) {
+    result.addError('stock_alert', 'Low stock alert is required')
+  } else {
+    const alert = parseInt(data.stock_alert, 10)
+    if (isNaN(alert) || !isNonNegativeNumber(alert)) {
+      result.addError('stock_alert', 'Low stock alert must be a valid number')
+    }
   }
 
   return result

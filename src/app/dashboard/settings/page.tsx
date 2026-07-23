@@ -50,8 +50,10 @@ export default function SettingsPage() {
     category_id: '',
     parent_product_id: '',
     price: '0.00',
+    cost_price: '0.00',
     unit: 'piece',
     stock_qty: '0',
+    initial_stock: '0',
     stock_alert: '10',
     is_active: true,
   })
@@ -211,8 +213,10 @@ export default function SettingsPage() {
       category_id: categories.find(category => category.id === parentCategoryId)?.id || categories[0]?.id || '',
       parent_product_id: parentId || '',
       price: '0.00',
+      cost_price: '0.00',
       unit: 'piece',
       stock_qty: '0',
+      initial_stock: '0',
       stock_alert: '10',
       is_active: true,
     })
@@ -229,8 +233,10 @@ export default function SettingsPage() {
       category_id: product.category_id || categories[0]?.id || '',
       parent_product_id: product.parent_product_id || '',
       price: product.price.toString(),
+      cost_price: (product.cost_price ?? 0).toString(),
       unit: product.unit,
       stock_qty: product.stock_qty.toString(),
+      initial_stock: (product.initial_stock ?? 0).toString(),
       stock_alert: product.stock_alert.toString(),
       is_active: product.is_active,
     })
@@ -252,8 +258,10 @@ export default function SettingsPage() {
       category_id: productForm.category_id || null,
       parent_product_id: productForm.parent_product_id || null,
       price: parseFloat(productForm.price),
+      cost_price: parseFloat(productForm.cost_price),
       unit: productForm.unit.trim(),
       stock_qty: parseFloat(productForm.stock_qty),
+      initial_stock: parseFloat(productForm.initial_stock || productForm.stock_qty),
       stock_alert: parseInt(productForm.stock_alert, 10),
       is_active: productForm.is_active,
     }
