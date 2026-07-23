@@ -14,6 +14,16 @@ import { validateProductForm } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
 import { Search, Plus, Edit3, Trash2, Save } from 'lucide-react'
 
+interface ProductWithMetrics extends Product {
+  soldUnits: number
+  soldRevenue: number
+  soldCost: number
+  profit: number
+  initial_stock: number
+  totalExpectedProfit: number
+  remainingPotentialProfit: number
+}
+
 interface ProductForm {
   name: string
   barcode: string
@@ -50,13 +60,13 @@ const initialForm: ProductForm = {
 
 export default function ProductsPage() {
   const router = useRouter()
-  const [products, setProducts] = useState<Product[]>([])
+  const [products, setProducts] = useState<ProductWithMetrics[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [selectedProduct, setSelectedProduct] = useState<ProductWithMetrics | null>(null)
   const [form, setForm] = useState<ProductForm>(initialForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [variantsDraft, setVariantsDraft] = useState<ProductForm[]>([])
@@ -98,9 +108,81 @@ export default function ProductsPage() {
   async function fetchProducts() {
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('products').select('*, category:categories(name)').order('name')
+      const { data, error } = await supabase
+        .from('products')
+        .select('*, category:categories(name)')
+        .eq('is_active', true)
+        .order('name')
+
       if (error) throw error
-      setProducts((data || []) as Product[])
+
+      const productsData = (data || []) as Product[]
+      const activeProductIds = productsData.map(p => p.id)
+
+      const { data: saleIdsData, error: saleIdsError } = await supabase
+        .from('sales')
+        .select('id')
+        .eq('is_voided', false)
+
+      if (saleIdsError) throw saleIdsError
+
+      const saleIds = (saleIdsData || []).map(s => s.id)
+      const { data: saleItemsData, error: saleItemsError } = activeProductIds.length > 0 && saleIds.length > 0
+        ? await supabase
+            .from('sale_items')
+            .select('product_id, quantity, subtotal')
+            .in('product_id', activeProductIds)
+            .in('sale_id', saleIds)
+        : { data: [], error: null }
+
+      if (saleItemsError) throw saleItemsError
+
+      const salesByProduct = new Map<string, { soldUnits: number; soldRevenue: number }>()
+      ;(saleItemsData || []).forEach(item => {
+        if (!item.product_id) return
+        const existing = salesByProduct.get(item.product_id) || { soldUnits: 0, soldRevenue: 0 }
+        const quantity = Number(item.quantity || 0)
+        const subtotal = Number(item.subtotal || 0)
+        existing.soldUnits += quantity
+        existing.soldRevenue += subtotal
+        salesByProduct.set(item.product_id, existing)
+      })
+
+      const productsWithMetrics: ProductWithMetrics[] = productsData.map(product => {
+        const variants = productsData.filter(p => p.parent_product_id === product.id)
+        const isParent = variants.length > 0
+        const costPerUnit = Number(product.cost_price) || 0
+        const margin = Number(product.price) - costPerUnit
+
+        const aggregateSoldUnits = isParent
+          ? variants.reduce((sum, v) => sum + Number(salesByProduct.get(v.id)?.soldUnits || 0), 0)
+          : Number(salesByProduct.get(product.id)?.soldUnits || 0)
+
+        const aggregateSoldRevenue = isParent
+          ? variants.reduce((sum, v) => sum + Number(salesByProduct.get(v.id)?.soldRevenue || 0), 0)
+          : Number(salesByProduct.get(product.id)?.soldRevenue || 0)
+
+        const aggregateSoldCost = aggregateSoldUnits * costPerUnit
+        const aggregateProfit = aggregateSoldRevenue - aggregateSoldCost
+        const aggregateStock = isParent ? variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0) : Number(product.stock_qty || 0)
+        const aggregateInitialStock = isParent ? variants.reduce((sum, v) => sum + Number(v.initial_stock || 0), 0) : Number(product.initial_stock || 0)
+
+        const totalExpectedProfit = aggregateInitialStock * margin
+        const remainingPotentialProfit = aggregateStock * margin
+
+        return {
+          ...product,
+          soldUnits: aggregateSoldUnits,
+          soldRevenue: aggregateSoldRevenue,
+          soldCost: aggregateSoldCost,
+          profit: aggregateProfit,
+          initial_stock: aggregateInitialStock,
+          totalExpectedProfit,
+          remainingPotentialProfit,
+        }
+      })
+
+      setProducts(productsWithMetrics)
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to load products'
@@ -576,6 +658,18 @@ export default function ProductsPage() {
                 <p className="text-sm text-slate-900">{selectedProduct.unit}</p>
               </div>
               <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Selling price</p>
+                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.price, 'KSh')}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Buying price</p>
+                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.cost_price ?? 0, 'KSh')}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Margin</p>
+                <p className="text-sm text-slate-900">{formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), 'KSh')}</p>
+              </div>
+              <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Quantity</p>
                 <p className="text-sm text-slate-900">
                   {selectedProduct.parent_product_id
@@ -586,8 +680,26 @@ export default function ProductsPage() {
                 </p>
               </div>
               <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Initial stock</p>
+                <p className="text-sm text-slate-900">{(selectedProduct.initial_stock || 0).toLocaleString()} {selectedProduct.unit}</p>
+              </div>
+              <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Low stock alert</p>
                 <p className="text-sm text-slate-900">{selectedProduct.stock_alert} {selectedProduct.unit}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Profit so far</p>
+                <p className={`text-sm font-semibold ${(selectedProduct.profit || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {formatMoney(selectedProduct.profit || 0, 'KSh')}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Expected profit</p>
+                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.totalExpectedProfit || 0, 'KSh')}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Remaining profit</p>
+                <p className="text-sm text-amber-600">{formatMoney(selectedProduct.remainingPotentialProfit || 0, 'KSh')}</p>
               </div>
             </div>
 
@@ -610,22 +722,38 @@ export default function ProductsPage() {
                         <th className="table-head">Name</th>
                         <th className="table-head">Unit</th>
                         <th className="table-head">Qty</th>
+                        <th className="table-head">Initial</th>
                         <th className="table-head">Price</th>
+                        <th className="table-head">Cost</th>
+                        <th className="table-head">Profit</th>
                         <th className="table-head text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {selectedVariants.map(variant => (
-                        <tr key={variant.id} className="table-row-hover">
-                          <td className="table-cell">{variant.name}</td>
-                          <td className="table-cell">{variant.unit}</td>
-                          <td className="table-cell">{variant.stock_qty}</td>
-                          <td className="table-cell">{formatMoney(variant.price, 'KSh')}</td>
-                          <td className="table-cell text-right">
-                            <button onClick={() => openEditProduct(variant)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
-                          </td>
-                        </tr>
-                      ))}
+                      {selectedVariants.map(variant => {
+                        const margin = (variant.price || 0) - (variant.cost_price ?? 0)
+                        const expectedProfit = (variant.initial_stock || 0) * margin
+                        const remainingProfit = (variant.stock_qty || 0) * margin
+                        return (
+                          <tr key={variant.id} className="table-row-hover">
+                            <td className="table-cell font-medium">{variant.name}</td>
+                            <td className="table-cell">{variant.unit}</td>
+                            <td className="table-cell">{variant.stock_qty}</td>
+                            <td className="table-cell">{(variant.initial_stock || 0).toLocaleString()}</td>
+                            <td className="table-cell">{formatMoney(variant.price, 'KSh')}</td>
+                            <td className="table-cell">{formatMoney(variant.cost_price ?? 0, 'KSh')}</td>
+                            <td className="table-cell">
+                              <span className={margin >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                                {formatMoney(expectedProfit, 'KSh')}
+                              </span>
+                              <span className="text-slate-400 text-xs"> (rem: {formatMoney(remainingProfit, 'KSh')})</span>
+                            </td>
+                            <td className="table-cell text-right">
+                              <button onClick={() => openEditProduct(variant)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
