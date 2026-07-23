@@ -34,7 +34,6 @@ interface ProductForm {
   price: string
   cost_price: string
   unit: string
-  stock_qty: string
   initial_stock: string
   stock_alert: string
   is_active: boolean
@@ -51,7 +50,6 @@ const initialForm: ProductForm = {
   price: '0.00',
   cost_price: '0.00',
   unit: 'piece',
-  stock_qty: '0',
   initial_stock: '0',
   stock_alert: '10',
   is_active: true,
@@ -213,7 +211,6 @@ export default function ProductsPage() {
       price: parent?.price?.toString() || initialForm.price,
       cost_price: parent?.cost_price?.toString() || initialForm.cost_price,
       unit: parent?.unit || initialForm.unit,
-      stock_qty: '0',
       initial_stock: '0',
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
       name: '',
@@ -239,7 +236,6 @@ export default function ProductsPage() {
       price: product.price?.toString() || '0.00',
       cost_price: product.cost_price?.toString() || '0.00',
       unit: product.unit || 'piece',
-      stock_qty: product.stock_qty?.toString() || '0',
       initial_stock: product.initial_stock?.toString() || '0',
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
@@ -264,7 +260,6 @@ export default function ProductsPage() {
         price: form.price,
         cost_price: form.cost_price,
         unit: form.unit,
-        stock_qty: '0',
         initial_stock: form.initial_stock,
         stock_alert: form.stock_alert,
         is_active: true,
@@ -299,6 +294,7 @@ export default function ProductsPage() {
       return
     }
 
+    const initialStock = parseFloat(form.initial_stock || '0')
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       barcode: form.barcode.trim() || null,
@@ -307,8 +303,8 @@ export default function ProductsPage() {
       price: parseFloat(form.price),
       cost_price: parseFloat(form.cost_price),
       unit: form.unit.trim(),
-      stock_qty: parseFloat(form.stock_qty),
-      initial_stock: editingProduct ? (editingProduct.initial_stock ?? parseFloat(form.initial_stock)) : parseFloat(form.initial_stock || form.stock_qty),
+      stock_qty: editingProduct ? editingProduct.stock_qty : initialStock,
+      initial_stock: initialStock,
       stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
     }
@@ -326,6 +322,7 @@ export default function ProductsPage() {
         if (variantsDraft.length > 0) {
           const variantParentId = form.parent_product_id || editingProduct.id
           const variantPayloads = variantsDraft.map(v => {
+            const vInitialStock = parseFloat(v.initial_stock || '0')
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
               barcode: v.barcode.trim() || null,
@@ -334,8 +331,8 @@ export default function ProductsPage() {
               price: parseFloat(v.price) || 0,
               cost_price: parseFloat(v.cost_price) || 0,
               unit: v.unit.trim(),
-              stock_qty: parseFloat(v.stock_qty) || 0,
-              initial_stock: parseFloat(v.initial_stock || v.stock_qty) || 0,
+              stock_qty: vInitialStock,
+              initial_stock: vInitialStock,
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: variantParentId,
@@ -356,6 +353,7 @@ export default function ProductsPage() {
         const parentId = newProduct.id
         if (variantsDraft.length > 0) {
           const variantPayloads = variantsDraft.map(v => {
+            const vInitialStock = parseFloat(v.initial_stock || '0')
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
               barcode: v.barcode.trim() || null,
@@ -364,8 +362,8 @@ export default function ProductsPage() {
               price: parseFloat(v.price) || 0,
               cost_price: parseFloat(v.cost_price) || 0,
               unit: v.unit.trim(),
-              stock_qty: parseFloat(v.stock_qty) || 0,
-              initial_stock: parseFloat(v.initial_stock || v.stock_qty) || 0,
+              stock_qty: vInitialStock,
+              initial_stock: vInitialStock,
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: parentId,
@@ -928,18 +926,7 @@ export default function ProductsPage() {
             </label>
 
             <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Stock quantity</span>
-              <input
-                value={form.stock_qty}
-                onChange={e => setForm({ ...form, stock_qty: e.target.value })}
-                className="input w-full"
-                placeholder="Current stock level"
-              />
-              {errors.stock_qty && <p className="text-xs text-red-600">{errors.stock_qty}</p>}
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Initial stock</span>
+              <span className="text-sm font-medium text-slate-700">Stock</span>
               <input
                 type="number"
                 min="0"
@@ -949,7 +936,7 @@ export default function ProductsPage() {
                 className="input w-full"
                 placeholder="Starting stock quantity"
               />
-              <p className="text-xs text-slate-400">Used to calculate expected profit when stock runs out</p>
+              <p className="text-xs text-slate-400">This becomes the initial stock for profit projections</p>
               {errors.initial_stock && <p className="text-xs text-red-600">{errors.initial_stock}</p>}
             </label>
 
@@ -1061,17 +1048,13 @@ export default function ProductsPage() {
                             <label className="space-y-2">
                               <span className="text-xs text-slate-500">Selling price</span>
                               <input type="number" step="0.01" min="0" value={v.price} onChange={e => updateVariantDraft(i, 'price', e.target.value)} className="input w-full" />
-                            </label>
-                            <label className="space-y-2">
-                              <span className="text-xs text-slate-500">Quantity</span>
-                              <input value={v.stock_qty} onChange={e => updateVariantDraft(i, 'stock_qty', e.target.value)} className="input w-full" />
-                            </label>
-                            <label className="space-y-2">
-                              <span className="text-xs text-slate-500">Initial stock</span>
-                              <input type="number" min="0" step="0.1" value={v.initial_stock} onChange={e => updateVariantDraft(i, 'initial_stock', e.target.value)} className="input w-full" />
-                            </label>
-                            <label className="space-y-2">
-                              <span className="text-xs text-slate-500">Unit</span>
+                             </label>
+                             <label className="space-y-2">
+                               <span className="text-xs text-slate-500">Initial stock</span>
+                               <input type="number" min="0" step="0.1" value={v.initial_stock} onChange={e => updateVariantDraft(i, 'initial_stock', e.target.value)} className="input w-full" />
+                             </label>
+                             <label className="space-y-2">
+                               <span className="text-xs text-slate-500">Unit</span>
                               <input value={v.unit} onChange={e => updateVariantDraft(i, 'unit', e.target.value)} className="input w-full" />
                             </label>
                             <label className="space-y-2 sm:col-span-2">
