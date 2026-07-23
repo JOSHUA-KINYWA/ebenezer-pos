@@ -261,9 +261,9 @@ export default function SellPage() {
 
         const price = item.product.price
         if (price <= 0) return item
-        const amount = Math.max(0.01, item.subtotal || item.product.price)
-        const quantity = Math.round((amount / price) * 100) / 100
-        const subtotal = Math.round(quantity * price * 100) / 100
+        const amount = Math.max(1, Math.round(item.subtotal || item.product.price))
+        const quantity = Math.round(amount / price)
+        const subtotal = Math.round(quantity * price)
         return {
           ...item,
           saleMode,
@@ -293,14 +293,14 @@ export default function SellPage() {
   }
 
   function updateAmount(productId: string, amount: number) {
-    if (amount < 0) return
+    if (amount < 1) return
     setCart(prev =>
       prev.map(item => {
         if (item.product.id !== productId) return item
         const price = item.product.price
         if (price <= 0) return item
-        const quantity = Math.round((amount / price) * 100) / 100
-        const subtotal = Math.round(quantity * price * 100) / 100
+        const quantity = Math.round(amount / price)
+        const subtotal = Math.round(quantity * price)
         return {
           ...item,
           quantity,
@@ -887,20 +887,20 @@ export default function SellPage() {
                         </button>
                       </div>
 
-                      {item.saleMode === 'amount' ? (
-                        <div className="flex-1 flex items-center gap-2">
-                          <span className="text-xs text-slate-500 whitespace-nowrap">KSh</span>
-                          <input
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            value={item.subtotal.toFixed(2)}
-                            onChange={e => updateAmount(item.product.id, Math.max(0.01, Number(e.target.value) || 0))}
-                            className="input flex-1 text-right font-semibold"
-                            placeholder="0.00"
-                          />
-                        </div>
-                      ) : (
+                       {item.saleMode === 'amount' ? (
+                         <div className="flex-1 flex items-center gap-2">
+                           <span className="text-xs text-slate-500 whitespace-nowrap">KSh</span>
+                           <input
+                             type="number"
+                             min="1"
+                             step="1"
+                             value={Math.round(item.subtotal)}
+                             onChange={e => updateAmount(item.product.id, Math.max(1, Math.round(Number(e.target.value) || 0)))}
+                             className="input flex-1 text-right font-semibold"
+                             placeholder="0"
+                           />
+                         </div>
+                       ) : (
                         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1">
                           <button
                             type="button"
