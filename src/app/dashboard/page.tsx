@@ -147,12 +147,19 @@ export default function DashboardPage() {
 
       const { data: drawerData } = await supabase
         .from('drawer_balances')
-        .select('cash, coin, till')
-        .eq('date', today)
+        .select('cash, coin, till, date')
         .is('shift_id', null)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-      const drawerRow = drawerData && drawerData.length > 0 ? drawerData[0] : null
+
+      let drawerRow = null
+      if (drawerData && drawerData.length > 0) {
+        if (range === 'today') {
+          const todayStr = getLocalDateString()
+          const todayDrawer = drawerData.filter(row => row.date === todayStr)
+          drawerRow = todayDrawer.length > 0 ? todayDrawer[0] : drawerData[0]
+        } else {
+          drawerRow = drawerData[0]
+        }
+      }
 
       const { data: expenseData } = isOwner(session?.role)
         ? await supabase

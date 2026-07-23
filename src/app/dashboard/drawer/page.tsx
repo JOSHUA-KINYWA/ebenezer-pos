@@ -31,6 +31,7 @@ export default function DrawerPage() {
   const [expectedCash, setExpectedCash] = useState(0)
   const [expectedCoin, setExpectedCoin] = useState(0)
   const [todaySales, setTodaySales] = useState(0)
+  const [openingBalance, setOpeningBalance] = useState<{ cash: number; coin: number; till: number } | null>(null)
   const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString())
   const { settings } = useShopSettings()
   const toast = useToast()
@@ -49,28 +50,37 @@ export default function DrawerPage() {
     if (user) fetchData(selectedDate)
   }, [user, selectedDate])
 
-  async function fetchData(date = getLocalDateString()) {
+  async function fetchData(date = selectedDate) {
     try {
       const { data, error } = await withRetry(async () => await supabase.from('drawer_balances').select('*').eq('date', date).order('updated_at', { ascending: false }))
       if (error) throw error
       let current = data && data.length > 0 ? data[0] : null
+      let opening = null
+
       if (!current) {
-        const { data: latest, error: latestError } = await withRetry(async () => await supabase.from('drawer_balances').select('*').order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(1))
-        if (latestError) throw latestError
-        current = latest && latest.length > 0 ? latest[0] : null
-      }
-      if (current) {
-        setBalanceId(current.id)
-        setCash(Number(current.cash || 0).toString())
-        setCoin(Number(current.coin || 0).toString())
-        setTill(Number(current.till || 0).toString())
-        setNote(current.note?.toString() || '')
-      } else {
         setBalanceId(null)
         setCash('0')
         setCoin('0')
         setTill('0')
         setNote('')
+
+        const prevDate = new Date(date + 'T00:00:00')
+        prevDate.setDate(prevDate.getDate() - 1)
+        const prevDateStr = getLocalDateString(prevDate)
+        const { data: prevData } = await withRetry(async () => await supabase.from('drawer_balances').select('cash, coin, till').eq('date', prevDateStr).is('shift_id', null).order('updated_at', { ascending: false }).limit(1))
+        if (prevData && prevData.length > 0) {
+          opening = prevData[0]
+          setOpeningBalance({ cash: Number(prevData[0].cash || 0), coin: Number(prevData[0].coin || 0), till: Number(prevData[0].till || 0) })
+        } else {
+          setOpeningBalance(null)
+        }
+      } else {
+        setOpeningBalance(null)
+        setBalanceId(current.id)
+        setCash(Number(current.cash || 0).toString())
+        setCoin(Number(current.coin || 0).toString())
+        setTill(Number(current.till || 0).toString())
+        setNote(current.note?.toString() || '')
       }
 
       const { data: logs } = await supabase
@@ -231,6 +241,16 @@ export default function DrawerPage() {
           <div className="card bg-red-50 border-red-200 p-4 text-red-700 text-sm flex items-center gap-3">
             <div className="w-1 h-1 bg-red-500 rounded-full"></div>
             {error}
+          </div>
+        )}
+
+        {openingBalance && (
+          <div className="card p-4 border border-slate-200 bg-slate-50">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Opening Balance</p>
+            <p className="text-sm text-slate-600">
+              Carried over from previous close: <span className="font-semibold text-slate-900">{formatMoney(openingBalance.cash + openingBalance.coin + openingBalance.till, settings.currency)}</span>
+              <span className="text-slate-400 ml-2">({formatMoney(openingBalance.cash, settings.currency)} cash + {formatMoney(openingBalance.coin, settings.currency)} coin + {formatMoney(openingBalance.till, settings.currency)} till)</span>
+            </p>
           </div>
         )}
 

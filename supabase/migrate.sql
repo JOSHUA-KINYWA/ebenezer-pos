@@ -182,30 +182,49 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_drawer_balances_date_shift_unique
 -- Function to adjust drawer balances (decrement when expenses occur)
 CREATE OR REPLACE FUNCTION adjust_drawer_balance(p_method text, p_amount numeric, p_date date, p_shift_id uuid)
 RETURNS void AS $$
+DECLARE
+  v_prev_cash numeric := 0;
+  v_prev_coin numeric := 0;
+  v_prev_till numeric := 0;
 BEGIN
   IF p_method = 'cash' THEN
     UPDATE drawer_balances
     SET cash = cash - p_amount, updated_at = now()
     WHERE date = p_date AND shift_id IS NOT DISTINCT FROM p_shift_id;
     IF NOT FOUND THEN
+      SELECT cash, coin, till INTO v_prev_cash, v_prev_coin, v_prev_till
+      FROM drawer_balances
+      WHERE date < p_date
+      ORDER BY date DESC, updated_at DESC
+      LIMIT 1;
       INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
-      VALUES (p_date, p_shift_id, -p_amount, 0, 0);
+      VALUES (p_date, p_shift_id, COALESCE(v_prev_cash, 0) - p_amount, COALESCE(v_prev_coin, 0), COALESCE(v_prev_till, 0));
     END IF;
   ELSIF p_method = 'coin' THEN
     UPDATE drawer_balances
     SET coin = coin - p_amount, updated_at = now()
     WHERE date = p_date AND shift_id IS NOT DISTINCT FROM p_shift_id;
     IF NOT FOUND THEN
+      SELECT cash, coin, till INTO v_prev_cash, v_prev_coin, v_prev_till
+      FROM drawer_balances
+      WHERE date < p_date
+      ORDER BY date DESC, updated_at DESC
+      LIMIT 1;
       INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
-      VALUES (p_date, p_shift_id, 0, -p_amount, 0);
+      VALUES (p_date, p_shift_id, COALESCE(v_prev_cash, 0), COALESCE(v_prev_coin, 0) - p_amount, COALESCE(v_prev_till, 0));
     END IF;
   ELSIF p_method = 'till' THEN
     UPDATE drawer_balances
     SET till = till - p_amount, updated_at = now()
     WHERE date = p_date AND shift_id IS NOT DISTINCT FROM p_shift_id;
     IF NOT FOUND THEN
+      SELECT cash, coin, till INTO v_prev_cash, v_prev_coin, v_prev_till
+      FROM drawer_balances
+      WHERE date < p_date
+      ORDER BY date DESC, updated_at DESC
+      LIMIT 1;
       INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
-      VALUES (p_date, p_shift_id, 0, 0, -p_amount);
+      VALUES (p_date, p_shift_id, COALESCE(v_prev_cash, 0), COALESCE(v_prev_coin, 0), COALESCE(v_prev_till, 0) - p_amount);
     END IF;
   END IF;
 END;
@@ -241,6 +260,9 @@ DECLARE
   v_sale_id uuid;
   v_item jsonb;
   v_drawer_id uuid;
+  v_prev_cash numeric := 0;
+  v_prev_coin numeric := 0;
+  v_prev_till numeric := 0;
 BEGIN
   INSERT INTO sales(
     user_id, shift_id, customer_id, subtotal, tax_amount, total_amount,
@@ -274,13 +296,19 @@ BEGIN
   FOR UPDATE;
 
   IF v_drawer_id IS NULL THEN
+    SELECT cash, coin, till INTO v_prev_cash, v_prev_coin, v_prev_till
+    FROM drawer_balances
+    WHERE date < p_date
+    ORDER BY date DESC, updated_at DESC
+    LIMIT 1;
+    
     INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
     VALUES (
       p_date,
       p_shift_id,
-      CASE WHEN p_payment_method = 'cash' THEN p_total_amount ELSE 0 END,
-      CASE WHEN p_payment_method = 'coin' THEN p_total_amount ELSE 0 END,
-      CASE WHEN p_payment_method = 'till' THEN p_total_amount ELSE 0 END
+      COALESCE(v_prev_cash, 0) + CASE WHEN p_payment_method = 'cash' THEN p_total_amount ELSE 0 END,
+      COALESCE(v_prev_coin, 0) + CASE WHEN p_payment_method = 'coin' THEN p_total_amount ELSE 0 END,
+      COALESCE(v_prev_till, 0) + CASE WHEN p_payment_method = 'till' THEN p_total_amount ELSE 0 END
     );
   ELSE
     UPDATE drawer_balances
