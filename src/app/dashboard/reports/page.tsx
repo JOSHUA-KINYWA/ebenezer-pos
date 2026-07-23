@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { DailySalesSummary, ProductSalesSummary, Sale, SessionUser } from '@/types'
+import { DailySalesSummary, ProductSalesSummary, Sale, SaleItem, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatMoney, formatDateTime, formatSaleAttribution, normalizeSaleUser } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
@@ -56,7 +56,7 @@ export default function ReportsPage() {
 
       let salesQuery = supabase
         .from('sales')
-        .select('*, sale_items(*), user:users(full_name, role)')
+        .select('id, receipt_no, user_id, total_amount, subtotal, tax_amount, payment_type, payment_method, discount, is_voided, created_at')
         .order('created_at', { ascending: false })
 
       if (since) salesQuery = salesQuery.gte('created_at', since)
@@ -70,6 +70,28 @@ export default function ReportsPage() {
       const { data: txns, error: txnError } = await salesQuery
       if (txnError) throw txnError
 
+      const sales = (txns || []) as Sale[]
+      const salesWithDetails = await Promise.all(
+        sales.map(async sale => {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('id, full_name, role, email, is_active, created_at')
+            .eq('id', sale.user_id)
+            .maybeSingle()
+
+          const { data: itemsData } = await supabase
+            .from('sale_items')
+            .select('id, product_name, quantity, unit_price, subtotal')
+            .eq('sale_id', sale.id)
+
+          return {
+            ...sale,
+            user: (userData as SessionUser | undefined) || undefined,
+            sale_items: (itemsData as SaleItem[]) || [],
+          }
+        })
+      )
+
       const { data: staffData, error: staffErr } = await supabase
         .from('users')
         .select('id, full_name, role')
@@ -78,8 +100,7 @@ export default function ReportsPage() {
         .order('full_name')
       if (staffErr) throw staffErr
 
-      const sales = (txns || []) as Sale[]
-      const activeTransactions = sales.filter(sale => !sale.is_voided)
+      const activeTransactions = salesWithDetails.filter(sale => !sale.is_voided)
       const dailyMap = new Map<string, DailySalesSummary>()
       const productMap = new Map<string, ProductSalesSummary>()
 
@@ -117,7 +138,7 @@ export default function ReportsPage() {
 
       setDaily(Array.from(dailyMap.values()).sort((a, b) => b.sale_date.localeCompare(a.sale_date)))
       setProducts(Array.from(productMap.values()).sort((a, b) => b.total_revenue - a.total_revenue).slice(0, 50))
-      setTransactions(sales)
+      setTransactions(salesWithDetails)
       setStaffMembers((staffData || []) as (SessionUser & { role: SessionUser['role'] })[])
       setError(null)
     } catch (err) {
@@ -246,7 +267,7 @@ export default function ReportsPage() {
 
   const chartData = [...daily].reverse().map(d => ({
     date: format(new Date(d.sale_date), 'dd MMM'),
-    Revenue: Number(d.cash_total),
+    Revenue: Number(d.total_revenue),
   }))
 
   if (loading) return <LoadingSpinner label="Loading reports..." />
