@@ -5,14 +5,16 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Product, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
-import { formatMoney, formatProductName } from '@/lib/format'
+import { formatMoney, formatProductName, getLocalDateString } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
 import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
-import { Search, Package, TrendingUp, TrendingDown, History } from 'lucide-react'
+import { Search, Package, TrendingUp, TrendingDown, History, Save, Calendar } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { format, subDays, startOfMonth, endOfMonth } from 'date-fns'
 
 interface StockProduct extends Product {
   soldUnits: number
@@ -36,6 +38,15 @@ export default function StockPage() {
   const [activeTab, setActiveTab] = useState<'inventory' | 'analysis'>('inventory')
   const [analysisFilter, setAnalysisFilter] = useState('all')
   const [selectedProduct, setSelectedProduct] = useState<StockProduct | null>(null)
+  const [activeView, setActiveView] = useState<'inventory' | 'analysis' | 'settings' | 'trends'>('inventory')
+  const [trendPeriod, setTrendPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily')
+  const [trendStartDate, setTrendStartDate] = useState('')
+  const [trendEndDate, setTrendEndDate] = useState('')
+  const [chartData, setChartData] = useState<any[]>([])
+  const [topProducts, setTopProducts] = useState<any[]>([])
+  const [periodProfit, setPeriodProfit] = useState(0)
+  const [bulkStocks, setBulkStocks] = useState<Record<string, { initial: string; qty: string }>>({})
+  const [savingBulk, setSavingBulk] = useState(false)
   const supabase = createClient()
   const { settings } = useShopSettings()
   const toast = useToast()
@@ -52,9 +63,18 @@ export default function StockPage() {
     const tab = searchParams.get('tab')
     if (tab === 'analysis') {
       setActiveTab('analysis')
+      setActiveView('analysis')
     }
     fetchProducts()
   }, [router, searchParams])
+
+  useEffect(() => {
+    if (activeView === 'trends') {
+      fetchTrendData()
+      fetchTopProducts()
+      fetchPeriodProfit()
+    }
+  }, [activeView, trendPeriod, trendStartDate, trendEndDate])
 
   async function fetchProducts() {
     setLoading(true)
@@ -157,6 +177,148 @@ export default function StockPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function fetchTrendData() {
+    try {
+      let startDate = trendStartDate
+      let endDate = trendEndDate
+
+      if (!startDate || !endDate) {
+        if (trendPeriod === 'daily') {
+          startDate = format(subDays(new Date(), 6), 'yyyy-MM-dd')
+          endDate = getLocalDateString()
+        } else if (trendPeriod === 'weekly') {
+          startDate = format(subDays(new Date(), 27), 'yyyy-MM-dd')
+          endDate = getLocalDateString()
+        } else {
+          startDate = format(startOfMonth(new Date()), 'yyyy-MM-dd')
+          endDate = format(endOfMonth(new Date()), 'yyyy-MM-dd')
+        }
+      }
+
+      const { data: logs } = await supabase
+        .from('stock_log')
+        .select('created_at, change_qty')
+        .gte('created_at', `${startDate}T00:00:00`)
+        .lte('created_at', `${endDate}T23:59:59`)
+        .order('created_at', { ascending: true })
+
+      const dateMap = new Map<string, number>()
+      const today = new Date()
+      const days = trendPeriod === 'daily' ? 7 : trendPeriod === 'weekly' ? 28 : 30
+      
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(today)
+        d.setDate(d.getDate() - i)
+        const key = format(d, 'yyyy-MM-dd')
+        dateMap.set(key, 0)
+      }
+
+      ;(logs || []).forEach((log: any) => {
+        const date = log.created_at?.split('T')[0] || ''
+        if (dateMap.has(date)) {
+          dateMap.set(date, (dateMap.get(date) || 0) + Number(log.change_qty || 0))
+        }
+      })
+
+      const chartData = Array.from(dateMap.entries()).map(([date, change]) => ({
+        date: format(new Date(date + 'T00:00:00'), trendPeriod === 'monthly' ? 'MMM dd' : 'MMM dd'),
+        change: Number(change),
+      }))
+
+      setChartData(chartData)
+    } catch (err) {
+      console.error('Failed to load trend data', err)
+    }
+  }
+
+  async function fetchTopProducts() {
+    try {
+      const { data: salesData } = await supabase
+        .from('sales')
+        .select('id, created_at, is_voided')
+        .eq('is_voided', false)
+
+      const saleIds = (salesData || []).map(s => s.id)
+      const { data: itemsData } = saleIds.length > 0
+        ? await supabase
+            .from('sale_items')
+            .select('product_id, product_name, quantity, subtotal')
+            .in('sale_id', saleIds)
+        : { data: [] }
+
+      const productMap = new Map<string, { name: string; revenue: number; units: number }>()
+      ;(itemsData || []).forEach((item: any) => {
+        const key = item.product_id || item.product_name
+        const existing = productMap.get(key) || { name: item.product_name, revenue: 0, units: 0 }
+        existing.revenue += Number(item.subtotal || 0)
+        existing.units += Number(item.quantity || 0)
+        productMap.set(key, existing)
+      })
+
+      setTopProducts(
+        Array.from(productMap.values())
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 10)
+      )
+    } catch (err) {
+      console.error('Failed to load top products', err)
+    }
+  }
+
+  async function fetchPeriodProfit() {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('amount, payment_method')
+      
+      if (error) throw error
+      
+      const totalExpenses = (data || []).reduce((sum, e) => sum + Number(e.amount), 0)
+      setPeriodProfit(totalExpenses)
+    } catch (err) {
+      console.error('Failed to load period profit', err)
+    }
+  }
+
+  async function handleBulkStockSave() {
+    setSavingBulk(true)
+    try {
+      const updates = Object.entries(bulkStocks).map(([productId, vals]) => ({
+        id: productId,
+        initial_stock: parseFloat(vals.initial) || 0,
+        stock_qty: parseFloat(vals.qty) || 0,
+      }))
+
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('products')
+          .update({ initial_stock: update.initial_stock, stock_qty: update.stock_qty })
+          .eq('id', update.id)
+        if (error) throw error
+      }
+
+      toast.success('Bulk stock updated successfully')
+      setBulkStocks({})
+      fetchProducts()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update bulk stock'
+      toast.error(`❌ ${message}`)
+    } finally {
+      setSavingBulk(false)
+    }
+  }
+
+  function initializeBulkStocks() {
+    const stocks: Record<string, { initial: string; qty: string }> = {}
+    products.forEach(p => {
+      stocks[p.id] = {
+        initial: (p.initial_stock || 0).toString(),
+        qty: p.stock_qty.toString(),
+      }
+    })
+    setBulkStocks(stocks)
   }
 
   const inventoryProducts = useMemo(() => products.map(p => ({
@@ -287,25 +449,39 @@ export default function StockPage() {
           <div className="flex items-center gap-2 rounded-full bg-slate-100 p-1">
             <button
               type="button"
-              className={`px-4 py-2 rounded-full text-sm font-semibold ${activeTab === 'inventory' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
-              onClick={() => setActiveTab('inventory')}
+              className={`px-4 py-2 rounded-full text-sm font-semibold ${activeView === 'inventory' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+              onClick={() => setActiveView('inventory')}
             >
               Inventory
             </button>
             <button
               type="button"
-              className={`px-4 py-2 rounded-full text-sm font-semibold ${activeTab === 'analysis' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
-              onClick={() => setActiveTab('analysis')}
+              className={`px-4 py-2 rounded-full text-sm font-semibold ${activeView === 'analysis' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+              onClick={() => setActiveView('analysis')}
             >
               Stock Analysis
             </button>
+            <button
+              type="button"
+              className={`px-4 py-2 rounded-full text-sm font-semibold ${activeView === 'settings' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+              onClick={() => { setActiveView('settings'); initializeBulkStocks() }}
+            >
+              Stock Settings
+            </button>
+            <button
+              type="button"
+              className={`px-4 py-2 rounded-full text-sm font-semibold ${activeView === 'trends' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+              onClick={() => setActiveView('trends')}
+            >
+              Trends
+            </button>
           </div>
           <div className="text-sm text-slate-500">
-            Showing {activeTab === 'inventory' ? 'inventory controls and stock status' : 'profitability, sales, and stock analytics'}.
+            Showing {activeView === 'inventory' ? 'inventory controls and stock status' : activeView === 'analysis' ? 'profitability, sales, and stock analytics' : activeView === 'settings' ? 'bulk stock management' : 'stock movement and trends'}.
           </div>
         </div>
 
-        {activeTab === 'inventory' ? (
+        {activeView === 'inventory' ? (
           <>
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
@@ -313,8 +489,8 @@ export default function StockPage() {
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Projected Profit</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalExpectedProfit, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Projected Profit</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalExpectedProfit)}</p></div>
             </div>
 
             {/* Category Values */}
@@ -324,7 +500,7 @@ export default function StockPage() {
                 {Object.entries(categoryValues).map(([cat, data]) => (
                   <div key={cat} className="bg-slate-50 rounded-xl p-3 flex items-center justify-between">
                     <div><p className="text-sm font-medium text-slate-700">{cat}</p><p className="text-xs text-slate-400">{data.qty} units</p></div>
-                    <p className="text-sm font-bold text-slate-900">{formatMoney(data.value, settings.currency)}</p>
+                    <p className="text-sm font-bold text-slate-900">{formatMoney(data.value)}</p>
                   </div>
                 ))}
               </div>
@@ -346,9 +522,69 @@ export default function StockPage() {
                 </select>
               </div>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredProducts.length === 0 ? (
+                <div className="col-span-full"><p className="text-slate-500 text-center py-12">No products match filters</p></div>
+              ) : (
+              filteredProducts.map(product => {
+                const variants = getVariants(product.id)
+                const aggregateStock = getAggregateStock(product)
+                const isLow = aggregateStock <= product.stock_alert && aggregateStock > 0
+                const isOut = aggregateStock === 0
+                return (
+                  <div key={product.id} className="card p-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedProduct(product)}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className={'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ' + (isOut ? 'bg-slate-100 text-slate-400' : 'bg-brand-50 text-brand-700')}>
+                        {product.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className={'px-2 py-1 rounded-full text-xs font-medium border ' + (isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
+                        {isOut ? 'Out' : isLow ? 'Low' : 'OK'}
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-slate-900 text-sm mb-1">{formatProductName(product)}</h3>
+                    <p className="text-xs text-slate-500 mb-1">
+                      {formatMoney(product.price, settings.currency)} • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
+                      {variants.length > 0 && <span className="text-slate-400"> total</span>}
+                    </p>
+                    {variants.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {variants.map(v => (
+                          <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
+                            <span className="text-slate-600">{formatProductName(v)}</span>
+                            <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
+                              {v.stock_qty.toLocaleString()} {v.unit}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-400 mt-2">
+                      Initial: {(product.initial_stock || 0).toLocaleString()} {product.unit} • Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Sold: {product.soldUnits.toLocaleString()} • Profit: <span className={product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatMoney(product.profit, settings.currency)}</span>
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Expected: <span className="text-slate-600">{formatMoney(product.totalExpectedProfit, settings.currency)}</span>
+                      {product.remainingPotentialProfit > 0 && <span> • Remaining: <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</span></span>}
+                    </p>
+                  </div>
+                )
+              })
+              )}
+            </div>
           </>
-        ) : (
+        ) : activeView === 'analysis' ? (
           <>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Revenue</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalSoldUnits > 0 ? totalProfit + products.reduce((sum, p) => sum + p.soldCost, 0) : 0)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Profit Margin</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{products.reduce((sum, p) => sum + p.soldRevenue, 0) > 0 ? `${((totalProfit / products.reduce((sum, p) => sum + p.soldRevenue, 0)) * 100).toFixed(1)}%` : '0.0%'}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Loss Making</p><p className="text-xl font-bold text-red-600">{inventoryProducts.filter(p => p.profit < 0 && p.soldUnits > 0).length}</p></div>
+            </div>
+
             <div className="card p-4">
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} className="input pl-9 w-full" /></div>
@@ -360,69 +596,6 @@ export default function StockPage() {
                   <option value="no_sales">No Sales</option>
                 </select>
               </div>
-            </div>
-          </>
-        )}
-        {activeTab === 'inventory' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredProducts.length === 0 ? (
-              <div className="col-span-full"><p className="text-slate-500 text-center py-12">No products match filters</p></div>
-            ) : (
-            filteredProducts.map(product => {
-              const variants = getVariants(product.id)
-              const aggregateStock = getAggregateStock(product)
-              const isLow = aggregateStock <= product.stock_alert && aggregateStock > 0
-              const isOut = aggregateStock === 0
-              return (
-                <div key={product.id} className="card p-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedProduct(product)}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div className={'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ' + (isOut ? 'bg-slate-100 text-slate-400' : 'bg-brand-50 text-brand-700')}>
-                      {product.name.charAt(0).toUpperCase()}
-                    </div>
-                    <span className={'px-2 py-1 rounded-full text-xs font-medium border ' + (isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
-                      {isOut ? 'Out' : isLow ? 'Low' : 'OK'}
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-slate-900 text-sm mb-1">{formatProductName(product)}</h3>
-                  <p className="text-xs text-slate-500 mb-1">
-                    {formatMoney(product.price, settings.currency)} • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
-                    {variants.length > 0 && <span className="text-slate-400"> total</span>}
-                  </p>
-                  {variants.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {variants.map(v => (
-                        <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
-                          <span className="text-slate-600">{formatProductName(v)}</span>
-                          <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
-                            {v.stock_qty.toLocaleString()} {v.unit}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-xs text-slate-400 mt-2">
-                    Initial: {(product.initial_stock || 0).toLocaleString()} {product.unit} • Value: {formatMoney(aggregateStock * product.price, settings.currency)}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Sold: {product.soldUnits.toLocaleString()} • Profit: <span className={product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatMoney(product.profit, settings.currency)}</span>
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Expected: <span className="text-slate-600">{formatMoney(product.totalExpectedProfit, settings.currency)}</span>
-                    {product.remainingPotentialProfit > 0 && <span> • Remaining: <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</span></span>}
-                  </p>
-                </div>
-              )
-            })
-            )}
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Revenue</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalSoldUnits > 0 ? totalProfit + products.reduce((sum, p) => sum + p.soldCost, 0) : 0, settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Profit Margin</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{products.reduce((sum, p) => sum + p.soldRevenue, 0) > 0 ? `${((totalProfit / products.reduce((sum, p) => sum + p.soldRevenue, 0)) * 100).toFixed(1)}%` : '0.0%'}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Loss Making</p><p className="text-xl font-bold text-red-600">{inventoryProducts.filter(p => p.profit < 0 && p.soldUnits > 0).length}</p></div>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
@@ -442,15 +615,15 @@ export default function StockPage() {
                         <div className="flex gap-4 text-right">
                           <div>
                             <p className="text-xs text-slate-500">Revenue</p>
-                            <p className="font-semibold text-slate-900">{formatMoney(product.soldRevenue, settings.currency)}</p>
+                            <p className="font-semibold text-slate-900">{formatMoney(product.soldRevenue)}</p>
                           </div>
                           <div>
                             <p className="text-xs text-slate-500">Cost</p>
-                            <p className="font-semibold text-slate-900">{formatMoney(product.soldCost, settings.currency)}</p>
+                            <p className="font-semibold text-slate-900">{formatMoney(product.soldCost)}</p>
                           </div>
                           <div className={isProfitable ? 'text-emerald-600' : isLoss ? 'text-red-600' : 'text-amber-600'}>
                             <p className="text-xs text-slate-500">Profit</p>
-                            <p className="font-semibold text-lg">{formatMoney(product.profit, settings.currency)}</p>
+                            <p className="font-semibold text-lg">{formatMoney(product.profit)}</p>
                           </div>
                         </div>
                       </div>
@@ -458,14 +631,108 @@ export default function StockPage() {
                         <div><span className="font-medium text-slate-700">Initial Stock:</span> {(product.initial_stock || 0).toLocaleString()} {product.unit}</div>
                         <div><span className="font-medium text-slate-700">Current:</span> {product.stock_qty.toLocaleString()} {product.unit}</div>
                         <div><span className="font-medium text-slate-700">Margin:</span> {product.soldRevenue > 0 ? `${product.profitMargin.toFixed(1)}%` : '0.0%'}</div>
-                        <div><span className="font-medium text-slate-700">Expected Profit:</span> {formatMoney(product.totalExpectedProfit, settings.currency)}</div>
-                        <div><span className="font-medium text-slate-700">Remaining:</span> <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</span></div>
+                        <div><span className="font-medium text-slate-700">Expected Profit:</span> {formatMoney(product.totalExpectedProfit)}</div>
+                        <div><span className="font-medium text-slate-700">Remaining:</span> <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit)}</span></div>
                         <div><span className="font-medium text-slate-700">Sold:</span> {product.soldUnits.toLocaleString()}</div>
                       </div>
                     </div>
                   )
                 })
               )}
+            </div>
+          </>
+        ) : activeView === 'settings' ? (
+          <div className="space-y-6">
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-900">Bulk Stock Initialization</h3>
+                  <p className="text-xs text-slate-500 mt-1">Set initial stock and current quantity for all products at once.</p>
+                </div>
+                <button onClick={handleBulkStockSave} disabled={savingBulk} className="btn-primary inline-flex items-center gap-2">
+                  <Save className="w-4 h-4" /> {savingBulk ? 'Saving...' : 'Save All'}
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-slate-50 text-slate-500 text-xs"><th className="py-2 px-3 text-left">Product</th><th className="py-2 px-3 text-left">Unit</th><th className="py-2 px-3 text-right">Current Stock</th><th className="py-2 px-3 text-right">Initial Stock</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {products.map(product => (
+                      <tr key={product.id} className="hover:bg-slate-50/60">
+                        <td className="py-2 px-3 text-slate-900 font-medium">{product.name}</td>
+                        <td className="py-2 px-3 text-slate-600">{product.unit}</td>
+                        <td className="py-2 px-3 text-right">
+                          <input type="number" className="input w-24 text-right text-xs py-1" value={bulkStocks[product.id]?.qty || '0'} onChange={e => setBulkStocks({ ...bulkStocks, [product.id]: { ...bulkStocks[product.id], qty: e.target.value } })} />
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <input type="number" className="input w-24 text-right text-xs py-1" value={bulkStocks[product.id]?.initial || '0'} onChange={e => setBulkStocks({ ...bulkStocks, [product.id]: { ...bulkStocks[product.id], initial: e.target.value } })} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="card p-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  <select className="input w-auto" value={trendPeriod} onChange={e => setTrendPeriod(e.target.value as 'daily' | 'weekly' | 'monthly')}>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="date" value={trendStartDate} onChange={e => setTrendStartDate(e.target.value)} className="input" />
+                  <span className="text-slate-400">to</span>
+                  <input type="date" value={trendEndDate} onChange={e => setTrendEndDate(e.target.value)} className="input" />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Chart Period Profit</p><p className="text-xl font-bold text-brand-600">{formatMoney(periodProfit)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Top Performer</p><p className="text-sm font-bold text-slate-900 truncate">{topProducts[0]?.name || 'N/A'}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Top Revenue</p><p className="text-xl font-bold text-slate-900">{formatMoney(topProducts[0]?.revenue || 0)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Units Sold</p><p className="text-xl font-bold text-slate-900">{topProducts.reduce((sum, p) => sum + p.units, 0).toLocaleString()}</p></div>
+            </div>
+
+            <div className="card p-5">
+              <h3 className="font-bold text-slate-900 mb-4">Stock Movement</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="date" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="change" stroke="#2563eb" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="card p-5">
+              <h3 className="font-bold text-slate-900 mb-3">Top Performing Products</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-slate-50 text-slate-500 text-xs"><th className="py-2 px-3 text-left">Product</th><th className="py-2 px-3 text-right">Units Sold</th><th className="py-2 px-3 text-right">Revenue</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {topProducts.map((product, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/60">
+                        <td className="py-2 px-3 text-slate-900 font-medium">{product.name}</td>
+                        <td className="py-2 px-3 text-right text-slate-600">{product.units.toLocaleString()}</td>
+                        <td className="py-2 px-3 text-right font-semibold text-slate-900">{formatMoney(product.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
