@@ -182,7 +182,7 @@ export default function SellPage() {
   }
 
   function isDecimalUnit(unit: string): boolean {
-    const decimalUnits = ['liter', 'litre', 'ml', 'gram', 'kg', 'oz', 'lb', 'gallon', 'pint', 'cup', 'tbsp', 'tsp', 'meter', 'm', 'cm', 'km']
+    const decimalUnits = ['liter', 'litre', 'ltr', 'ltrs', 'ml', 'gram', 'kg', 'oz', 'lb', 'gallon', 'pint', 'cup', 'tbsp', 'tsp', 'meter', 'm', 'cm', 'km']
     return decimalUnits.some(u => unit.toLowerCase().includes(u))
   }
 
