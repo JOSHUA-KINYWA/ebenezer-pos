@@ -598,27 +598,6 @@ export default function StockPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Revenue</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalSoldUnits > 0 ? totalProfit + products.reduce((sum, p) => sum + p.soldCost, 0) : 0)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Profit Margin</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{products.reduce((sum, p) => sum + p.soldRevenue, 0) > 0 ? `${((totalProfit / products.reduce((sum, p) => sum + p.soldRevenue, 0)) * 100).toFixed(1)}%` : '0.0%'}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Loss Making</p><p className="text-xl font-bold text-red-600">{inventoryProducts.filter(p => p.profit < 0 && p.soldUnits > 0).length}</p></div>
-            </div>
-
-            <div className="card p-4">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} className="input pl-9 w-full" /></div>
-                <select className="input w-auto" value={analysisFilter} onChange={e => setAnalysisFilter(e.target.value)}>
-                  <option value="all">All Products</option>
-                  <option value="profitable">Profitable</option>
-                  <option value="breaking_even">Breaking Even</option>
-                  <option value="loss">Loss Making</option>
-                  <option value="no_sales">No Sales</option>
-                </select>
-              </div>
-            </div>
-
             <div className="card p-0 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
