@@ -19,6 +19,9 @@ interface StockProduct extends Product {
   soldCost: number
   profit: number
   profitMargin: number
+  initial_stock: number
+  totalExpectedProfit: number
+  remainingPotentialProfit: number
 }
 
 export default function StockPage() {
@@ -59,7 +62,7 @@ export default function StockPage() {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('*, category:categories(name)')
+        .select('*, category:categories(name), initial_stock')
         .eq('is_active', true)
         .order('name')
 
@@ -103,19 +106,37 @@ export default function StockPage() {
       })
 
       const productsWithMetrics = productsData.map(product => {
-        const totals = salesByProduct.get(product.id) || { soldUnits: 0, soldRevenue: 0, soldCost: 0 }
+        const variants = getVariants(product.id)
         const costPerUnit = Number(product.cost_price) || 0
-        const soldCost = totals.soldUnits * costPerUnit
-        const profit = totals.soldRevenue - soldCost
-        const profitMargin = totals.soldRevenue > 0 ? (profit / totals.soldRevenue) * 100 : 0
+        const margin = Number(product.price) - costPerUnit
+
+        const aggregateSoldUnits = variants.length === 0
+          ? Number(salesByProduct.get(product.id)?.soldUnits || 0)
+          : variants.reduce((sum, v) => sum + Number(salesByProduct.get(v.id)?.soldUnits || 0), 0)
+
+        const aggregateSoldRevenue = variants.length === 0
+          ? Number(salesByProduct.get(product.id)?.soldRevenue || 0)
+          : variants.reduce((sum, v) => sum + Number(salesByProduct.get(v.id)?.soldRevenue || 0), 0)
+
+        const aggregateSoldCost = aggregateSoldUnits * costPerUnit
+        const aggregateProfit = aggregateSoldRevenue - aggregateSoldCost
+        const aggregateProfitMargin = aggregateSoldRevenue > 0 ? (aggregateProfit / aggregateSoldRevenue) * 100 : 0
+        const aggregateStock = variants.length === 0 ? Number(product.stock_qty || 0) : variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0)
+        const aggregateInitialStock = variants.length === 0 ? Number(product.initial_stock || 0) : variants.reduce((sum, v) => sum + Number(v.initial_stock || 0), 0)
+
+        const totalExpectedProfit = aggregateInitialStock * margin
+        const remainingPotentialProfit = aggregateStock * margin
 
         return {
           ...product,
-          soldUnits: totals.soldUnits,
-          soldRevenue: totals.soldRevenue,
-          soldCost,
-          profit,
-          profitMargin,
+          soldUnits: aggregateSoldUnits,
+          soldRevenue: aggregateSoldRevenue,
+          soldCost: aggregateSoldCost,
+          profit: aggregateProfit,
+          profitMargin: aggregateProfitMargin,
+          initial_stock: aggregateInitialStock,
+          totalExpectedProfit,
+          remainingPotentialProfit,
         }
       })
 
@@ -189,6 +210,24 @@ export default function StockPage() {
     const variants = getVariants(p.id)
     if (variants.length === 0) return sum + p.stock_qty * p.price
     return sum + variants.reduce((vSum, v) => vSum + v.stock_qty * v.price, 0)
+  }, 0)
+
+  const totalInitialStock = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    const initial = variants.length === 0 ? (p.initial_stock || 0) : variants.reduce((vSum, v) => vSum + (v.initial_stock || 0), 0)
+    return sum + initial
+  }, 0)
+
+  const totalExpectedProfit = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    const expected = variants.length === 0 ? (p.totalExpectedProfit || 0) : variants.reduce((vSum, v) => vSum + (v.totalExpectedProfit || 0), 0)
+    return sum + expected
+  }, 0)
+
+  const totalRemainingPotential = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    const remaining = variants.length === 0 ? (p.remainingPotentialProfit || 0) : variants.reduce((vSum, v) => vSum + (v.remainingPotentialProfit || 0), 0)
+    return sum + remaining
   }, 0)
 
   const categoryValues = parentProducts.reduce((acc: Record<string, { qty: number; value: number }>, p) => {
@@ -268,12 +307,13 @@ export default function StockPage() {
         {activeTab === 'inventory' ? (
           <>
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Projected Profit</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalExpectedProfit, settings.currency)}</p></div>
             </div>
 
             {/* Category Values */}
@@ -360,10 +400,14 @@ export default function StockPage() {
                     </div>
                   )}
                   <p className="text-xs text-slate-400 mt-2">
-                    Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                    Initial: {(product.initial_stock || 0).toLocaleString()} {product.unit} • Value: {formatMoney(aggregateStock * product.price, settings.currency)}
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
                     Sold: {product.soldUnits.toLocaleString()} • Profit: <span className={product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatMoney(product.profit, settings.currency)}</span>
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Expected profit: <span className="text-slate-600">{formatMoney(product.totalExpectedProfit, settings.currency)}</span>
+                    {product.remainingPotentialProfit > 0 && <span> • Remaining: <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</span></span>}
                   </p>
                 </div>
               )
@@ -410,9 +454,12 @@ export default function StockPage() {
                         </div>
                       </div>
                       <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-slate-500">
-                        <div><span className="font-medium text-slate-700">Price:</span> {formatMoney(product.price, settings.currency)}</div>
-                        <div><span className="font-medium text-slate-700">Cost:</span> {formatMoney(product.cost_price ?? 0, settings.currency)}</div>
+                        <div><span className="font-medium text-slate-700">Initial Stock:</span> {(product.initial_stock || 0).toLocaleString()} {product.unit}</div>
+                        <div><span className="font-medium text-slate-700">Current:</span> {product.stock_qty.toLocaleString()} {product.unit}</div>
                         <div><span className="font-medium text-slate-700">Margin:</span> {product.soldRevenue > 0 ? `${product.profitMargin.toFixed(1)}%` : '0.0%'}</div>
+                        <div><span className="font-medium text-slate-700">Expected Profit:</span> {formatMoney(product.totalExpectedProfit, settings.currency)}</div>
+                        <div><span className="font-medium text-slate-700">Remaining:</span> <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</span></div>
+                        <div><span className="font-medium text-slate-700">Sold:</span> {product.soldUnits.toLocaleString()}</div>
                       </div>
                     </div>
                   )
