@@ -34,6 +34,7 @@ interface ProductForm {
   cost_price: string
   unit: string
   initial_stock: string
+  stock_qty: string
   stock_alert: string
   is_active: boolean
   product_type: 'standalone' | 'parent'
@@ -49,6 +50,7 @@ const initialForm: ProductForm = {
   cost_price: '0.00',
   unit: 'piece',
   initial_stock: '0',
+  stock_qty: '0',
   stock_alert: '10',
   is_active: true,
   product_type: 'standalone',
@@ -234,6 +236,7 @@ export default function ProductsPage() {
       cost_price: product.cost_price?.toString() || '0.00',
       unit: product.unit || 'piece',
       initial_stock: product.initial_stock?.toString() || '0',
+      stock_qty: product.stock_qty?.toString() || '0',
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
       product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
@@ -257,6 +260,7 @@ export default function ProductsPage() {
         cost_price: form.cost_price,
         unit: form.unit,
         initial_stock: form.initial_stock,
+        stock_qty: form.initial_stock,
         stock_alert: form.stock_alert,
         is_active: true,
         product_type: 'standalone',
@@ -291,6 +295,7 @@ export default function ProductsPage() {
     }
 
     const initialStock = parseFloat(form.initial_stock || '0')
+    const currentStock = parseFloat(form.stock_qty || '0')
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       variety: form.variety.trim() || null,
@@ -298,7 +303,7 @@ export default function ProductsPage() {
       price: parseFloat(form.price),
       cost_price: parseFloat(form.cost_price),
       unit: form.unit.trim(),
-      stock_qty: editingProduct ? editingProduct.stock_qty : initialStock,
+      stock_qty: editingProduct ? currentStock : initialStock,
       initial_stock: initialStock,
       stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
@@ -920,6 +925,21 @@ export default function ProductsPage() {
               />
               <p className="text-xs text-slate-400">This becomes the initial stock for profit projections</p>
               {errors.initial_stock && <p className="text-xs text-red-600">{errors.initial_stock}</p>}
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Current Stock</span>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={form.stock_qty}
+                onChange={e => setForm({ ...form, stock_qty: e.target.value })}
+                className="input w-full"
+                placeholder="Current stock quantity"
+              />
+              <p className="text-xs text-slate-400">Current inventory level</p>
+              {errors.stock_qty && <p className="text-xs text-red-600">{errors.stock_qty}</p>}
             </label>
 
             <label className="space-y-2">
