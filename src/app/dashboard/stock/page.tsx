@@ -598,47 +598,69 @@ export default function StockPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              {filteredAnalysis.length === 0 ? (
-                <div className="card p-8 text-center text-slate-500">No products match analysis filters</div>
-              ) : (
-                filteredAnalysis.map(product => {
-                  const isProfitable = product.profit > 0
-                  const isLoss = product.profit < 0
-                  return (
-                    <div key={product.id} className="card p-4 hover:shadow-md transition-shadow">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-900">{formatProductName(product)}</p>
-                          <p className="text-xs text-slate-500">Stock: {product.stock_qty.toLocaleString()} {product.unit} • Sold: {product.soldUnits.toLocaleString()}</p>
-                        </div>
-                        <div className="flex gap-4 text-right">
-                          <div>
-                            <p className="text-xs text-slate-500">Revenue</p>
-                            <p className="font-semibold text-slate-900">{formatMoney(product.soldRevenue)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500">Cost</p>
-                            <p className="font-semibold text-slate-900">{formatMoney(product.soldCost)}</p>
-                          </div>
-                          <div className={isProfitable ? 'text-emerald-600' : isLoss ? 'text-red-600' : 'text-amber-600'}>
-                            <p className="text-xs text-slate-500">Profit</p>
-                            <p className="font-semibold text-lg">{formatMoney(product.profit)}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-slate-500">
-                        <div><span className="font-medium text-slate-700">Initial Stock:</span> {(product.initial_stock || 0).toLocaleString()} {product.unit}</div>
-                        <div><span className="font-medium text-slate-700">Current:</span> {product.stock_qty.toLocaleString()} {product.unit}</div>
-                        <div><span className="font-medium text-slate-700">Margin:</span> {product.soldRevenue > 0 ? `${product.profitMargin.toFixed(1)}%` : '0.0%'}</div>
-                        <div><span className="font-medium text-slate-700">Expected Profit:</span> {formatMoney(product.totalExpectedProfit)}</div>
-                        <div><span className="font-medium text-slate-700">Remaining:</span> <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit)}</span></div>
-                        <div><span className="font-medium text-slate-700">Sold:</span> {product.soldUnits.toLocaleString()}</div>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Revenue</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalSoldUnits > 0 ? totalProfit + products.reduce((sum, p) => sum + p.soldCost, 0) : 0)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Profit Margin</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{products.reduce((sum, p) => sum + p.soldRevenue, 0) > 0 ? `${((totalProfit / products.reduce((sum, p) => sum + p.soldRevenue, 0)) * 100).toFixed(1)}%` : '0.0%'}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Loss Making</p><p className="text-xl font-bold text-red-600">{inventoryProducts.filter(p => p.profit < 0 && p.soldUnits > 0).length}</p></div>
+            </div>
+
+            <div className="card p-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} className="input pl-9 w-full" /></div>
+                <select className="input w-auto" value={analysisFilter} onChange={e => setAnalysisFilter(e.target.value)}>
+                  <option value="all">All Products</option>
+                  <option value="profitable">Profitable</option>
+                  <option value="breaking_even">Breaking Even</option>
+                  <option value="loss">Loss Making</option>
+                  <option value="no_sales">No Sales</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="card p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-xs">
+                    <tr>
+                      <th className="py-3 px-4 text-left">Product</th>
+                      <th className="py-3 px-4 text-right">Initial Stock</th>
+                      <th className="py-3 px-4 text-right">Items Sold</th>
+                      <th className="py-3 px-4 text-right">Current Stock</th>
+                      <th className="py-3 px-4 text-right">Remaining Potential</th>
+                      <th className="py-3 px-4 text-right">Expected Profit</th>
+                      <th className="py-3 px-4 text-right">Profit So Far</th>
+                      <th className="py-3 px-4 text-right">Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredAnalysis.length === 0 ? (
+                      <tr><td colSpan={8} className="py-8 text-center text-slate-500">No products match analysis filters</td></tr>
+                    ) : (
+                      filteredAnalysis.map(product => {
+                        const isProfitable = product.profit > 0
+                        const isLoss = product.profit < 0
+                        return (
+                          <tr key={product.id} className="hover:bg-slate-50/60">
+                            <td className="py-3 px-4">
+                              <p className="font-semibold text-slate-900">{formatProductName(product)}</p>
+                              <p className="text-xs text-slate-500">Sold: {product.soldUnits.toLocaleString()} {product.unit} • Stock: {product.stock_qty.toLocaleString()} {product.unit}</p>
+                            </td>
+                            <td className="py-3 px-4 text-right text-slate-600">{(product.initial_stock || 0).toLocaleString()} {product.unit}</td>
+                            <td className="py-3 px-4 text-right font-semibold text-slate-900">{product.soldUnits.toLocaleString()}</td>
+                            <td className="py-3 px-4 text-right text-slate-600">{product.stock_qty.toLocaleString()} {product.unit}</td>
+                            <td className="py-3 px-4 text-right text-amber-600">{formatMoney(product.remainingPotentialProfit)}</td>
+                            <td className="py-3 px-4 text-right text-slate-900">{formatMoney(product.totalExpectedProfit)}</td>
+                            <td className={`py-3 px-4 text-right ${isProfitable ? 'text-emerald-600' : isLoss ? 'text-red-600' : 'text-amber-600'}`}>{formatMoney(product.profit)}</td>
+                            <td className="py-3 px-4 text-right text-slate-900">{product.soldRevenue > 0 ? `${product.profitMargin.toFixed(1)}%` : '0.0%'}</td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         ) : activeView === 'settings' ? (
