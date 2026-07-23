@@ -155,10 +155,10 @@ export default function SellPage() {
       const next = existing
         ? prev.map(item =>
             item.product.id === product.id
-              ? { ...item, quantity: item.quantity + 1, subtotal: item.subtotal + product.price, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount' }
+              ? { ...item, quantity: item.quantity + 1, subtotal: Math.round((item.subtotal + product.price) * 100) / 100, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount' }
               : item
           )
-        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'amount' as const }]
+        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'quantity' as const }]
 
       if (existing) {
         toast.info(`Added another ${formatProductName(product)}`)
@@ -250,21 +250,25 @@ export default function SellPage() {
 
         if (saleMode === 'quantity') {
           const quantity = Math.max(0.01, item.quantity || 1)
+          const subtotal = Math.round(quantity * item.product.price * 100) / 100
           return {
             ...item,
             saleMode,
             quantity,
-            subtotal: Math.round(quantity * item.product.price * 100) / 100,
+            subtotal,
           }
         }
 
+        const price = item.product.price
+        if (price <= 0) return item
         const amount = Math.max(0.01, item.subtotal || item.product.price)
-        const quantity = item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0
+        const quantity = Math.round((amount / price) * 100) / 100
+        const subtotal = Math.round(quantity * price * 100) / 100
         return {
           ...item,
           saleMode,
           quantity,
-          subtotal: Math.round(amount * 100) / 100,
+          subtotal,
         }
       })
     )
@@ -291,16 +295,19 @@ export default function SellPage() {
   function updateAmount(productId: string, amount: number) {
     if (amount < 0) return
     setCart(prev =>
-      prev.map(item =>
-        item.product.id === productId
-          ? {
-              ...item,
-              subtotal: Math.round(amount * 100) / 100,
-              quantity: item.product.price > 0 ? Math.round((amount / item.product.price) * 100) / 100 : 0,
-              saleMode: 'amount',
-            }
-          : item
-      )
+      prev.map(item => {
+        if (item.product.id !== productId) return item
+        const price = item.product.price
+        if (price <= 0) return item
+        const quantity = Math.round((amount / price) * 100) / 100
+        const subtotal = Math.round(quantity * price * 100) / 100
+        return {
+          ...item,
+          quantity,
+          subtotal,
+          saleMode: 'amount',
+        }
+      })
     )
   }
 
