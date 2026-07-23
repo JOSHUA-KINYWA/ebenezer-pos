@@ -381,6 +381,18 @@ export default function StockPage() {
     return sum + initial
   }, 0)
 
+  const totalInitialStockValue = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    if (variants.length === 0) return sum + (p.initial_stock || 0) * p.price
+    return sum + variants.reduce((vSum, v) => vSum + (v.initial_stock || 0) * v.price, 0)
+  }, 0)
+
+  const totalSoldValue = parentProducts.reduce((sum, p) => {
+    const variants = getVariants(p.id)
+    if (variants.length === 0) return sum + (p.soldUnits || 0) * p.price
+    return sum + variants.reduce((vSum, v) => vSum + (v.soldUnits || 0) * v.price, 0)
+  }, 0)
+
   const totalExpectedProfit = parentProducts.reduce((sum, p) => {
     const variants = getVariants(p.id)
     const expected = variants.length === 0 ? (p.totalExpectedProfit || 0) : variants.reduce((vSum, v) => vSum + (v.totalExpectedProfit || 0), 0)
@@ -486,11 +498,11 @@ export default function StockPage() {
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">In Stock</p><p className="text-xl font-bold text-emerald-600">{inStock.length}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Low Stock</p><p className="text-xl font-bold text-amber-600">{lowStock.length}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Initial Stock</p><p className="text-xl font-bold text-slate-900">{totalInitialStock.toLocaleString()}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Initial Stock Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalInitialStockValue)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Current Stock Value</p><p className="text-xl font-bold text-emerald-600">{formatMoney(totalValue)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Stock Sold Value</p><p className="text-xl font-bold text-amber-600">{formatMoney(totalSoldValue)}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Projected Profit</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalExpectedProfit)}</p></div>
             </div>
 
             {/* Category Values */}
