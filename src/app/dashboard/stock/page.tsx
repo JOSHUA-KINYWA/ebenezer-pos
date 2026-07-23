@@ -10,8 +10,9 @@ import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
+import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
-import { Search, Plus, X, Package, TrendingUp, TrendingDown, History } from 'lucide-react'
+import { Search, Package, TrendingUp, TrendingDown, History } from 'lucide-react'
 
 interface StockProduct extends Product {
   soldUnits: number
@@ -34,7 +35,7 @@ export default function StockPage() {
   const [stockFilter, setStockFilter] = useState('all')
   const [activeTab, setActiveTab] = useState<'inventory' | 'analysis'>('inventory')
   const [analysisFilter, setAnalysisFilter] = useState('all')
-  const [expandedProductId, setExpandedProductId] = useState<string | null>(null)
+  const [selectedProduct, setSelectedProduct] = useState<StockProduct | null>(null)
   const supabase = createClient()
   const { settings } = useShopSettings()
   const toast = useToast()
@@ -372,96 +373,43 @@ export default function StockPage() {
               const aggregateStock = getAggregateStock(product)
               const isLow = aggregateStock <= product.stock_alert && aggregateStock > 0
               const isOut = aggregateStock === 0
-              const isExpanded = expandedProductId === product.id
               return (
-                <div key={product.id} className="card hover:shadow-md transition-shadow cursor-pointer" onClick={() => setExpandedProductId(isExpanded ? null : product.id)}>
-                  <div className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className={'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ' + (isOut ? 'bg-slate-100 text-slate-400' : 'bg-brand-50 text-brand-700')}>
-                        {product.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={'px-2 py-1 rounded-full text-xs font-medium border ' + (isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
-                          {isOut ? 'Out' : isLow ? 'Low' : 'OK'}
-                        </span>
-                        <span className="text-xs text-slate-400">{isExpanded ? '▲' : '▼'}</span>
-                      </div>
+                <div key={product.id} className="card p-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedProduct(product)}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className={'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ' + (isOut ? 'bg-slate-100 text-slate-400' : 'bg-brand-50 text-brand-700')}>
+                      {product.name.charAt(0).toUpperCase()}
                     </div>
-                    <h3 className="font-semibold text-slate-900 text-sm mb-1">{formatProductName(product)}</h3>
-                    <p className="text-xs text-slate-500 mb-1">
-                      {formatMoney(product.price, settings.currency)} • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
-                      {variants.length > 0 && <span className="text-slate-400"> total</span>}
-                    </p>
-                    {variants.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {variants.map(v => (
-                          <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
-                            <span className="text-slate-600">{formatProductName(v)}</span>
-                            <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
-                              {v.stock_qty.toLocaleString()} {v.unit}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-xs text-slate-400 mt-2">
-                      Initial: {(product.initial_stock || 0).toLocaleString()} {product.unit} • Value: {formatMoney(aggregateStock * product.price, settings.currency)}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Sold: {product.soldUnits.toLocaleString()} • Profit: <span className={product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatMoney(product.profit, settings.currency)}</span>
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Expected: <span className="text-slate-600">{formatMoney(product.totalExpectedProfit, settings.currency)}</span>
-                      {product.remainingPotentialProfit > 0 && <span> • Remaining: <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</span></span>}
-                    </p>
+                    <span className={'px-2 py-1 rounded-full text-xs font-medium border ' + (isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
+                      {isOut ? 'Out' : isLow ? 'Low' : 'OK'}
+                    </span>
                   </div>
-
-                  {isExpanded && (
-                    <div className="border-t border-slate-100 bg-slate-50 p-4" onClick={e => e.stopPropagation()}>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm mb-4">
-                        <div><span className="text-slate-500">Selling price</span><p className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</p></div>
-                        <div><span className="text-slate-500">Buying price</span><p className="font-semibold text-slate-900">{formatMoney(product.cost_price ?? 0, settings.currency)}</p></div>
-                        <div><span className="text-slate-500">Margin/unit</span><p className="font-semibold text-slate-900">{formatMoney((product.price || 0) - (product.cost_price ?? 0), settings.currency)}</p></div>
-                        <div><span className="text-slate-500">Initial stock</span><p className="font-semibold text-slate-900">{(product.initial_stock || 0).toLocaleString()} {product.unit}</p></div>
-                        <div><span className="text-slate-500">Current stock</span><p className="font-semibold text-slate-900">{aggregateStock.toLocaleString()} {product.unit}</p></div>
-                        <div><span className="text-slate-500">Low alert</span><p className="font-semibold text-slate-900">{product.stock_alert} {product.unit}</p></div>
-                        <div><span className="text-slate-500">Sold units</span><p className="font-semibold text-slate-900">{product.soldUnits.toLocaleString()}</p></div>
-                        <div><span className="text-slate-500">Profit so far</span><p className={`font-semibold ${product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(product.profit, settings.currency)}</p></div>
-                        <div><span className="text-slate-500">Expected profit</span><p className="font-semibold text-slate-900">{formatMoney(product.totalExpectedProfit, settings.currency)}</p></div>
-                      </div>
-
-                      {variants.length > 0 && (
-                        <div className="mt-4">
-                          <p className="text-xs font-semibold text-slate-700 uppercase mb-2">Variant breakdown</p>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead><tr className="border-b border-slate-200 text-slate-500 text-xs"><th className="py-1 text-left">Variant</th><th className="py-1 text-left">Stock</th><th className="py-1 text-left">Initial</th><th className="py-1 text-right">Sold</th><th className="py-1 text-right">Expected profit</th><th className="py-1 text-right">Remaining</th></tr></thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {variants.map(v => {
-                                  const vMargin = (v.price || 0) - (v.cost_price ?? 0)
-                                  const vSold = v.soldUnits || 0
-                                  const vStock = v.stock_qty || 0
-                                  const vInitial = v.initial_stock || 0
-                                  const vExpected = vInitial * vMargin
-                                  const vRemaining = vStock * vMargin
-                                  return (
-                                    <tr key={v.id}>
-                                      <td className="py-1.5 text-slate-900 font-medium">{formatProductName(v)}</td>
-                                      <td className="py-1.5 text-slate-600">{vStock.toLocaleString()} {v.unit}</td>
-                                      <td className="py-1.5 text-slate-600">{vInitial.toLocaleString()} {v.unit}</td>
-                                      <td className="py-1.5 text-right text-slate-600">{vSold.toLocaleString()}</td>
-                                      <td className="py-1.5 text-right text-slate-900">{formatMoney(vExpected, settings.currency)}</td>
-                                      <td className="py-1.5 text-right text-amber-600">{formatMoney(vRemaining, settings.currency)}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
+                  <h3 className="font-semibold text-slate-900 text-sm mb-1">{formatProductName(product)}</h3>
+                  <p className="text-xs text-slate-500 mb-1">
+                    {formatMoney(product.price, settings.currency)} • <span className="font-semibold text-slate-700">{aggregateStock.toLocaleString()} {product.unit}</span>
+                    {variants.length > 0 && <span className="text-slate-400"> total</span>}
+                  </p>
+                  {variants.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {variants.map(v => (
+                        <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
+                          <span className="text-slate-600">{formatProductName(v)}</span>
+                          <span className={v.stock_qty === 0 ? 'text-red-600 font-medium' : v.stock_qty <= v.stock_alert ? 'text-amber-600 font-medium' : 'text-slate-900'}>
+                            {v.stock_qty.toLocaleString()} {v.unit}
+                          </span>
                         </div>
-                      )}
+                      ))}
                     </div>
                   )}
+                  <p className="text-xs text-slate-400 mt-2">
+                    Initial: {(product.initial_stock || 0).toLocaleString()} {product.unit} • Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Sold: {product.soldUnits.toLocaleString()} • Profit: <span className={product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatMoney(product.profit, settings.currency)}</span>
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Expected: <span className="text-slate-600">{formatMoney(product.totalExpectedProfit, settings.currency)}</span>
+                    {product.remainingPotentialProfit > 0 && <span> • Remaining: <span className="text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</span></span>}
+                  </p>
                 </div>
               )
             })
@@ -522,6 +470,97 @@ export default function StockPage() {
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={!!selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+        title={selectedProduct ? formatProductName(selectedProduct) : ''}
+        description="Product stock and profit breakdown"
+        size="lg"
+        footer={
+          <div className="flex justify-end">
+            <button onClick={() => setSelectedProduct(null)} className="btn-secondary">Close</button>
+          </div>
+        }
+      >
+        {selectedProduct && (() => {
+          const variants = getVariants(selectedProduct.id)
+          const aggregateStock = getAggregateStock(selectedProduct)
+          return (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Selling price</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatMoney(selectedProduct.price, settings.currency)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Buying price</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatMoney(selectedProduct.cost_price ?? 0, settings.currency)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Margin/unit</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), settings.currency)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Initial stock</p>
+                  <p className="text-sm font-semibold text-slate-900">{(selectedProduct.initial_stock || 0).toLocaleString()} {selectedProduct.unit}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Current stock</p>
+                  <p className="text-sm font-semibold text-slate-900">{aggregateStock.toLocaleString()} {selectedProduct.unit}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Low stock alert</p>
+                  <p className="text-sm font-semibold text-slate-900">{selectedProduct.stock_alert} {selectedProduct.unit}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Sold units</p>
+                  <p className="text-sm font-semibold text-slate-900">{selectedProduct.soldUnits.toLocaleString()}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Profit so far</p>
+                  <p className={`text-sm font-semibold ${selectedProduct.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(selectedProduct.profit, settings.currency)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-1">Expected profit</p>
+                  <p className="text-sm font-semibold text-slate-900">{formatMoney(selectedProduct.totalExpectedProfit, settings.currency)}</p>
+                </div>
+              </div>
+
+              {variants.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-700 uppercase mb-3">Variant breakdown</p>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-slate-50 text-slate-500 text-xs"><th className="py-2 px-3 text-left">Variant</th><th className="py-2 px-3 text-left">Stock</th><th className="py-2 px-3 text-left">Initial</th><th className="py-2 px-3 text-right">Sold</th><th className="py-2 px-3 text-right">Expected profit</th><th className="py-2 px-3 text-right">Remaining</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {variants.map(v => {
+                          const vMargin = (v.price || 0) - (v.cost_price ?? 0)
+                          const vSold = v.soldUnits || 0
+                          const vStock = v.stock_qty || 0
+                          const vInitial = v.initial_stock || 0
+                          const vExpected = vInitial * vMargin
+                          const vRemaining = vStock * vMargin
+                          return (
+                            <tr key={v.id} className="hover:bg-slate-50/60">
+                              <td className="py-2 px-3 text-slate-900 font-medium">{formatProductName(v)}</td>
+                              <td className="py-2 px-3 text-slate-600">{vStock.toLocaleString()} {v.unit}</td>
+                              <td className="py-2 px-3 text-slate-600">{vInitial.toLocaleString()} {v.unit}</td>
+                              <td className="py-2 px-3 text-right text-slate-600">{vSold.toLocaleString()}</td>
+                              <td className="py-2 px-3 text-right text-slate-900">{formatMoney(vExpected, settings.currency)}</td>
+                              <td className="py-2 px-3 text-right text-amber-600">{formatMoney(vRemaining, settings.currency)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+      </Modal>
     </RoleGuard>
   )
 }
