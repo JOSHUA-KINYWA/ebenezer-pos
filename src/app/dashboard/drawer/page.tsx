@@ -31,6 +31,7 @@ export default function DrawerPage() {
   const [expectedCash, setExpectedCash] = useState(0)
   const [expectedCoin, setExpectedCoin] = useState(0)
   const [todaySales, setTodaySales] = useState(0)
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString())
   const { settings } = useShopSettings()
   const toast = useToast()
   const supabase = createClient()
@@ -42,13 +43,15 @@ export default function DrawerPage() {
       return
     }
     setUser(session)
-    fetchData()
-  }, [])
+  }, [router])
 
-  async function fetchData() {
+  useEffect(() => {
+    if (user) fetchData(selectedDate)
+  }, [user, selectedDate])
+
+  async function fetchData(date = getLocalDateString()) {
     try {
-      const today = getLocalDateString()
-      const { data, error } = await withRetry(async () => await supabase.from('drawer_balances').select('*').eq('date', today).order('updated_at', { ascending: false }))
+      const { data, error } = await withRetry(async () => await supabase.from('drawer_balances').select('*').eq('date', date).order('updated_at', { ascending: false }))
       if (error) throw error
       let current = data && data.length > 0 ? data[0] : null
       if (!current) {
@@ -73,7 +76,7 @@ export default function DrawerPage() {
       const { data: logs } = await supabase
         .from('drawer_balance_logs')
         .select('*')
-        .eq('date', today)
+        .eq('date', date)
         .order('created_at', { ascending: false })
         .limit(100)
       setHistory(logs && logs.length > 0 ? logs : data || [])
@@ -82,7 +85,7 @@ export default function DrawerPage() {
       const { data: salesData } = await supabase
         .from('sales')
         .select('payment_method, total_amount, amount_tendered, change_amount')
-        .gte('created_at', `${today}T00:00:00`)
+        .gte('created_at', `${date}T00:00:00`)
         .lt('created_at', `${tomorrow}T00:00:00`)
         .eq('is_voided', false)
 
@@ -115,14 +118,13 @@ export default function DrawerPage() {
   async function saveBalance() {
     setConfirm({
       title: 'Update drawer balance',
-      description: `Are you sure you want to update the drawer balance to ${formatMoney(grandTotal, settings.currency)}? This will overwrite the current balance.`,
+      description: `Are you sure you want to update the drawer balance for ${selectedDate} to ${formatMoney(grandTotal, settings.currency)}? This will overwrite the current balance.`,
       tone: 'danger',
       confirmLabel: 'Update',
       onConfirm: async () => {
         setConfirm(null)
         setSaving(true)
         try {
-          const today = getLocalDateString()
           const newCash = parseFloat(cash) || 0
           const newCoin = parseFloat(coin) || 0
           const newTill = parseFloat(till) || 0
@@ -130,7 +132,7 @@ export default function DrawerPage() {
           const { data: existing } = await supabase
             .from('drawer_balances')
             .select('id, cash, coin, till')
-            .eq('date', today)
+            .eq('date', selectedDate)
             .is('shift_id', null)
             .order('updated_at', { ascending: false })
             .limit(1)
@@ -151,7 +153,7 @@ export default function DrawerPage() {
             if (updateError) throw updateError
           } else {
             const { data: inserted, error: insertError } = await supabase.from('drawer_balances').insert({
-              date: today,
+              date: selectedDate,
               shift_id: null,
               cash: newCash,
               coin: newCoin,
@@ -164,7 +166,7 @@ export default function DrawerPage() {
 
           await supabase.from('drawer_balance_logs').insert({
             drawer_balance_id: drawerBalanceId,
-            date: today,
+            date: selectedDate,
             shift_id: null,
             action: 'manual_count',
             cash_before: previousCash,
@@ -183,7 +185,7 @@ export default function DrawerPage() {
           toast.success('✓ Balance saved successfully')
           setError(null)
           window.dispatchEvent(new Event('drawer-update'))
-          await fetchData()
+          await fetchData(selectedDate)
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to save balance'
           setError(message)
@@ -212,7 +214,17 @@ export default function DrawerPage() {
         <PageHeader 
           title="Cash Drawer Management" 
           description="Count and reconcile physical cash, coins, and till" 
-          action={<button onClick={fetchData} className="btn-secondary gap-2"><RefreshCw className="w-4 h-4" />Refresh</button>} 
+          action={
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                className="input"
+              />
+              <button onClick={() => fetchData(selectedDate)} className="btn-secondary gap-2"><RefreshCw className="w-4 h-4" />Refresh</button>
+            </div>
+          }
         />
 
         {error && (
@@ -256,9 +268,9 @@ export default function DrawerPage() {
         <div className="card p-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Grand Total</p>
-              <p className="text-4xl font-bold">{formatMoney(grandTotal, settings.currency)}</p>
-              <p className="text-xs text-slate-400 mt-1">{todaySales} sales today</p>
+          <p className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Grand Total</p>
+          <p className="text-4xl font-bold">{formatMoney(grandTotal, settings.currency)}</p>
+          <p className="text-xs text-slate-400 mt-1">{todaySales} sale{todaySales === 1 ? '' : 's'} on {selectedDate === getLocalDateString() ? 'today' : selectedDate}</p>
             </div>
             <DollarSign className="w-12 h-12 text-slate-700" />
           </div>
@@ -403,7 +415,7 @@ export default function DrawerPage() {
           <div className="card p-8">
             <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2 mb-6">
               <Clock className="w-5 h-5 text-slate-400" />
-              Today's History
+              {selectedDate === getLocalDateString() ? 'Today' : selectedDate}'s History
             </h3>
             
             <div className="space-y-3">
