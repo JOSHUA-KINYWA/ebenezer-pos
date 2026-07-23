@@ -118,7 +118,7 @@ function buildCsvZip(backup: FactoryResetBackup): string {
     return header + body
   }
 
-  files.push('--- products.csv ---\n' + toCsv(backup.products, ['id', 'name', 'barcode', 'variety', 'description', 'category_id', 'parent_product_id', 'price', 'cost_price', 'unit', 'initial_stock', 'stock_qty', 'stock_alert', 'reorder_qty', 'is_active', 'created_at']))
+  files.push('--- products.csv ---\n' + toCsv(backup.products, ['id', 'name', 'variety', 'description', 'category_id', 'parent_product_id', 'price', 'cost_price', 'unit', 'initial_stock', 'stock_qty', 'stock_alert', 'reorder_qty', 'is_active', 'created_at']))
   files.push('--- categories.csv ---\n' + toCsv(backup.categories, ['id', 'name', 'description', 'is_active', 'created_at']))
   files.push('--- stock_log.csv ---\n' + toCsv(backup.stockLog, ['id', 'product_id', 'user_id', 'change_qty', 'reason', 'note', 'reference_id', 'created_at']))
   files.push('--- customers.csv ---\n' + toCsv(backup.customers, ['id', 'name', 'phone', 'email', 'address', 'credit_limit', 'credit_balance', 'is_active', 'created_at']))

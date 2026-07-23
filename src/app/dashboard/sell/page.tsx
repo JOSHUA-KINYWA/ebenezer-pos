@@ -9,7 +9,7 @@ import { useShopSettings } from '@/hooks/useShopSettings'
 import { useToast } from '@/context/ToastContext'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { PageHeader } from '@/components/PageHeader'
-import { Barcode, CheckCircle, Search, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
+import { CheckCircle, Search, Plus, Minus, X, ArrowLeftRight } from 'lucide-react'
 
 type POSPaymentType = 'cash'
 type CashMethod = 'cash' | 'coin' | 'till'
@@ -22,7 +22,6 @@ export default function SellPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
-  const [barcodeInput, setBarcodeInput] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [cart, setCart] = useState<CartItem[]>([])
   const [quickAddValue, setQuickAddValue] = useState('')
@@ -432,14 +431,14 @@ export default function SellPage() {
     cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  function addProductByCode(code: string) {
-    const trimmed = code.trim()
+  function handleQuickAddSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = quickAddValue.trim()
     if (!trimmed) {
-      toast.error('❌ Enter a barcode or product code')
+      toast.error('❌ Enter a product name')
       return
     }
-
-    const found = products.find(product => product.barcode === trimmed || product.name.toLowerCase() === trimmed.toLowerCase())
+    const found = products.find(product => product.name.toLowerCase() === trimmed.toLowerCase())
     if (found) {
       if (found.stock_qty === 0) {
         toast.error(`❌ ${formatProductName(found)} is out of stock!`)
@@ -447,21 +446,10 @@ export default function SellPage() {
         handleProductSelect(found)
         toast.success(`✓ Added ${formatProductName(found)}`)
       }
-      setBarcodeInput('')
       setQuickAddValue('')
     } else {
       toast.error(`❌ Product not found: ${trimmed}`)
     }
-  }
-
-  async function handleBarcodeSearch(e: React.FormEvent) {
-    e.preventDefault()
-    addProductByCode(barcodeInput)
-  }
-
-  function handleQuickAddSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    addProductByCode(quickAddValue)
   }
 
   if (loading) return <LoadingSpinner label="Loading products..." />
@@ -675,22 +663,8 @@ export default function SellPage() {
           <div className="card p-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Sell products</h2>
-                <p className="text-sm text-slate-500">Search, scan, and select a variant under each main product.</p>
+                <p className="text-sm text-slate-500">Search and select a variant under each main product.</p>
               </div>
-
-            <form onSubmit={handleBarcodeSearch} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-              <div className="relative">
-                <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Scan barcode or enter code"
-                  value={barcodeInput}
-                  onChange={e => setBarcodeInput(e.target.value)}
-                  className="input pl-9 w-full"
-                />
-              </div>
-              <button type="submit" className="btn-primary px-4 py-3">Add</button>
-            </form>
 
             <div className="mt-4 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -711,7 +685,7 @@ export default function SellPage() {
                     type="text"
                     value={quickAddValue}
                     onChange={e => setQuickAddValue(e.target.value)}
-                    placeholder="Enter barcode or product name"
+                    placeholder="Enter product name"
                     className="input mt-1 w-full"
                   />
                 </div>

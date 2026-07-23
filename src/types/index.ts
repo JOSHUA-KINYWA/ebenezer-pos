@@ -37,7 +37,6 @@ export interface Product {
   id: string
   category_id?: string
   parent_product_id?: string
-  barcode?: string
   name: string
   variety?: string
   description?: string

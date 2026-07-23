@@ -26,7 +26,6 @@ interface ProductWithMetrics extends Product {
 
 interface ProductForm {
   name: string
-  barcode: string
   variety: string
   description: string
   category_id: string
@@ -42,7 +41,6 @@ interface ProductForm {
 
 const initialForm: ProductForm = {
   name: '',
-  barcode: '',
   variety: '',
   description: '',
   category_id: '',
@@ -228,7 +226,6 @@ export default function ProductsPage() {
     const hasChildren = products.some(p => p.parent_product_id === product.id)
     setForm({
       name: product.name || '',
-      barcode: product.barcode || '',
       variety: product.variety || '',
       description: product.description || '',
       category_id: product.category_id || categories[0]?.id || '',
@@ -252,7 +249,6 @@ export default function ProductsPage() {
       ...prev,
       {
         name: `${form.name} variant`,
-        barcode: form.barcode,
         variety: '',
         description: '',
         category_id: form.category_id,
@@ -297,7 +293,6 @@ export default function ProductsPage() {
     const initialStock = parseFloat(form.initial_stock || '0')
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
-      barcode: form.barcode.trim() || null,
       variety: form.variety.trim() || null,
       description: form.description.trim() || null,
       price: parseFloat(form.price),
@@ -325,7 +320,6 @@ export default function ProductsPage() {
             const vInitialStock = parseFloat(v.initial_stock || '0')
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
-              barcode: v.barcode.trim() || null,
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
               price: parseFloat(v.price) || 0,
@@ -356,7 +350,6 @@ export default function ProductsPage() {
             const vInitialStock = parseFloat(v.initial_stock || '0')
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
-              barcode: v.barcode.trim() || null,
               variety: v.variety.trim() || null,
               description: v.description.trim() || null,
               price: parseFloat(v.price) || 0,
@@ -436,7 +429,6 @@ export default function ProductsPage() {
       const matchesSearch =
         !query ||
         product.name.toLowerCase().includes(query) ||
-        (product.barcode || '').toLowerCase().includes(query) ||
         (product.variety || '').toLowerCase().includes(query) ||
         (product.description || '').toLowerCase().includes(query) ||
         ((product.category as { name?: string })?.name || '').toLowerCase().includes(query)
@@ -842,16 +834,6 @@ export default function ProductsPage() {
                 placeholder={form.product_type === 'parent' ? 'e.g., Rice' : 'e.g., White Bread'}
               />
               {errors.name && <p className="text-xs text-red-600">{errors.name}</p>}
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Barcode</span>
-              <input
-                value={form.barcode}
-                onChange={e => setForm({ ...form, barcode: e.target.value })}
-                className="input w-full"
-                placeholder="Scan or enter barcode"
-              />
             </label>
 
             <label className="space-y-2">
