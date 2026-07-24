@@ -262,7 +262,7 @@ export default function SellPage() {
         const price = item.product.price
         if (price <= 0) return item
         const amount = Math.max(1, Math.round(item.subtotal || item.product.price))
-        const quantity = amount / price
+        const quantity = Math.round((amount / price) * 100) / 100
         const subtotal = Math.round(amount * 100) / 100
         return {
           ...item,
@@ -299,7 +299,7 @@ export default function SellPage() {
         if (item.product.id !== productId) return item
         const price = item.product.price
         if (price <= 0) return item
-        const quantity = amount / price
+        const quantity = Math.round((amount / price) * 100) / 100
         const subtotal = Math.round(amount * 100) / 100
         return {
           ...item,
