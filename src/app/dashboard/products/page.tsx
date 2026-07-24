@@ -12,7 +12,7 @@ import { useToast } from '@/context/ToastContext'
 import { Product, Category } from '@/types'
 import { validateProductForm } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
-import { Search, Plus, Edit3, Trash2, Save } from 'lucide-react'
+import { Search, Plus, Edit3, Trash2, Save, PowerOff } from 'lucide-react'
 
 interface ProductWithMetrics extends Product {
   soldUnits: number
@@ -71,6 +71,8 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [deactivateConfirm, setDeactivateConfirm] = useState<Product | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null)
   const toast = useToast()
   const supabase = createClient()
 
@@ -391,10 +393,16 @@ export default function ProductsPage() {
       toast.info('Product is already inactive.')
       return
     }
+    setDeactivateConfirm(product)
+  }
+
+  async function confirmDeactivateProduct() {
+    if (!deactivateConfirm) return
     try {
-      const { error } = await supabase.from('products').update({ is_active: false }).eq('id', product.id)
+      const { error } = await supabase.from('products').update({ is_active: false }).eq('id', deactivateConfirm.id)
       if (error) throw error
       toast.success('Product deactivated successfully')
+      setDeactivateConfirm(null)
       fetchProducts()
     } catch (error) {
       const message = getSupabaseErrorMessage(error)
@@ -408,15 +416,17 @@ export default function ProductsPage() {
       toast.info('Deactivate the product first before deleting it.')
       return
     }
+    setDeleteConfirm(product)
+  }
 
-    const confirmed = window.confirm(`Delete "${product.name}"? This will remove the product and any attached variants.`)
-    if (!confirmed) return
-
+  async function confirmDeleteProduct() {
+    if (!deleteConfirm) return
     try {
-      const { error } = await supabase.from('products').delete().eq('id', product.id)
+      const { error } = await supabase.from('products').delete().eq('id', deleteConfirm.id)
       if (error) throw error
       toast.success('Product deleted successfully')
-      setSelectedProduct(current => (current?.id === product.id ? null : current))
+      setSelectedProduct(current => (current?.id === deleteConfirm.id ? null : current))
+      setDeleteConfirm(null)
       fetchProducts()
     } catch (error) {
       const message = getSupabaseErrorMessage(error)
@@ -609,9 +619,9 @@ export default function ProductsPage() {
                           onClick={e => {
                             e.stopPropagation()
                             if (product.is_active) {
-                              handleDeactivateProduct(product)
+                              setDeactivateConfirm(product)
                             } else {
-                              handleDeleteProduct(product)
+                              setDeleteConfirm(product)
                             }
                           }}
                           className={product.is_active ? 'text-slate-600 hover:text-red-600' : 'text-red-600 hover:text-red-700'}
@@ -1093,6 +1103,46 @@ export default function ProductsPage() {
             </label>
           </div>
         </Modal>
+
+        {deactivateConfirm && (
+          <Modal
+            isOpen={!!deactivateConfirm}
+            onClose={() => setDeactivateConfirm(null)}
+            title="Deactivate Product"
+            description={`Are you sure you want to deactivate "${deactivateConfirm.name}"?`}
+            footer={
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setDeactivateConfirm(null)} className="btn-secondary">Cancel</button>
+                <button onClick={confirmDeactivateProduct} className="btn-danger inline-flex items-center gap-2">
+                  <PowerOff className="w-4 h-4" /> Deactivate
+                </button>
+              </div>
+            }
+            size="sm"
+          >
+            <p className="text-sm text-slate-600">This product will no longer be available for sale. You can reactivate it later.</p>
+          </Modal>
+        )}
+
+        {deleteConfirm && (
+          <Modal
+            isOpen={!!deleteConfirm}
+            onClose={() => setDeleteConfirm(null)}
+            title="Delete Product"
+            description={`Are you sure you want to delete "${deleteConfirm.name}"?`}
+            footer={
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setDeleteConfirm(null)} className="btn-secondary">Cancel</button>
+                <button onClick={confirmDeleteProduct} className="btn-danger inline-flex items-center gap-2">
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            }
+            size="sm"
+          >
+            <p className="text-sm text-slate-600">This action cannot be undone. The product and any attached variants will be permanently removed.</p>
+          </Modal>
+        )}
       </div>
     </RoleGuard>
   )

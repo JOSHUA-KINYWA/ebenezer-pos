@@ -64,6 +64,7 @@ export default function SettingsPage() {
   const [productSearch, setProductSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [categoryDeleteConfirm, setCategoryDeleteConfirm] = useState<Category | null>(null)
   const toast = useToast()
   const supabase = createClient()
 
@@ -341,16 +342,20 @@ export default function SettingsPage() {
   }
 
   async function deleteCategory(category: Category) {
-    if (!confirm(`Delete category "${category.name}"? Products in this category will be uncategorized.`)) return
+    setCategoryDeleteConfirm(category)
+  }
 
+  async function confirmDeleteCategory() {
+    if (!categoryDeleteConfirm) return
     try {
-      const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', category.id)
+      const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', categoryDeleteConfirm.id)
       if (productError) throw productError
 
-      const { error } = await supabase.from('categories').delete().eq('id', category.id)
+      const { error } = await supabase.from('categories').delete().eq('id', categoryDeleteConfirm.id)
       if (error) throw error
 
       toast.success('Category deleted successfully')
+      setCategoryDeleteConfirm(null)
       await Promise.all([fetchCategories(), fetchProducts()])
     } catch (error) {
       toast.error('Unable to delete category')
@@ -496,7 +501,7 @@ export default function SettingsPage() {
                         </td>
                         <td className="table-cell text-right space-x-2">
                           <button onClick={() => openEditCategory(category)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
-                          <button onClick={() => deleteCategory(category)} className="text-slate-600 hover:text-red-600"><Trash2 className="inline w-4 h-4" /></button>
+                          <button onClick={() => setCategoryDeleteConfirm(category)} className="text-slate-600 hover:text-red-600"><Trash2 className="inline w-4 h-4" /></button>
                         </td>
                       </tr>
                     ))
@@ -534,6 +539,26 @@ export default function SettingsPage() {
             </label>
           </div>
         </Modal>
+
+        {categoryDeleteConfirm && (
+          <Modal
+            isOpen={!!categoryDeleteConfirm}
+            onClose={() => setCategoryDeleteConfirm(null)}
+            title="Delete Category"
+            description={`Are you sure you want to delete "${categoryDeleteConfirm.name}"?`}
+            footer={
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setCategoryDeleteConfirm(null)} className="btn-secondary">Cancel</button>
+                <button onClick={confirmDeleteCategory} className="btn-danger inline-flex items-center gap-2">
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            }
+            size="sm"
+          >
+            <p className="text-sm text-slate-600">Products in this category will be uncategorized. This is permanent.</p>
+          </Modal>
+        )}
 
         {activeTab === 'account' && (
           <div className="card p-6">

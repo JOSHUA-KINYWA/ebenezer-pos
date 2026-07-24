@@ -139,6 +139,9 @@ export default function CategoriesPage() {
 
   async function handleDeleteCategory(category: Category) {
     try {
+      const { error: productError } = await supabase.from('products').update({ category_id: null }).eq('category_id', category.id)
+      if (productError) throw productError
+
       const { error } = await supabase.from('categories').delete().eq('id', category.id)
       if (error) throw error
       toast.success('Category deleted successfully')
