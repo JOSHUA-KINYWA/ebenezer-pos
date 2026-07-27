@@ -78,6 +78,24 @@ export default function SellPage() {
   }, [cart])
 
   useEffect(() => {
+    if (cart.length === 0 || products.length === 0) return
+    setCart(prev =>
+      prev.map(item => {
+        const updated = products.find(p => p.id === item.product.id)
+        if (!updated) return item
+        if (updated.price === item.product.price && updated.cost_price === item.product.cost_price && updated.stock_qty === item.product.stock_qty) {
+          return item
+        }
+        return {
+          ...item,
+          product: updated,
+          subtotal: item.saleMode === 'amount' ? item.subtotal : Math.round(item.quantity * updated.price * 100) / 100,
+        }
+      })
+    )
+  }, [products, cart.length])
+
+  useEffect(() => {
     if (cart.length === 0) {
       setCartMismatchWarning(null)
       return
@@ -152,13 +170,29 @@ export default function SellPage() {
 
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id)
+      const step = getIncrementStep(product.unit)
+
       const next = existing
-        ? prev.map(item =>
-            item.product.id === product.id
-              ? { ...item, quantity: item.quantity + 1, subtotal: Math.round((item.subtotal + product.price) * 100) / 100, saleMode: (item.saleMode ?? 'quantity') as 'quantity' | 'amount' }
-              : item
-          )
-        : [...prev, { product, quantity: 1, subtotal: product.price, saleMode: 'quantity' as const }]
+        ? prev.map(item => {
+            if (item.product.id !== product.id) return item
+            if (item.saleMode === 'amount') {
+              const newSubtotal = Math.round((item.subtotal + item.subtotal) * 100) / 100
+              const newQty = Math.round((newSubtotal / item.product.price) * 10) / 10
+              return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'amount' as const }
+            }
+            const newQty = Math.round((item.quantity + step) * 10) / 10
+            const newSubtotal = Math.round(newQty * item.product.price * 100) / 100
+            return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'quantity' as const }
+          })
+        : [
+            ...prev,
+            {
+              product,
+              quantity: 1,
+              subtotal: product.price,
+              saleMode: 'quantity' as const,
+            },
+          ]
 
       if (existing) {
         toast.info(`Added another ${formatProductName(product)}`)
@@ -191,7 +225,7 @@ export default function SellPage() {
   }
 
   function formatQtyDisplay(qty: number, unit: string): string {
-    return isDecimalUnit(unit) ? qty.toFixed(2) : qty.toString()
+    return isDecimalUnit(unit) ? qty.toFixed(1) : qty.toString()
   }
 
   function updateQty(productId: string, qty: number) {
@@ -200,7 +234,7 @@ export default function SellPage() {
 
     const isDecimal = isDecimalUnit(cartItem.product.unit)
     const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
-    const finalQty = isDecimal ? Math.round(validQty * 100) / 100 : Math.round(validQty)
+    const finalQty = isDecimal ? Math.round(validQty * 10) / 10 : Math.round(validQty)
 
     setCart(prev =>
       prev.map(item =>
@@ -221,7 +255,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
+          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * item.product.price, saleMode: 'quantity' }
           : item
       )
     )
@@ -237,7 +271,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 100) / 100, subtotal: Math.round(newQty * 100) / 100 * item.product.price, saleMode: 'quantity' }
+          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * item.product.price, saleMode: 'quantity' }
           : item
       )
     )
@@ -261,8 +295,8 @@ export default function SellPage() {
 
         const price = item.product.price
         if (price <= 0) return item
-        const amount = Math.max(1, Math.round(item.subtotal || item.product.price))
-        const quantity = Math.round((amount / price) * 100) / 100
+        const amount = Math.max(0.01, item.subtotal || item.product.price)
+        const quantity = Math.round((amount / price) * 10) / 10
         const subtotal = Math.round(amount * 100) / 100
         return {
           ...item,
@@ -293,13 +327,13 @@ export default function SellPage() {
   }
 
   function updateAmount(productId: string, amount: number) {
-    if (amount < 1) return
+    if (amount < 0.01) return
     setCart(prev =>
       prev.map(item => {
         if (item.product.id !== productId) return item
         const price = item.product.price
         if (price <= 0) return item
-        const quantity = Math.round((amount / price) * 100) / 100
+        const quantity = Math.round((amount / price) * 10) / 10
         const subtotal = Math.round(amount * 100) / 100
         return {
           ...item,
@@ -577,8 +611,8 @@ export default function SellPage() {
                               </button>
                               <input
                                 type="number"
-                                min="0.01"
-                                step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
+                                 min="0.01"
+                                step={isDecimalUnit(item.product.unit) ? '0.1' : '1'}
                                 value={formatQtyDisplay(item.quantity, item.product.unit)}
                                 onChange={e => updateQty(item.product.id, Number(e.target.value) || 0.01)}
                                 className="input w-12 text-center border-0 p-0.5 text-xs"
@@ -887,25 +921,25 @@ export default function SellPage() {
                         </button>
                       </div>
 
-                       {item.saleMode === 'amount' ? (
-                         <div className="flex-1 flex items-center gap-2">
-                           <span className="text-xs text-slate-500 whitespace-nowrap">KSh</span>
-                           <input
-                             type="number"
-                             min="1"
-                             step="1"
-                             value={Math.round(item.subtotal)}
-                             onChange={e => updateAmount(item.product.id, Math.max(1, Math.round(Number(e.target.value) || 0)))}
-                             className="input flex-1 text-right font-semibold"
-                             placeholder="0"
-                           />
-                         </div>
-                       ) : (
+                        {item.saleMode === 'amount' ? (
+                          <div className="flex-1 flex items-center gap-2">
+                            <span className="text-xs text-slate-500 whitespace-nowrap">KSh</span>
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={item.subtotal.toFixed(2)}
+                              onChange={e => updateAmount(item.product.id, Math.max(0.01, Number(e.target.value) || 0))}
+                              className="input flex-1 text-right font-semibold"
+                              placeholder="0.00"
+                            />
+                          </div>
+                        ) : (
                         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1">
                           <button
                             type="button"
                             onClick={() => decreaseQty(item.product.id)}
-                            disabled={item.quantity <= 1}
+                            disabled={item.quantity <= 0.01}
                             className="rounded p-1.5 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Decrease quantity"
                           >
@@ -913,10 +947,10 @@ export default function SellPage() {
                           </button>
                           <input
                             type="number"
-                            min="1"
-                            step={isDecimalUnit(item.product.unit) ? '0.5' : '1'}
+                            min="0.01"
+                            step={isDecimalUnit(item.product.unit) ? '0.1' : '1'}
                             value={formatQtyDisplay(item.quantity, item.product.unit)}
-                            onChange={e => updateQty(item.product.id, Number(e.target.value) || 1)}
+                            onChange={e => updateQty(item.product.id, Number(e.target.value) || 0.01)}
                             className="input w-12 border-0 bg-transparent p-1 text-center"
                           />
                           <button
