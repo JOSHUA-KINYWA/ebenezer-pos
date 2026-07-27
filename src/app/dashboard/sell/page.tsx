@@ -24,7 +24,6 @@ export default function SellPage() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [cart, setCart] = useState<CartItem[]>([])
-  const [quickAddValue, setQuickAddValue] = useState('')
   const [paymentType, setPaymentType] = useState<POSPaymentType>('cash')
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('cash')
   const [isReviewingPayment, setIsReviewingPayment] = useState(false)
@@ -472,27 +471,6 @@ export default function SellPage() {
     cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  function handleQuickAddSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const trimmed = quickAddValue.trim()
-    if (!trimmed) {
-      toast.error('❌ Enter a product name')
-      return
-    }
-    const found = products.find(product => product.name.toLowerCase() === trimmed.toLowerCase())
-    if (found) {
-      if (found.stock_qty === 0) {
-        toast.error(`❌ ${formatProductName(found)} is out of stock!`)
-      } else {
-        handleProductSelect(found)
-        toast.success(`✓ Added ${formatProductName(found)}`)
-      }
-      setQuickAddValue('')
-    } else {
-      toast.error(`❌ Product not found: ${trimmed}`)
-    }
-  }
-
   if (loading) return <LoadingSpinner label="Loading products..." />
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0)
@@ -717,24 +695,6 @@ export default function SellPage() {
                 className="input pl-9 w-full"
               />
             </div>
-
-            <form onSubmit={handleQuickAddSubmit} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="flex-1">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</label>
-                  <input
-                    type="text"
-                    value={quickAddValue}
-                    onChange={e => setQuickAddValue(e.target.value)}
-                    placeholder="Enter product name"
-                    className="input mt-1 w-full"
-                  />
-                </div>
-                <button type="submit" className="btn-primary px-4 py-3 sm:self-end">
-                  Quick add
-                </button>
-              </div>
-            </form>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
