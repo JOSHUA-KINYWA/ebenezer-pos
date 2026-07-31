@@ -453,7 +453,7 @@ export default function StockPage() {
   if (error) return <div className="flex items-center justify-center py-20 text-center text-sm text-red-600">{error}</div>
 
   return (
-    <RoleGuard allowed={['owner', 'cashier']}>
+    <RoleGuard allowed={['owner']}>
       <div className="space-y-6">
         <PageHeader title="Inventory" description="Manage stock and products" />
 

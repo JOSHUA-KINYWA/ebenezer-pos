@@ -273,7 +273,7 @@ export default function ReportsPage() {
   if (loading) return <LoadingSpinner label="Loading reports..." />
 
   return (
-    <RoleGuard allowed={['owner', 'cashier']}>
+    <RoleGuard allowed={['owner']}>
       <div className="space-y-6">
         <PageHeader title="Reports & Analytics" description={
           user?.role === 'cashier'

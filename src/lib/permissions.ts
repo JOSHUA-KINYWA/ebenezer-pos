@@ -3,6 +3,8 @@ import { Role } from '@/types'
 export const OWNER_ONLY_ROUTES = [
   '/dashboard/categories',
   '/dashboard/products',
+  '/dashboard/reports',
+  '/dashboard/stock',
   '/dashboard/staff',
   '/dashboard/settings',
   '/dashboard/drawer',

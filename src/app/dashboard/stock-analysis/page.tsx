@@ -15,7 +15,7 @@ export default function StockAnalysisPage() {
 
   if (!redirecting) return null
   return (
-    <RoleGuard allowed={['owner', 'cashier']}>
+    <RoleGuard allowed={['owner']}>
       <div className="flex items-center justify-center h-full py-20 text-slate-500">Redirecting to stock analysis...</div>
     </RoleGuard>
   )

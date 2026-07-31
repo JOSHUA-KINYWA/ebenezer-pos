@@ -238,8 +238,8 @@ export default function DashboardPage() {
 
   const quickActions = ([
     { label: 'New Sale', icon: ShoppingCart, href: '/dashboard/sell', color: 'bg-emerald-500', roles: ['owner', 'cashier'] as Role[] },
-    { label: 'Stock', icon: Package, href: '/dashboard/stock', color: 'bg-blue-500', roles: ['owner', 'cashier'] as Role[] },
-    { label: 'Reports', icon: BarChart2, href: '/dashboard/reports', color: 'bg-amber-500', roles: ['owner', 'cashier'] as Role[] },
+    { label: 'Stock', icon: Package, href: '/dashboard/stock', color: 'bg-blue-500', roles: ['owner'] as Role[] },
+    { label: 'Reports', icon: BarChart2, href: '/dashboard/reports', color: 'bg-amber-500', roles: ['owner'] as Role[] },
     { label: 'My Sales', icon: Receipt, href: '/dashboard/my-sales', color: 'bg-sky-500', roles: ['owner', 'cashier'] as Role[] },
     { label: 'Expenses', icon: TrendingDown, href: '/dashboard/expenses', color: 'bg-red-500', roles: ['owner'] as Role[] },
     { label: 'Drawer', icon: Wallet, href: '/dashboard/drawer', color: 'bg-violet-500', roles: ['owner'] as Role[] },
