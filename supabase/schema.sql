@@ -470,7 +470,7 @@ CREATE TABLE IF NOT EXISTS cashier_device_approvals (
   device_info jsonb,
   device_location text,
   status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'revoked')) DEFAULT 'pending',
-  requested_duration_hours integer NOT NULL DEFAULT 12,
+  requested_duration_hours integer NOT NULL DEFAULT 24,
   approved_duration_hours integer,
   expires_at timestamptz,
   review_token text UNIQUE,

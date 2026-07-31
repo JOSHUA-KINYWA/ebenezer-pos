@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS cashier_device_approvals (
   device_id text NOT NULL,
   device_name text,
   status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'revoked')) DEFAULT 'pending',
-  requested_duration_hours integer NOT NULL DEFAULT 12,
+  requested_duration_hours integer NOT NULL DEFAULT 24,
   approved_duration_hours integer,
   expires_at timestamptz,
   reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL,

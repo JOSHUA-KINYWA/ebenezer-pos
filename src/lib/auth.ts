@@ -3,7 +3,7 @@ import { SessionUser, User } from '@/types'
 const SESSION_KEY = 'pos_user'
 const HELD_CART_KEY = 'pos_held_cart'
 const DEVICE_KEY = 'pos_device_id'
-const SESSION_INACTIVITY_MS = 12 * 60 * 60 * 1000 // 12 hours
+const SESSION_INACTIVITY_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 type StoredSession = SessionUser & {
   last_active_at?: string
