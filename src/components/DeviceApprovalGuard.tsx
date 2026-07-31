@@ -55,18 +55,7 @@ export function DeviceApprovalGuard({ children }: DeviceApprovalGuardProps) {
       if (error) throw error
 
       if (data?.status === 'approved') {
-        // Check if approval has expired
-        if (data.expires_at) {
-          const expiresAt = new Date(data.expires_at)
-          if (new Date() > expiresAt) {
-            setApproved(false)
-            setDeviceName(getDeviceName())
-          } else {
-            setApproved(true)
-          }
-        } else {
-          setApproved(true)
-        }
+        setApproved(true)
       } else if (data?.status === 'revoked') {
         clearSession()
         router.replace('/login')

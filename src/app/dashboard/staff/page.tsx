@@ -56,7 +56,6 @@ export default function StaffPage() {
   const [reviewingDevice, setReviewingDevice] = useState<CashierDeviceApproval | null>(null)
   const [approvingDevice, setApprovingDevice] = useState(false)
   const [revokingDevice, setRevokingDevice] = useState(false)
-  const [deviceApprovalDuration, setDeviceApprovalDuration] = useState('12')
   const toast = useToast()
   const supabase = createClient()
 
@@ -286,24 +285,19 @@ export default function StaffPage() {
 
   async function handleApproveDevice(device: CashierDeviceApproval) {
     setApprovingDevice(true)
-    const duration = parseInt(deviceApprovalDuration) || 12
     try {
-      const expiresAt = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString()
       const { error } = await supabase
         .from('cashier_device_approvals')
         .update({
           status: 'approved',
-          approved_duration_hours: duration,
-          expires_at: expiresAt,
           reviewed_by: user?.id,
           reviewed_at: new Date().toISOString(),
         })
         .eq('id', device.id)
 
       if (error) throw error
-      toast.success(`Device approved for ${duration} hours`)
+      toast.success('Device approved permanently')
       setReviewingDevice(null)
-      setDeviceApprovalDuration('12')
       fetchStaff()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to approve device'
@@ -322,7 +316,6 @@ export default function StaffPage() {
           status: 'revoked',
           reviewed_by: user?.id,
           reviewed_at: new Date().toISOString(),
-          expires_at: new Date().toISOString(),
         })
         .eq('id', device.id)
 
@@ -352,7 +345,6 @@ export default function StaffPage() {
       if (error) throw error
       toast.success('Device approval rejected')
       setReviewingDevice(null)
-      setDeviceApprovalDuration('12')
       fetchStaff()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to reject device'
@@ -716,8 +708,7 @@ export default function StaffPage() {
                               <p className="font-semibold text-slate-900">{device.user?.full_name || 'Unknown'}</p>
                               <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
                               <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
-                              <p className="text-xs text-slate-400">Requested: {formatDateTime(device.created_at)}</p>
-                              <p className="text-xs text-slate-400">Duration: {device.requested_duration_hours} hours</p>
+                               <p className="text-xs text-slate-400">Requested: {formatDateTime(device.created_at)}</p>
                             </div>
                           </div>
                           <div className="flex gap-2 mt-3">
@@ -745,7 +736,6 @@ export default function StaffPage() {
                               <p className="text-sm text-slate-500">{device.user?.email || 'Unknown email'}</p>
                               <p className="text-xs text-slate-400 mt-1">Device: <span className="font-medium text-slate-600">{device.device_name || device.device_id}</span></p>
                               <p className="text-xs text-slate-400">Approved: {formatDateTime(device.reviewed_at || device.created_at)}</p>
-                              <p className="text-xs text-slate-400">Expires: {device.expires_at ? formatDate(device.expires_at) : 'Never'}</p>
                             </div>
                           </div>
                           <div className="flex gap-2 mt-3">
@@ -778,12 +768,12 @@ export default function StaffPage() {
         {reviewingDevice && (
           <Modal
             isOpen={!!reviewingDevice}
-            onClose={() => { setReviewingDevice(null); setDeviceApprovalDuration('12') }}
+            onClose={() => { setReviewingDevice(null) }}
             title="Review Device Approval"
             description={`Review device access request from ${reviewingDevice.user?.full_name || 'Unknown'}`}
             footer={
               <div className="flex justify-end gap-3">
-                <button onClick={() => { setReviewingDevice(null); setDeviceApprovalDuration('12') }} className="btn-secondary">Cancel</button>
+                <button onClick={() => { setReviewingDevice(null) }} className="btn-secondary">Cancel</button>
                 <button onClick={() => handleRejectDevice(reviewingDevice)} className="btn-danger inline-flex items-center gap-2">
                   <XCircle className="w-4 h-4" /> Reject
                 </button>
@@ -807,10 +797,6 @@ export default function StaffPage() {
                 <div>
                   <p className="text-xs text-slate-500">Device</p>
                   <p className="text-sm font-semibold text-slate-900 break-all">{reviewingDevice.device_name || reviewingDevice.device_id}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Requested Duration</p>
-                  <p className="text-sm font-semibold text-slate-900">{reviewingDevice.requested_duration_hours} hours</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Submitted</p>
@@ -860,20 +846,6 @@ export default function StaffPage() {
                   </div>
                 </div>
               )}
-
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">Approval Duration (hours)</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="720"
-                  className="input w-full"
-                  placeholder="Enter approval duration in hours"
-                  value={deviceApprovalDuration}
-                  onChange={e => setDeviceApprovalDuration(e.target.value)}
-                />
-                <p className="text-xs text-slate-500">The device will be approved for this duration. Default: 12 hours</p>
-              </label>
             </div>
           </Modal>
         )}

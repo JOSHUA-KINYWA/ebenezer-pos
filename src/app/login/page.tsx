@@ -103,7 +103,6 @@ export default function LoginPage() {
             device_info: deviceInfo,
             device_location: locationInfo,
             status: 'pending',
-            requested_duration_hours: 12,
             updated_at: now,
           }, { onConflict: 'user_id,device_id' })
 
