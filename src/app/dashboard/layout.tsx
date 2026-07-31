@@ -165,6 +165,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     events.forEach(eventName => window.addEventListener(eventName, updateActivity))
 
     const checkInterval = window.setInterval(() => {
+      refreshSession()
       if (!getSession()) {
         logout()
       }
