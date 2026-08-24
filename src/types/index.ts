@@ -48,6 +48,8 @@ export interface Product {
   initial_stock?: number
   is_active: boolean
   created_at: string
+  group_size?: number
+  group_price?: number | null
   category?: Category | { name: string }
   variants?: Product[]
 }

@@ -82,13 +82,15 @@ export default function SellPage() {
       prev.map(item => {
         const updated = products.find(p => p.id === item.product.id)
         if (!updated) return item
-        if (updated.price === item.product.price && updated.cost_price === item.product.cost_price && updated.stock_qty === item.product.stock_qty) {
+        const newUnitPrice = getEffectiveUnitPrice(updated)
+        const oldUnitPrice = getEffectiveUnitPrice(item.product)
+        if (oldUnitPrice === newUnitPrice && updated.cost_price === item.product.cost_price && updated.stock_qty === item.product.stock_qty) {
           return item
         }
         return {
           ...item,
           product: updated,
-          subtotal: item.saleMode === 'amount' ? item.subtotal : Math.round(item.quantity * updated.price * 100) / 100,
+          subtotal: item.saleMode === 'amount' ? item.subtotal : Math.round(item.quantity * newUnitPrice * 100) / 100,
         }
       })
     )
@@ -101,7 +103,7 @@ export default function SellPage() {
     }
 
     const mismatched = cart.filter(item => {
-      const price = Number(item.product.price || 0)
+      const price = getEffectiveUnitPrice(item.product)
       if (price <= 0) return false
       const expected = Math.round(item.quantity * price * 100) / 100
       return Math.abs(expected - item.subtotal) > 0.01
@@ -167,9 +169,11 @@ export default function SellPage() {
       return
     }
 
+    const unitPrice = getEffectiveUnitPrice(product)
+
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id)
-      const step = getIncrementStep(product.unit)
+      const step = getIncrementStep(product.unit, product)
 
       const next = existing
         ? prev.map(item => {
@@ -180,15 +184,15 @@ export default function SellPage() {
               return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'amount' as const }
             }
             const newQty = Math.round((item.quantity + step) * 10) / 10
-            const newSubtotal = Math.round(newQty * item.product.price * 100) / 100
+            const newSubtotal = Math.round(newQty * unitPrice * 100) / 100
             return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'quantity' as const }
           })
         : [
             ...prev,
             {
               product,
-              quantity: 1,
-              subtotal: product.price,
+              quantity: step,
+              subtotal: Math.round(step * unitPrice * 100) / 100,
               saleMode: 'quantity' as const,
             },
           ]
@@ -219,8 +223,22 @@ export default function SellPage() {
     return decimalUnits.some(u => unit.toLowerCase().includes(u))
   }
 
-  function getIncrementStep(unit: string): number {
-    return isDecimalUnit(unit) ? 0.5 : 1
+  function getGroupSize(product: Product): number {
+    const gs = product.group_size || 1
+    return gs > 0 ? gs : 1
+  }
+
+  function getEffectiveUnitPrice(product: Product): number {
+    if (product.group_price && product.group_price > 0 && getGroupSize(product) > 1) {
+      return Math.round((product.group_price / getGroupSize(product)) * 100) / 100
+    }
+    return Number(product.price) || 0
+  }
+
+  function getIncrementStep(unit: string, product?: Product): number {
+    const baseStep = isDecimalUnit(unit) ? 0.5 : 1
+    const multiplier = product ? getGroupSize(product) : 1
+    return Math.round(baseStep * multiplier * 10) / 10
   }
 
   function formatQtyDisplay(qty: number, unit: string): string {
@@ -235,10 +253,12 @@ export default function SellPage() {
     const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
     const finalQty = isDecimal ? Math.round(validQty * 10) / 10 : Math.round(validQty)
 
+    const unitPrice = getEffectiveUnitPrice(cartItem.product)
+
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: finalQty, subtotal: Math.round(finalQty * item.product.price * 100) / 100, saleMode: 'quantity' }
+          ? { ...item, quantity: finalQty, subtotal: Math.round(finalQty * unitPrice * 100) / 100, saleMode: 'quantity' }
           : item
       )
     )
@@ -248,13 +268,15 @@ export default function SellPage() {
     const cartItem = cart.find(item => item.product.id === productId)
     if (!cartItem) return
 
-    const step = getIncrementStep(cartItem.product.unit)
+    const step = getIncrementStep(cartItem.product.unit, cartItem.product)
     const newQty = cartItem.quantity + step
+
+    const unitPrice = getEffectiveUnitPrice(cartItem.product)
 
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * item.product.price, saleMode: 'quantity' }
+          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * unitPrice, saleMode: 'quantity' }
           : item
       )
     )
@@ -264,13 +286,16 @@ export default function SellPage() {
     const cartItem = cart.find(item => item.product.id === productId)
     if (!cartItem) return
 
-    const step = getIncrementStep(cartItem.product.unit)
-    const newQty = Math.max(0.01, cartItem.quantity - step)
+    const step = getIncrementStep(cartItem.product.unit, cartItem.product)
+    const minQty = step
+    const newQty = Math.max(minQty, cartItem.quantity - step)
+
+    const unitPrice = getEffectiveUnitPrice(cartItem.product)
 
     setCart(prev =>
       prev.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * item.product.price, saleMode: 'quantity' }
+          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * unitPrice, saleMode: 'quantity' }
           : item
       )
     )
@@ -281,9 +306,11 @@ export default function SellPage() {
       prev.map(item => {
         if (item.product.id !== productId) return item
 
+        const unitPrice = getEffectiveUnitPrice(item.product)
+
         if (saleMode === 'quantity') {
           const quantity = Math.max(0.01, item.quantity || 1)
-          const subtotal = Math.round(quantity * item.product.price * 100) / 100
+          const subtotal = Math.round(quantity * unitPrice * 100) / 100
           return {
             ...item,
             saleMode,
@@ -292,10 +319,9 @@ export default function SellPage() {
           }
         }
 
-        const price = item.product.price
-        if (price <= 0) return item
-        const amount = Math.max(0.01, item.subtotal || item.product.price)
-        const quantity = Math.round((amount / price) * 10) / 10
+        if (unitPrice <= 0) return item
+        const amount = Math.max(0.01, item.subtotal || unitPrice)
+        const quantity = Math.round((amount / unitPrice) * 10) / 10
         const subtotal = Math.round(amount * 100) / 100
         return {
           ...item,
@@ -317,12 +343,14 @@ export default function SellPage() {
 
   function getItemProfit(item: CartItem) {
     const cost = Number(item.product.cost_price || 0)
-    return Math.round((item.product.price - cost) * item.quantity * 100) / 100
+    const unitPrice = getEffectiveUnitPrice(item.product)
+    return Math.round((unitPrice - cost) * item.quantity * 100) / 100
   }
 
   function getItemProfitPerUnit(item: CartItem) {
     const cost = Number(item.product.cost_price || 0)
-    return Math.round((item.product.price - cost) * 100) / 100
+    const unitPrice = getEffectiveUnitPrice(item.product)
+    return Math.round((unitPrice - cost) * 100) / 100
   }
 
   function updateAmount(productId: string, amount: number) {
@@ -330,9 +358,9 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item => {
         if (item.product.id !== productId) return item
-        const price = item.product.price
-        if (price <= 0) return item
-        const quantity = Math.round((amount / price) * 10) / 10
+        const unitPrice = getEffectiveUnitPrice(item.product)
+        if (unitPrice <= 0) return item
+        const quantity = Math.round((amount / unitPrice) * 10) / 10
         const subtotal = Math.round(amount * 100) / 100
         return {
           ...item,
@@ -392,16 +420,16 @@ export default function SellPage() {
 
     setSubmitting(true)
 
-    const stockChecks = await Promise.all(
-      cart.map(async item => {
-        const { data: product, error } = await supabase.from('products').select('id, stock_qty').eq('id', item.product.id).single()
-        if (error || !product) throw new Error(`Unable to verify stock for ${formatProductName(item.product)}`)
-        if (Number(product.stock_qty) < item.quantity) {
-          throw new Error(`${formatProductName(item.product)} only has ${product.stock_qty} available`)
-        }
-        return product
-      })
-    )
+       const stockChecks = await Promise.all(
+        cart.map(async item => {
+          const { data: product, error } = await supabase.from('products').select('id, stock_qty').eq('id', item.product.id).single()
+          if (error || !product) throw new Error(`Unable to verify stock for ${formatProductName(item.product)}`)
+          if (Number(product.stock_qty) < item.quantity) {
+            throw new Error(`${formatProductName(item.product)} only has ${product.stock_qty} ${item.product.unit} available`)
+          }
+          return product
+        })
+      )
 
     if (!stockChecks.length) {
       toast.error('❌ No items available for sale')
@@ -414,7 +442,7 @@ export default function SellPage() {
         product_id: item.product.id,
         product_name: formatProductName(item.product),
         quantity: item.quantity,
-        unit_price: item.product.price,
+        unit_price: getEffectiveUnitPrice(item.product),
         subtotal: item.subtotal,
       }))
 
@@ -545,9 +573,11 @@ export default function SellPage() {
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1">
                           <p className="font-medium text-xs">{formatProductName(item.product)}</p>
-                          <p className="text-xs text-slate-500">
-                            {formatMoney(item.product.price, settings.currency)} each · {formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} {item.product.unit} in stock
-                          </p>
+                           <p className="text-xs text-slate-500">
+                             {item.product.group_price && item.product.group_price > 0 && getGroupSize(item.product) > 1
+                               ? `${formatMoney(getEffectiveUnitPrice(item.product), settings.currency)}/unit (${formatMoney(item.product.group_price, settings.currency)} per pack of ${getGroupSize(item.product)}) · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · ${item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`
+                               : `${formatMoney(item.product.price, settings.currency)} each · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · ${item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`}
+                           </p>
                         </div>
                         <button
                           type="button"
@@ -582,17 +612,17 @@ export default function SellPage() {
                               <button
                                 type="button"
                                 onClick={() => decreaseQty(item.product.id)}
-                                disabled={item.quantity <= 0.01}
+                                disabled={item.quantity <= getIncrementStep(item.product.unit, item.product)}
                                 className="p-1 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed rounded"
                               >
                                 <Minus className="w-3 h-3 text-slate-600" />
                               </button>
                               <input
                                 type="number"
-                                 min="0.01"
-                                step={isDecimalUnit(item.product.unit) ? '0.1' : '1'}
+                                 min={getIncrementStep(item.product.unit, item.product).toString()}
+                                step={getIncrementStep(item.product.unit, item.product).toString()}
                                 value={formatQtyDisplay(item.quantity, item.product.unit)}
-                                onChange={e => updateQty(item.product.id, Number(e.target.value) || 0.01)}
+                                onChange={e => updateQty(item.product.id, Number(e.target.value) || getIncrementStep(item.product.unit, item.product))}
                                 className="input w-12 text-center border-0 p-0.5 text-xs"
                               />
                               <button
@@ -723,38 +753,43 @@ export default function SellPage() {
                 No products match this filter.
               </div>
             ) : (
-              filteredParentProducts.map(product => {
+                  filteredParentProducts.map(product => {
                 const variants = getProductVariants(product.id)
                 const hasVariants = variants.length > 0
+                const isGrouped = product.group_price && product.group_price > 0 && getGroupSize(product) > 1
                 return (
                   <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${hasVariants ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : 'Product'}
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${hasVariants ? 'bg-amber-100 text-amber-700' : isGrouped ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : isGrouped ? `Pack of ${getGroupSize(product)}` : 'Product'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
-                    <div className="grid gap-2 text-sm text-slate-600 mb-3">
-                      <div className="flex items-center justify-between">
-                        <span>Price</span>
-                        <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Cost</span>
-                        <span className="font-semibold text-slate-900">{formatMoney(product.cost_price ?? 0, settings.currency)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Profit/unit</span>
-                        <span className="font-semibold text-slate-900">{formatMoney(product.price - (product.cost_price ?? 0), settings.currency)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Stock</span>
-                        <span className="font-semibold text-slate-900">
-                          {hasVariants ? getAggregateStock(product).toLocaleString() : `${product.stock_qty} ${product.unit}`}
-                        </span>
-                      </div>
-                    </div>
+                     <div className="grid gap-2 text-sm text-slate-600 mb-3">
+                       <div className="flex items-center justify-between">
+                         <span>Price</span>
+                         <span className="font-semibold text-slate-900">
+                           {product.group_price && product.group_price > 0 && getGroupSize(product) > 1
+                             ? `${formatMoney(getEffectiveUnitPrice(product), settings.currency)}/unit (${formatMoney(product.group_price, settings.currency)} per pack of ${getGroupSize(product)})`
+                             : formatMoney(product.price, settings.currency)}
+                         </span>
+                       </div>
+                       <div className="flex items-center justify-between">
+                         <span>Cost</span>
+                         <span className="font-semibold text-slate-900">{formatMoney(product.cost_price ?? 0, settings.currency)}</span>
+                       </div>
+                       <div className="flex items-center justify-between">
+                         <span>Profit/unit</span>
+                         <span className="font-semibold text-slate-900">{formatMoney(getEffectiveUnitPrice(product) - (product.cost_price ?? 0), settings.currency)}</span>
+                       </div>
+                       <div className="flex items-center justify-between">
+                         <span>Stock</span>
+                         <span className="font-semibold text-slate-900">
+                           {hasVariants ? getAggregateStock(product).toLocaleString() : `${product.stock_qty} ${product.unit}`}
+                         </span>
+                       </div>
+                     </div>
 
                     {hasVariants && (
                       <div className="mb-3">
@@ -769,7 +804,7 @@ export default function SellPage() {
                             >
                               <Plus className="w-3 h-3" />
                               {formatProductName(variant)}
-                              <span className="text-slate-400">({formatMoney(variant.price, settings.currency)})</span>
+                               <span className="text-slate-400">({formatMoney(getEffectiveUnitPrice(variant), settings.currency)})</span>
                             </button>
                           ))}
                         </div>
@@ -842,9 +877,11 @@ export default function SellPage() {
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex-1">
                         <p className="font-semibold text-sm text-slate-900">{formatProductName(item.product)}</p>
-                        <p className="text-xs text-slate-500">
-                          {formatMoney(item.product.price, settings.currency)} per unit · {formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · {formatMoney(item.product.price - (item.product.cost_price ?? 0), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} {item.product.unit} in stock
-                        </p>
+                       <p className="text-xs text-slate-500">
+                         {item.product.group_price && item.product.group_price > 0 && getGroupSize(item.product) > 1
+                           ? `${formatMoney(getEffectiveUnitPrice(item.product), settings.currency)}/unit (${formatMoney(item.product.group_price, settings.currency)} per pack of ${getGroupSize(item.product)}) · ${formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} {item.product.unit} in stock`
+                           : `${formatMoney(item.product.price, settings.currency)} per unit · ${formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · ${formatMoney(item.product.price - (item.product.cost_price ?? 0), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`}
+                       </p>
                       </div>
                       <button
                         type="button"
@@ -907,10 +944,10 @@ export default function SellPage() {
                           </button>
                           <input
                             type="number"
-                            min="0.01"
-                            step={isDecimalUnit(item.product.unit) ? '0.1' : '1'}
+                            min={getIncrementStep(item.product.unit, item.product).toString()}
+                            step={getIncrementStep(item.product.unit, item.product).toString()}
                             value={formatQtyDisplay(item.quantity, item.product.unit)}
-                            onChange={e => updateQty(item.product.id, Number(e.target.value) || 0.01)}
+                            onChange={e => updateQty(item.product.id, Number(e.target.value) || getIncrementStep(item.product.unit, item.product))}
                             className="input w-12 border-0 bg-transparent p-1 text-center"
                           />
                           <button

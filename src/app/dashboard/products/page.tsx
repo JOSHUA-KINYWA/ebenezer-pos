@@ -38,6 +38,8 @@ interface ProductForm {
   stock_alert: string
   is_active: boolean
   product_type: 'standalone' | 'parent'
+  group_size: string
+  group_price: string
 }
 
 const initialForm: ProductForm = {
@@ -54,6 +56,8 @@ const initialForm: ProductForm = {
   stock_alert: '10',
   is_active: true,
   product_type: 'standalone',
+  group_size: '1',
+  group_price: '',
 }
 
 export default function ProductsPage() {
@@ -199,6 +203,8 @@ export default function ProductsPage() {
       category_id: categories[0]?.id ?? '',
       parent_product_id: '',
       product_type: 'standalone',
+      group_size: '1',
+      group_price: '',
     })
     setErrors({})
     setEditingProduct(null)
@@ -217,6 +223,8 @@ export default function ProductsPage() {
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
       name: '',
       product_type: 'standalone',
+      group_size: (parent?.group_size || 1).toString(),
+      group_price: parent?.group_price !== undefined && parent?.group_price !== null ? parent.group_price.toString() : '',
     })
     setErrors({})
     setVariantsDraft([])
@@ -242,6 +250,8 @@ export default function ProductsPage() {
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
       product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
+      group_size: (product.group_size || 1).toString(),
+      group_price: product.group_price !== undefined && product.group_price !== null ? product.group_price.toString() : '',
     })
     setErrors({})
     setVariantsDraft([])
@@ -266,6 +276,8 @@ export default function ProductsPage() {
         stock_alert: form.stock_alert,
         is_active: true,
         product_type: 'standalone',
+        group_size: form.group_size,
+        group_price: form.group_price,
       },
     ])
   }
@@ -298,6 +310,8 @@ export default function ProductsPage() {
 
     const initialStock = parseFloat(form.initial_stock || '0')
     const currentStock = parseFloat(form.stock_qty || '0')
+    const groupSize = parseInt(form.group_size, 10) || 1
+    const groupPriceRaw = form.group_price && form.group_price.trim() !== '' ? parseFloat(form.group_price) : null
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       variety: form.variety.trim() || null,
@@ -309,6 +323,8 @@ export default function ProductsPage() {
       initial_stock: initialStock,
       stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
+      group_size: groupSize,
+      group_price: groupPriceRaw,
     }
     if (form.category_id) {
       payload.category_id = form.category_id
@@ -325,6 +341,8 @@ export default function ProductsPage() {
           const variantParentId = form.parent_product_id || editingProduct.id
           const variantPayloads = variantsDraft.map(v => {
             const vInitialStock = parseFloat(v.initial_stock || '0')
+            const vGroupSize = parseInt(v.group_size, 10) || 1
+            const vGroupPriceRaw = v.group_price && v.group_price.trim() !== '' ? parseFloat(v.group_price) : null
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
               variety: v.variety.trim() || null,
@@ -337,6 +355,8 @@ export default function ProductsPage() {
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: variantParentId,
+              group_size: vGroupSize,
+              group_price: vGroupPriceRaw,
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -355,6 +375,8 @@ export default function ProductsPage() {
         if (variantsDraft.length > 0) {
           const variantPayloads = variantsDraft.map(v => {
             const vInitialStock = parseFloat(v.initial_stock || '0')
+            const vGroupSize = parseInt(v.group_size, 10) || 1
+            const vGroupPriceRaw = v.group_price && v.group_price.trim() !== '' ? parseFloat(v.group_price) : null
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
               variety: v.variety.trim() || null,
@@ -367,6 +389,8 @@ export default function ProductsPage() {
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: parentId,
+              group_size: vGroupSize,
+              group_price: vGroupPriceRaw,
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -557,8 +581,9 @@ export default function ProductsPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Category</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Price</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</th>
+               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Price</th>
+                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Group</th>
+                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
               </tr>
@@ -566,7 +591,7 @@ export default function ProductsPage() {
             <tbody className="divide-y divide-slate-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">No products found.</td>
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">No products found.</td>
                 </tr>
               ) : (
                 filteredProducts.map(product => {
@@ -587,7 +612,16 @@ export default function ProductsPage() {
                         )}
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{formatMoney(product.price, 'KSh')}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">
+                        {product.group_price && product.group_price > 0 && (product.group_size || 1) > 1
+                          ? `${formatMoney(product.group_price / (product.group_size || 1), 'KSh')}/unit (${formatMoney(product.group_price, 'KSh')} / pack of ${product.group_size})`
+                          : formatMoney(product.price, 'KSh')}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-600">
+                        {product.group_size && product.group_size > 1
+                          ? `${product.group_size} ${product.unit}/pack`
+                          : '-'}
+                      </td>
                       <td className="px-4 py-4 text-sm text-slate-600">
                         {product.parent_product_id
                           ? `${product.stock_qty} ${product.unit}`
@@ -664,7 +698,11 @@ export default function ProductsPage() {
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Selling price</p>
-                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.price, 'KSh')}</p>
+                <p className="text-sm text-slate-900">
+                  {selectedProduct.group_price && selectedProduct.group_price > 0 && (selectedProduct.group_size || 1) > 1
+                    ? `${formatMoney(selectedProduct.group_price / (selectedProduct.group_size || 1), 'KSh')} per unit (${formatMoney(selectedProduct.group_price, 'KSh')} per pack of ${selectedProduct.group_size})`
+                    : formatMoney(selectedProduct.price, 'KSh')}
+                </p>
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Buying price</p>
@@ -672,7 +710,15 @@ export default function ProductsPage() {
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Margin</p>
-                <p className="text-sm text-slate-900">{formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), 'KSh')}</p>
+                <p className="text-sm text-slate-900">
+                  {selectedProduct.group_price && selectedProduct.group_price > 0 && (selectedProduct.group_size || 1) > 1
+                    ? formatMoney(selectedProduct.group_price / (selectedProduct.group_size || 1) - (selectedProduct.cost_price ?? 0), 'KSh')
+                    : formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), 'KSh')}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Group size</p>
+                <p className="text-sm text-slate-900">{selectedProduct.group_size || 1} {selectedProduct.group_size && selectedProduct.group_size > 1 ? `(${selectedProduct.unit}s per pack)` : ''}</p>
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Quantity</p>
@@ -964,6 +1010,45 @@ export default function ProductsPage() {
               {errors.stock_alert && <p className="text-xs text-red-600">{errors.stock_alert}</p>}
             </label>
 
+            <label className="space-y-2 sm:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Group / Bundle Pricing</span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.group_size}
+                    onChange={e => setForm({ ...form, group_size: e.target.value })}
+                    className="input w-full"
+                    placeholder="Items per pack"
+                  />
+                  <p className="text-xs text-slate-400">
+                    {form.group_size && parseInt(form.group_size, 10) > 1
+                      ? `${parseInt(form.group_size, 10)} items sold together as a pack`
+                      : 'Sell individually (each item sold separately)'}
+                  </p>
+                  {errors.group_size && <p className="text-xs text-red-600">{errors.group_size}</p>}
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.group_price}
+                    onChange={e => setForm({ ...form, group_price: e.target.value })}
+                    className="input w-full"
+                    placeholder="Price per pack (optional)"
+                  />
+                  <p className="text-xs text-slate-400">
+                    {form.group_price && form.group_price.trim() !== '' && parseInt(form.group_size, 10) > 1
+                      ? `Per unit: ${formatMoney(parseFloat(form.group_price) / parseInt(form.group_size, 10), 'KSh')}`
+                      : 'If blank, uses selling price per unit'}
+                  </p>
+                  {errors.group_price && <p className="text-xs text-red-600">{errors.group_price}</p>}
+                </div>
+              </div>
+            </label>
+
             {(form.product_type === 'parent' || (editingProduct && !editingProduct.parent_product_id)) && (
               <div className="sm:col-span-2">
                 <h5 className="font-semibold text-slate-900 mb-2">Variants</h5>
@@ -1069,10 +1154,18 @@ export default function ProductsPage() {
                                <span className="text-xs text-slate-500">Unit</span>
                               <input value={v.unit} onChange={e => updateVariantDraft(i, 'unit', e.target.value)} className="input w-full" />
                             </label>
-                            <label className="space-y-2 sm:col-span-2">
-                              <span className="text-xs text-slate-500">Stock alert</span>
-                              <input type="number" min="0" value={v.stock_alert} onChange={e => updateVariantDraft(i, 'stock_alert', e.target.value)} className="input w-full" />
-                            </label>
+                            <label className="space-y-2">
+                                <span className="text-xs text-slate-500">Stock alert</span>
+                               <input type="number" min="0" value={v.stock_alert} onChange={e => updateVariantDraft(i, 'stock_alert', e.target.value)} className="input w-full" />
+                             </label>
+                             <label className="space-y-2">
+                               <span className="text-xs text-slate-500">Group size</span>
+                               <input type="number" min="1" value={v.group_size} onChange={e => updateVariantDraft(i, 'group_size', e.target.value)} className="input w-full" />
+                             </label>
+                             <label className="space-y-2">
+                               <span className="text-xs text-slate-500">Group price (pack)</span>
+                               <input type="number" step="0.01" min="0" value={v.group_price} onChange={e => updateVariantDraft(i, 'group_price', e.target.value)} className="input w-full" placeholder="Optional" />
+                             </label>
                           </div>
                         </div>
                       ))}
