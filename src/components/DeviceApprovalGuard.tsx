@@ -94,7 +94,7 @@ export function DeviceApprovalGuard({ children }: DeviceApprovalGuardProps) {
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mb-2">Device Approval Required</h1>
           <p className="text-slate-600 mb-4">
-            This device hasn't been approved yet. Your manager needs to review and approve your access request.
+            This device hasn&apos;t been approved yet. Your manager needs to review and approve your access request.
           </p>
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-left">
             <p className="text-xs text-slate-500 mb-1">Device Information:</p>

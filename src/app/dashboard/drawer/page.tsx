@@ -435,7 +435,7 @@ export default function DrawerPage() {
           <div className="card p-8">
             <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2 mb-6">
               <Clock className="w-5 h-5 text-slate-400" />
-              {selectedDate === getLocalDateString() ? 'Today' : selectedDate}'s History
+              {selectedDate === getLocalDateString() ? 'Today' : selectedDate}&apos;s History
             </h3>
             
             <div className="space-y-3">
