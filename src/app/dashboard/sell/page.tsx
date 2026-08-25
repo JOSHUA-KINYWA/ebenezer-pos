@@ -82,8 +82,8 @@ export default function SellPage() {
       prev.map(item => {
         const updated = products.find(p => p.id === item.product.id)
         if (!updated) return item
-        const newUnitPrice = getEffectiveUnitPrice(updated)
-        const oldUnitPrice = getEffectiveUnitPrice(item.product)
+        const newUnitPrice = getEffectiveUnitPrice(updated, item.quantity)
+        const oldUnitPrice = getEffectiveUnitPrice(item.product, item.quantity)
         if (oldUnitPrice === newUnitPrice && updated.cost_price === item.product.cost_price && updated.stock_qty === item.product.stock_qty) {
           return item
         }
@@ -103,7 +103,7 @@ export default function SellPage() {
     }
 
     const mismatched = cart.filter(item => {
-      const price = getEffectiveUnitPrice(item.product)
+      const price = getEffectiveUnitPrice(item.product, item.quantity)
       if (price <= 0) return false
       const expected = Math.round(item.quantity * price * 100) / 100
       return Math.abs(expected - item.subtotal) > 0.01
@@ -164,7 +164,8 @@ export default function SellPage() {
   }, [parentProducts, search, categoryFilter])
 
   function addToCart(product: Product, tier?: PricingTier) {
-    if (product.stock_qty === 0) {
+    const stock = getAggregateStock(product)
+    if (stock === 0) {
       toast.error(`⚠️ ${formatProductName(product)} is out of stock!`)
       return
     }
@@ -181,7 +182,7 @@ export default function SellPage() {
             if (item.product.id !== product.id) return item
             if (item.saleMode === 'amount') {
               const newSubtotal = Math.round((item.subtotal + item.subtotal) * 100) / 100
-              const newUnitPrice = getEffectiveUnitPrice(item.product)
+              const newUnitPrice = getEffectiveUnitPrice(item.product, item.quantity + step)
               const newQty = Math.round((newSubtotal / newUnitPrice) * 10) / 10
               return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'amount' as const }
             }
@@ -281,7 +282,7 @@ export default function SellPage() {
     const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
     const finalQty = isDecimal ? Math.round(validQty * 10) / 10 : Math.round(validQty)
 
-    const unitPrice = getEffectiveUnitPrice(cartItem.product)
+    const unitPrice = getEffectiveUnitPrice(cartItem.product, finalQty)
 
     setCart(prev =>
       prev.map(item =>
@@ -298,8 +299,7 @@ export default function SellPage() {
 
     const step = getIncrementStep(cartItem.product.unit, cartItem.product)
     const newQty = cartItem.quantity + step
-
-    const unitPrice = getEffectiveUnitPrice(cartItem.product)
+    const unitPrice = getEffectiveUnitPrice(cartItem.product, newQty)
 
     setCart(prev =>
       prev.map(item =>
@@ -318,7 +318,7 @@ export default function SellPage() {
     const minQty = step
     const newQty = Math.max(minQty, cartItem.quantity - step)
 
-    const unitPrice = getEffectiveUnitPrice(cartItem.product)
+    const unitPrice = getEffectiveUnitPrice(cartItem.product, newQty)
 
     setCart(prev =>
       prev.map(item =>
@@ -334,7 +334,7 @@ export default function SellPage() {
       prev.map(item => {
         if (item.product.id !== productId) return item
 
-        const unitPrice = getEffectiveUnitPrice(item.product)
+        const unitPrice = getEffectiveUnitPrice(item.product, item.quantity)
 
         if (saleMode === 'quantity') {
           const quantity = Math.max(0.01, item.quantity || 1)
@@ -371,13 +371,13 @@ export default function SellPage() {
 
   function getItemProfit(item: CartItem) {
     const cost = Number(item.product.cost_price || 0)
-    const unitPrice = getEffectiveUnitPrice(item.product)
+    const unitPrice = getEffectiveUnitPrice(item.product, item.quantity)
     return Math.round((unitPrice - cost) * item.quantity * 100) / 100
   }
 
   function getItemProfitPerUnit(item: CartItem) {
     const cost = Number(item.product.cost_price || 0)
-    const unitPrice = getEffectiveUnitPrice(item.product)
+    const unitPrice = getEffectiveUnitPrice(item.product, item.quantity)
     return Math.round((unitPrice - cost) * 100) / 100
   }
 
@@ -386,7 +386,7 @@ export default function SellPage() {
     setCart(prev =>
       prev.map(item => {
         if (item.product.id !== productId) return item
-        const unitPrice = getEffectiveUnitPrice(item.product)
+        const unitPrice = getEffectiveUnitPrice(item.product, item.quantity)
         if (unitPrice <= 0) return item
         const quantity = Math.round((amount / unitPrice) * 10) / 10
         const subtotal = Math.round(amount * 100) / 100
@@ -470,7 +470,7 @@ export default function SellPage() {
         product_id: item.product.id,
         product_name: formatProductName(item.product),
         quantity: item.quantity,
-        unit_price: getEffectiveUnitPrice(item.product),
+        unit_price: getEffectiveUnitPrice(item.product, item.quantity),
         subtotal: item.subtotal,
       }))
 
@@ -795,30 +795,36 @@ export default function SellPage() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
-                     <div className="grid gap-2 text-sm text-slate-600 mb-3">
-                       <div className="flex items-center justify-between">
-                         <span>Price</span>
+ <div className="grid gap-2 text-sm text-slate-600 mb-3">
+                        {hasTiers && (
+                          <div className="flex items-center justify-between">
+                            <span>Pricing Tiers</span>
+                            <span className="font-semibold text-slate-900">
+                              {getTiers(product).map(t => `${t.min_qty} @ ${formatMoney(t.price, settings.currency)}`).join(', ')}
+                            </span>
+                          </div>
+                        )}
+                        {!hasTiers && (
+                          <div className="flex items-center justify-between">
+                            <span>Selling price</span>
+                            <span className="font-semibold text-slate-900">{formatMoney(product.price, settings.currency)}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span>Cost</span>
+                          <span className="font-semibold text-slate-900">{formatMoney(product.cost_price ?? 0, settings.currency)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>{hasTiers ? 'Per-unit (best tier)' : 'Profit/unit'}</span>
+                          <span className="font-semibold text-slate-900">{formatMoney(getEffectiveUnitPrice(product) - (product.cost_price ?? 0), settings.currency)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Stock</span>
                           <span className="font-semibold text-slate-900">
-                            {hasTiers
-                              ? `${getTiers(product).map(t => `${t.min_qty} @ ${formatMoney(t.price, settings.currency)}`).join(', ')}`
-                              : formatMoney(product.price, settings.currency)}
+                            {hasVariants ? `${getAggregateStock(product).toLocaleString()} ${product.unit}` : `${product.stock_qty} ${product.unit}`}
                           </span>
-                       </div>
-                       <div className="flex items-center justify-between">
-                         <span>Cost</span>
-                         <span className="font-semibold text-slate-900">{formatMoney(product.cost_price ?? 0, settings.currency)}</span>
-                       </div>
-                       <div className="flex items-center justify-between">
-                         <span>Profit/unit</span>
-                         <span className="font-semibold text-slate-900">{formatMoney(getEffectiveUnitPrice(product) - (product.cost_price ?? 0), settings.currency)}</span>
-                       </div>
-                       <div className="flex items-center justify-between">
-                         <span>Stock</span>
-                         <span className="font-semibold text-slate-900">
-                           {hasVariants ? getAggregateStock(product).toLocaleString() : `${product.stock_qty} ${product.unit}`}
-                         </span>
-                       </div>
-                     </div>
+                        </div>
+                      </div>
 
                     {hasVariants && (
                       <div className="mb-3">
