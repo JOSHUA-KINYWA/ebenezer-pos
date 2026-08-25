@@ -129,6 +129,7 @@ export interface CartItem {
   quantity: number
   subtotal: number
   saleMode?: 'quantity' | 'amount'
+  tier?: PricingTier
 }
 
 export interface DailySalesSummary {

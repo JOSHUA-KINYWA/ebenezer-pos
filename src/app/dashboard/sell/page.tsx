@@ -170,7 +170,6 @@ export default function SellPage() {
       return
     }
 
-    const unitPrice = tier ? Math.round((tier.price / tier.min_qty) * 100) / 100 : getEffectiveUnitPrice(product)
     const initialQty = tier ? tier.min_qty : getIncrementStep(product.unit, product)
     const step = tier ? tier.min_qty : getIncrementStep(product.unit, product)
 
@@ -187,7 +186,7 @@ export default function SellPage() {
               return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'amount' as const }
             }
             const newQty = Math.round((item.quantity + step) * 10) / 10
-            const newSubtotal = Math.round(newQty * unitPrice * 100) / 100
+            const newSubtotal = getCartItemSubtotal(item.product, newQty, item.tier || tier)
             return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'quantity' as const }
           })
         : [
@@ -195,7 +194,8 @@ export default function SellPage() {
             {
               product,
               quantity: initialQty,
-              subtotal: Math.round(initialQty * unitPrice * 100) / 100,
+              subtotal: getCartItemSubtotal(product, initialQty, tier),
+              tier: tier || undefined,
               saleMode: 'quantity' as const,
             },
           ]
@@ -270,6 +270,14 @@ export default function SellPage() {
     return isDecimalUnit(unit) ? 0.5 : 1
   }
 
+  function getCartItemSubtotal(product: Product, qty: number, tier?: PricingTier): number {
+    if (tier && tier.min_qty > 0) {
+      const packs = qty / tier.min_qty
+      return Math.round(packs * tier.price * 100) / 100
+    }
+    return Math.round(qty * getEffectiveUnitPrice(product, qty) * 100) / 100
+  }
+
   function formatQtyDisplay(qty: number, unit: string): string {
     return isDecimalUnit(unit) ? qty.toFixed(1) : qty.toString()
   }
@@ -282,52 +290,52 @@ export default function SellPage() {
     const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
     const finalQty = isDecimal ? Math.round(validQty * 10) / 10 : Math.round(validQty)
 
-    const unitPrice = getEffectiveUnitPrice(cartItem.product, finalQty)
+     const unitPrice = getEffectiveUnitPrice(cartItem.product, finalQty)
+     const finalSubtotal = getCartItemSubtotal(cartItem.product, finalQty, cartItem.tier)
 
-    setCart(prev =>
-      prev.map(item =>
-        item.product.id === productId
-          ? { ...item, quantity: finalQty, subtotal: Math.round(finalQty * unitPrice * 100) / 100, saleMode: 'quantity' }
-          : item
-      )
-    )
-  }
+     setCart(prev =>
+       prev.map(item =>
+         item.product.id === productId
+           ? { ...item, quantity: finalQty, subtotal: finalSubtotal, saleMode: 'quantity' }
+           : item
+       )
+     )
+   }
 
-  function increaseQty(productId: string) {
-    const cartItem = cart.find(item => item.product.id === productId)
-    if (!cartItem) return
+   function increaseQty(productId: string) {
+     const cartItem = cart.find(item => item.product.id === productId)
+     if (!cartItem) return
 
-    const step = getIncrementStep(cartItem.product.unit, cartItem.product)
-    const newQty = cartItem.quantity + step
-    const unitPrice = getEffectiveUnitPrice(cartItem.product, newQty)
+     const step = getIncrementStep(cartItem.product.unit, cartItem.product)
+     const newQty = cartItem.quantity + step
+     const newSubtotal = getCartItemSubtotal(cartItem.product, newQty, cartItem.tier)
 
-    setCart(prev =>
-      prev.map(item =>
-        item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * unitPrice, saleMode: 'quantity' }
-          : item
-      )
-    )
-  }
+     setCart(prev =>
+       prev.map(item =>
+         item.product.id === productId
+           ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: newSubtotal, saleMode: 'quantity' }
+           : item
+       )
+     )
+   }
 
-  function decreaseQty(productId: string) {
-    const cartItem = cart.find(item => item.product.id === productId)
-    if (!cartItem) return
+   function decreaseQty(productId: string) {
+     const cartItem = cart.find(item => item.product.id === productId)
+     if (!cartItem) return
 
-    const step = getIncrementStep(cartItem.product.unit, cartItem.product)
-    const minQty = step
-    const newQty = Math.max(minQty, cartItem.quantity - step)
+     const step = getIncrementStep(cartItem.product.unit, cartItem.product)
+     const minQty = step
+     const newQty = Math.max(minQty, cartItem.quantity - step)
+     const newSubtotal = getCartItemSubtotal(cartItem.product, newQty, cartItem.tier)
 
-    const unitPrice = getEffectiveUnitPrice(cartItem.product, newQty)
-
-    setCart(prev =>
-      prev.map(item =>
-        item.product.id === productId
-          ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: Math.round(newQty * 10) / 10 * unitPrice, saleMode: 'quantity' }
-          : item
-      )
-    )
-  }
+     setCart(prev =>
+       prev.map(item =>
+         item.product.id === productId
+           ? { ...item, quantity: Math.round(newQty * 10) / 10, subtotal: newSubtotal, saleMode: 'quantity' }
+           : item
+       )
+     )
+   }
 
   function setCartItemMode(productId: string, saleMode: 'quantity' | 'amount') {
     setCart(prev =>
@@ -338,7 +346,7 @@ export default function SellPage() {
 
         if (saleMode === 'quantity') {
           const quantity = Math.max(0.01, item.quantity || 1)
-          const subtotal = Math.round(quantity * unitPrice * 100) / 100
+          const subtotal = getCartItemSubtotal(item.product, quantity, item.tier)
           return {
             ...item,
             saleMode,
