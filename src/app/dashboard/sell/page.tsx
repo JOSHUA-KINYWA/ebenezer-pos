@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { CartItem, Customer, Product, SessionUser } from '@/types'
+import { CartItem, Customer, Product, PricingTier, SessionUser } from '@/types'
 import { getSession } from '@/lib/auth'
 import { formatMoney, formatProductName, getLocalDateString } from '@/lib/format'
 import { useShopSettings } from '@/hooks/useShopSettings'
@@ -163,24 +163,28 @@ export default function SellPage() {
     })
   }, [parentProducts, search, categoryFilter])
 
-  function addToCart(product: Product) {
+  function addToCart(product: Product, tier?: PricingTier) {
     if (product.stock_qty === 0) {
       toast.error(`⚠️ ${formatProductName(product)} is out of stock!`)
       return
     }
 
-    const unitPrice = getEffectiveUnitPrice(product)
+    const tiers = parsePricingTiers(product)
+    const hasTiers = tiers.length > 0
+    const unitPrice = tier ? getTierUnitPrice(tier) : getEffectiveUnitPrice(product)
+    const initialQty = tier ? tier.min_qty : getIncrementStep(product.unit, product)
+    const step = tier ? tier.min_qty : getIncrementStep(product.unit, product)
 
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id)
-      const step = getIncrementStep(product.unit, product)
 
       const next = existing
         ? prev.map(item => {
             if (item.product.id !== product.id) return item
             if (item.saleMode === 'amount') {
               const newSubtotal = Math.round((item.subtotal + item.subtotal) * 100) / 100
-              const newQty = Math.round((newSubtotal / item.product.price) * 10) / 10
+              const newUnitPrice = getEffectiveUnitPrice(item.product)
+              const newQty = Math.round((newSubtotal / newUnitPrice) * 10) / 10
               return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'amount' as const }
             }
             const newQty = Math.round((item.quantity + step) * 10) / 10
@@ -191,8 +195,8 @@ export default function SellPage() {
             ...prev,
             {
               product,
-              quantity: step,
-              subtotal: Math.round(step * unitPrice * 100) / 100,
+              quantity: initialQty,
+              subtotal: Math.round(initialQty * unitPrice * 100) / 100,
               saleMode: 'quantity' as const,
             },
           ]
@@ -214,8 +218,8 @@ export default function SellPage() {
     })
   }
 
-  function handleProductSelect(product: Product) {
-    addToCart(product)
+  function handleProductSelect(product: Product, tier?: PricingTier) {
+    addToCart(product, tier)
   }
 
   function isDecimalUnit(unit: string): boolean {
@@ -233,6 +237,32 @@ export default function SellPage() {
       return Math.round((product.group_price / getGroupSize(product)) * 100) / 100
     }
     return Number(product.price) || 0
+  }
+
+  function parsePricingTiers(product: Product): PricingTier[] {
+    if (!product.pricing_tiers) return []
+    let tiers: PricingTier[] = []
+    if (typeof product.pricing_tiers === 'string') {
+      try {
+        tiers = JSON.parse(product.pricing_tiers)
+      } catch {
+        return []
+      }
+    } else {
+      tiers = product.pricing_tiers || []
+    }
+    return Array.isArray(tiers) ? tiers.filter(t => t && t.min_qty > 0 && t.price > 0) : []
+  }
+
+  function getProductPricingTier(product: Product, qty: number): PricingTier | null {
+    const tiers = parsePricingTiers(product)
+    if (tiers.length === 0) return null
+    const applicable = tiers.filter(t => t.min_qty <= qty).sort((a, b) => b.min_qty - a.min_qty)
+    return applicable.length > 0 ? applicable[0] : tiers[0]
+  }
+
+  function getTierUnitPrice(tier: PricingTier): number {
+    return Math.round((tier.price / tier.min_qty) * 100) / 100
   }
 
   function getIncrementStep(unit: string, product?: Product): number {
@@ -795,31 +825,79 @@ export default function SellPage() {
                       <div className="mb-3">
                         <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Variants</p>
                         <div className="flex flex-wrap gap-2">
-                          {variants.map(variant => (
-                            <button
-                              key={variant.id}
-                              type="button"
-                              onClick={() => addToCart(variant)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand-400 hover:text-brand-700"
-                            >
-                              <Plus className="w-3 h-3" />
-                              {formatProductName(variant)}
-                               <span className="text-slate-400">({formatMoney(getEffectiveUnitPrice(variant), settings.currency)})</span>
-                            </button>
-                          ))}
+                          {variants.map(variant => {
+                            const variantTiers = parsePricingTiers(variant)
+                            if (variantTiers.length > 0) {
+                              return (
+                                <div key={variant.id} className="flex flex-col gap-1">
+                                  {variantTiers.map((tier, idx) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => handleProductSelect(variant, tier)}
+                                      className="inline-flex items-center justify-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition hover:border-purple-400 hover:bg-purple-100"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                      {formatProductName(variant)} · {tier.min_qty} @ {formatMoney(tier.price, settings.currency)}
+                                    </button>
+                                  ))}
+                                </div>
+                              )
+                            }
+                            return (
+                              <button
+                                key={variant.id}
+                                type="button"
+                                onClick={() => handleProductSelect(variant)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand-400 hover:text-brand-700"
+                              >
+                                <Plus className="w-3 h-3" />
+                                {formatProductName(variant)}
+                                <span className="text-slate-400">({formatMoney(getEffectiveUnitPrice(variant), settings.currency)})</span>
+                              </button>
+                            )
+                          })}
                         </div>
                       </div>
                     )}
 
-                    {!hasVariants && (
-                      <button
-                        type="button"
-                        onClick={() => addToCart(product)}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add to cart
-                      </button>
+                     {!hasVariants && (
+                      (() => {
+                        const productTiers = parsePricingTiers(product)
+                        if (productTiers.length > 0) {
+                          return (
+                            <div className="space-y-2">
+                              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Group Pricing</p>
+                              <div className="flex flex-wrap gap-2">
+                                {productTiers.map((tier, idx) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => handleProductSelect(product, tier)}
+                                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-medium text-purple-700 transition hover:border-purple-400 hover:bg-purple-100"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    {tier.min_qty} @ {formatMoney(tier.price, settings.currency)}
+                                  </button>
+                                ))}
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                Per unit: {formatMoney(getTierUnitPrice(productTiers[0]), settings.currency)} — {productTiers.length} pricing option{productTiers.length === 1 ? '' : 's'} available
+                              </p>
+                            </div>
+                          )
+                        }
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleProductSelect(product)}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add to cart
+                          </button>
+                        )
+                      })()
                     )}
                   </div>
                 )

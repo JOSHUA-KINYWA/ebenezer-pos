@@ -9,7 +9,7 @@ import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { useToast } from '@/context/ToastContext'
-import { Product, Category } from '@/types'
+import { Product, Category, PricingTier } from '@/types'
 import { validateProductForm } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
 import { Search, Plus, Edit3, Trash2, Save, PowerOff } from 'lucide-react'
@@ -40,6 +40,7 @@ interface ProductForm {
   product_type: 'standalone' | 'parent'
   group_size: string
   group_price: string
+  pricing_tiers: string
 }
 
 const initialForm: ProductForm = {
@@ -58,6 +59,7 @@ const initialForm: ProductForm = {
   product_type: 'standalone',
   group_size: '1',
   group_price: '',
+  pricing_tiers: '',
 }
 
 export default function ProductsPage() {
@@ -72,6 +74,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState<ProductForm>(initialForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [variantsDraft, setVariantsDraft] = useState<ProductForm[]>([])
+  const [pricingTiersDraft, setPricingTiersDraft] = useState<{ min_qty: string; price: string }[]>([])
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
@@ -79,6 +82,18 @@ export default function ProductsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null)
   const toast = useToast()
   const supabase = createClient()
+
+  function parsePricingTiersSafe(tiers: PricingTier[] | string | null | undefined): PricingTier[] {
+    if (!tiers) return []
+    if (typeof tiers === 'string') {
+      try {
+        tiers = JSON.parse(tiers)
+      } catch {
+        return []
+      }
+    }
+    return Array.isArray(tiers) ? tiers.filter(t => t && t.min_qty > 0 && t.price > 0) : []
+  }
 
   useEffect(() => {
     const session = getSession()
@@ -205,10 +220,12 @@ export default function ProductsPage() {
       product_type: 'standalone',
       group_size: '1',
       group_price: '',
+      pricing_tiers: '',
     })
     setErrors({})
     setEditingProduct(null)
     setVariantsDraft([])
+    setPricingTiersDraft([])
   }
 
   function openNewProduct(parentId?: string, parentCategoryId?: string, parent?: Product) {
@@ -225,9 +242,11 @@ export default function ProductsPage() {
       product_type: 'standalone',
       group_size: (parent?.group_size || 1).toString(),
       group_price: parent?.group_price !== undefined && parent?.group_price !== null ? parent.group_price.toString() : '',
+      pricing_tiers: '',
     })
     setErrors({})
     setVariantsDraft([])
+    setPricingTiersDraft(parent?.pricing_tiers ? JSON.parse(typeof parent.pricing_tiers === 'string' ? parent.pricing_tiers : JSON.stringify(parent.pricing_tiers)).map((t: any) => ({ min_qty: String(t.min_qty || 1), price: String(t.price || 0) })) : [])
     setEditingProduct(null)
     setModalOpen(true)
   }
@@ -252,9 +271,20 @@ export default function ProductsPage() {
       product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
       group_size: (product.group_size || 1).toString(),
       group_price: product.group_price !== undefined && product.group_price !== null ? product.group_price.toString() : '',
+      pricing_tiers: '',
     })
     setErrors({})
     setVariantsDraft([])
+    let tiersFromProduct: { min_qty: string; price: string }[] = []
+    if (product.pricing_tiers) {
+      try {
+        const parsed = typeof product.pricing_tiers === 'string' ? JSON.parse(product.pricing_tiers) : product.pricing_tiers
+        tiersFromProduct = (Array.isArray(parsed) ? parsed : []).map((t: any) => ({ min_qty: String(t.min_qty || 1), price: String(t.price || 0) }))
+      } catch {
+        tiersFromProduct = []
+      }
+    }
+    setPricingTiersDraft(tiersFromProduct)
     setModalOpen(true)
   }
 
@@ -278,6 +308,7 @@ export default function ProductsPage() {
         product_type: 'standalone',
         group_size: form.group_size,
         group_price: form.group_price,
+        pricing_tiers: form.pricing_tiers,
       },
     ])
   }
@@ -312,6 +343,9 @@ export default function ProductsPage() {
     const currentStock = parseFloat(form.stock_qty || '0')
     const groupSize = parseInt(form.group_size, 10) || 1
     const groupPriceRaw = form.group_price && form.group_price.trim() !== '' ? parseFloat(form.group_price) : null
+    const pricingTiersRaw = pricingTiersDraft.length > 0
+      ? JSON.stringify(pricingTiersDraft.map(t => ({ min_qty: parseInt(t.min_qty, 10) || 1, price: parseFloat(t.price) || 0 })))
+      : null
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       variety: form.variety.trim() || null,
@@ -325,6 +359,7 @@ export default function ProductsPage() {
       is_active: form.is_active,
       group_size: groupSize,
       group_price: groupPriceRaw,
+      pricing_tiers: pricingTiersRaw,
     }
     if (form.category_id) {
       payload.category_id = form.category_id
@@ -357,6 +392,7 @@ export default function ProductsPage() {
               parent_product_id: variantParentId,
               group_size: vGroupSize,
               group_price: vGroupPriceRaw,
+              pricing_tiers: null,
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -391,6 +427,7 @@ export default function ProductsPage() {
               parent_product_id: parentId,
               group_size: vGroupSize,
               group_price: vGroupPriceRaw,
+              pricing_tiers: null,
             }
             if (v.category_id) {
               vPayload.category_id = v.category_id
@@ -404,6 +441,7 @@ export default function ProductsPage() {
       }
       setModalOpen(false)
       setVariantsDraft([])
+      setPricingTiersDraft([])
       fetchProducts()
     } catch (error) {
       const message = getSupabaseErrorMessage(error)
@@ -752,14 +790,26 @@ export default function ProductsPage() {
                 <p className="text-xs uppercase tracking-wider text-slate-500">Remaining profit</p>
                 <p className="text-sm text-amber-600">{formatMoney(selectedProduct.remainingPotentialProfit || 0, 'KSh')}</p>
               </div>
+              {selectedProduct.pricing_tiers && (
+                <div className="space-y-2 sm:col-span-2">
+                  <p className="text-xs uppercase tracking-wider text-slate-500">Group Pricing Tiers</p>
+                  <div className="flex flex-wrap gap-2">
+                    {parsePricingTiersSafe(selectedProduct.pricing_tiers).map((tier, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2 py-1 text-xs text-purple-700">
+                        {tier.min_qty} @ {formatMoney(tier.price, 'KSh')}
+                      </span>
+                    ))}
+                  </div>
+                 </div>
+              )}
             </div>
 
-            {selectedProduct.parent_product_id && (
-              <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Variant of</p>
-                <p className="text-sm text-slate-900">{products.find(p => p.id === selectedProduct.parent_product_id)?.name || 'Parent product'}</p>
-              </div>
-            )}
+              {selectedProduct.parent_product_id && (
+                <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-wider text-slate-500">Variant of</p>
+                  <p className="text-sm text-slate-900">{products.find(p => p.id === selectedProduct.parent_product_id)?.name || 'Parent product'}</p>
+                </div>
+              )}
 
             <div>
               <h5 className="font-semibold text-slate-900 mb-3">Variants</h5>
@@ -1046,6 +1096,55 @@ export default function ProductsPage() {
                   </p>
                   {errors.group_price && <p className="text-xs text-red-600">{errors.group_price}</p>}
                 </div>
+              </div>
+            </label>
+
+            <label className="space-y-2 sm:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Group Pricing Tiers</span>
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400">
+                  Offer different prices for different quantities sold together (e.g., 1 @ KSh 5, 2 @ KSh 10).
+                  On the sell page, these appear as quick-select buttons.
+                </p>
+                {pricingTiersDraft.map((tier, idx) => (
+                  <div key={idx} className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-xs text-slate-500">Min Qty</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={tier.min_qty}
+                        onChange={e => setPricingTiersDraft(prev => prev.map((t, i) => i === idx ? { ...t, min_qty: e.target.value } : t))}
+                        className="input w-full text-sm"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs text-slate-500">Total Price</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={tier.price}
+                        onChange={e => setPricingTiersDraft(prev => prev.map((t, i) => i === idx ? { ...t, price: e.target.value } : t))}
+                        className="input w-full text-sm"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPricingTiersDraft(prev => prev.filter((_, i) => i !== idx))}
+                      className="pb-2 text-red-600 hover:text-red-800 text-xs"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setPricingTiersDraft(prev => [...prev, { min_qty: '2', price: '' }])}
+                  className="btn-secondary inline-flex items-center gap-2 text-sm"
+                >
+                  <Plus className="w-4 h-4" /> Add Tier
+                </button>
               </div>
             </label>
 

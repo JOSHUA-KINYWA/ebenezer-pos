@@ -33,6 +33,11 @@ export interface Category {
   created_at: string
 }
 
+export interface PricingTier {
+  min_qty: number
+  price: number
+}
+
 export interface Product {
   id: string
   category_id?: string
@@ -50,6 +55,7 @@ export interface Product {
   created_at: string
   group_size?: number
   group_price?: number | null
+  pricing_tiers?: PricingTier[] | string | null
   category?: Category | { name: string }
   variants?: Product[]
 }
