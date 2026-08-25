@@ -73,8 +73,6 @@ export function validateProductForm(data: {
   stock_qty?: string
   initial_stock?: string
   stock_alert: string
-  group_size?: string
-  group_price?: string
 }): ValidationResult {
   const result = new ValidationResult()
 
@@ -132,18 +130,6 @@ export function validateProductForm(data: {
     const alert = parseInt(data.stock_alert, 10)
     if (isNaN(alert) || !isNonNegativeNumber(alert)) {
       result.addError('stock_alert', 'Low stock alert must be a valid number')
-    }
-  }
-
-  const groupSize = data.group_size ? parseInt(data.group_size, 10) : 1
-  if (isNaN(groupSize) || groupSize < 1) {
-    result.addError('group_size', 'Group size must be at least 1')
-  }
-
-  if (data.group_price !== undefined && data.group_price !== '' && data.group_price !== null) {
-    const groupPrice = parseFloat(data.group_price)
-    if (!isNaN(groupPrice) && !isNonNegativeNumber(groupPrice)) {
-      result.addError('group_price', 'Group price must be a positive number')
     }
   }
 

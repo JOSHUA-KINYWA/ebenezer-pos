@@ -38,8 +38,6 @@ interface ProductForm {
   stock_alert: string
   is_active: boolean
   product_type: 'standalone' | 'parent'
-  group_size: string
-  group_price: string
   pricing_tiers: string
 }
 
@@ -57,8 +55,6 @@ const initialForm: ProductForm = {
   stock_alert: '10',
   is_active: true,
   product_type: 'standalone',
-  group_size: '1',
-  group_price: '',
   pricing_tiers: '',
 }
 
@@ -218,8 +214,6 @@ export default function ProductsPage() {
       category_id: categories[0]?.id ?? '',
       parent_product_id: '',
       product_type: 'standalone',
-      group_size: '1',
-      group_price: '',
       pricing_tiers: '',
     })
     setErrors({})
@@ -240,8 +234,6 @@ export default function ProductsPage() {
       stock_alert: parent?.stock_alert?.toString() || initialForm.stock_alert,
       name: '',
       product_type: 'standalone',
-      group_size: (parent?.group_size || 1).toString(),
-      group_price: parent?.group_price !== undefined && parent?.group_price !== null ? parent.group_price.toString() : '',
       pricing_tiers: '',
     })
     setErrors({})
@@ -269,8 +261,6 @@ export default function ProductsPage() {
       stock_alert: product.stock_alert?.toString() || '10',
       is_active: product.is_active,
       product_type: isVariant ? 'standalone' : (hasChildren ? 'parent' : 'standalone'),
-      group_size: (product.group_size || 1).toString(),
-      group_price: product.group_price !== undefined && product.group_price !== null ? product.group_price.toString() : '',
       pricing_tiers: '',
     })
     setErrors({})
@@ -306,9 +296,7 @@ export default function ProductsPage() {
         stock_alert: form.stock_alert,
         is_active: true,
         product_type: 'standalone',
-        group_size: form.group_size,
-        group_price: form.group_price,
-        pricing_tiers: form.pricing_tiers,
+        pricing_tiers: '',
       },
     ])
   }
@@ -341,8 +329,6 @@ export default function ProductsPage() {
 
     const initialStock = parseFloat(form.initial_stock || '0')
     const currentStock = parseFloat(form.stock_qty || '0')
-    const groupSize = parseInt(form.group_size, 10) || 1
-    const groupPriceRaw = form.group_price && form.group_price.trim() !== '' ? parseFloat(form.group_price) : null
     const pricingTiersRaw = pricingTiersDraft.length > 0
       ? JSON.stringify(pricingTiersDraft.map(t => ({ min_qty: parseInt(t.min_qty, 10) || 1, price: parseFloat(t.price) || 0 })))
       : null
@@ -357,8 +343,6 @@ export default function ProductsPage() {
       initial_stock: initialStock,
       stock_alert: parseInt(form.stock_alert, 10),
       is_active: form.is_active,
-      group_size: groupSize,
-      group_price: groupPriceRaw,
       pricing_tiers: pricingTiersRaw,
     }
     if (form.category_id) {
@@ -376,8 +360,6 @@ export default function ProductsPage() {
           const variantParentId = form.parent_product_id || editingProduct.id
           const variantPayloads = variantsDraft.map(v => {
             const vInitialStock = parseFloat(v.initial_stock || '0')
-            const vGroupSize = parseInt(v.group_size, 10) || 1
-            const vGroupPriceRaw = v.group_price && v.group_price.trim() !== '' ? parseFloat(v.group_price) : null
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
               variety: v.variety.trim() || null,
@@ -390,8 +372,6 @@ export default function ProductsPage() {
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: variantParentId,
-              group_size: vGroupSize,
-              group_price: vGroupPriceRaw,
               pricing_tiers: null,
             }
             if (v.category_id) {
@@ -411,8 +391,6 @@ export default function ProductsPage() {
         if (variantsDraft.length > 0) {
           const variantPayloads = variantsDraft.map(v => {
             const vInitialStock = parseFloat(v.initial_stock || '0')
-            const vGroupSize = parseInt(v.group_size, 10) || 1
-            const vGroupPriceRaw = v.group_price && v.group_price.trim() !== '' ? parseFloat(v.group_price) : null
             const vPayload: Record<string, unknown> = {
               name: v.name.trim(),
               variety: v.variety.trim() || null,
@@ -425,8 +403,6 @@ export default function ProductsPage() {
               stock_alert: parseInt(v.stock_alert, 10) || 0,
               is_active: v.is_active,
               parent_product_id: parentId,
-              group_size: vGroupSize,
-              group_price: vGroupPriceRaw,
               pricing_tiers: null,
             }
             if (v.category_id) {
@@ -651,13 +627,13 @@ export default function ProductsPage() {
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
                       <td className="px-4 py-4 text-sm text-slate-600">
-                        {product.group_price && product.group_price > 0 && (product.group_size || 1) > 1
-                          ? `${formatMoney(product.group_price / (product.group_size || 1), 'KSh')}/unit (${formatMoney(product.group_price, 'KSh')} / pack of ${product.group_size})`
+                        {product.pricing_tiers && parsePricingTiersSafe(product.pricing_tiers).length > 0
+                          ? `${parsePricingTiersSafe(product.pricing_tiers).map(t => `${t.min_qty} @ ${formatMoney(t.price, 'KSh')}`).join(', ')}`
                           : formatMoney(product.price, 'KSh')}
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">
-                        {product.group_size && product.group_size > 1
-                          ? `${product.group_size} ${product.unit}/pack`
+                        {product.pricing_tiers && parsePricingTiersSafe(product.pricing_tiers).length > 0
+                          ? `${parsePricingTiersSafe(product.pricing_tiers).length} tier${parsePricingTiersSafe(product.pricing_tiers).length === 1 ? '' : 's'}`
                           : '-'}
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">
@@ -734,30 +710,34 @@ export default function ProductsPage() {
                 <p className="text-xs uppercase tracking-wider text-slate-500">Unit</p>
                 <p className="text-sm text-slate-900">{selectedProduct.unit}</p>
               </div>
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Selling price</p>
-                <p className="text-sm text-slate-900">
-                  {selectedProduct.group_price && selectedProduct.group_price > 0 && (selectedProduct.group_size || 1) > 1
-                    ? `${formatMoney(selectedProduct.group_price / (selectedProduct.group_size || 1), 'KSh')} per unit (${formatMoney(selectedProduct.group_price, 'KSh')} per pack of ${selectedProduct.group_size})`
-                    : formatMoney(selectedProduct.price, 'KSh')}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Buying price</p>
-                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.cost_price ?? 0, 'KSh')}</p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Margin</p>
-                <p className="text-sm text-slate-900">
-                  {selectedProduct.group_price && selectedProduct.group_price > 0 && (selectedProduct.group_size || 1) > 1
-                    ? formatMoney(selectedProduct.group_price / (selectedProduct.group_size || 1) - (selectedProduct.cost_price ?? 0), 'KSh')
-                    : formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), 'KSh')}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Group size</p>
-                <p className="text-sm text-slate-900">{selectedProduct.group_size || 1} {selectedProduct.group_size && selectedProduct.group_size > 1 ? `(${selectedProduct.unit}s per pack)` : ''}</p>
-              </div>
+               <div className="space-y-2">
+                 <p className="text-xs uppercase tracking-wider text-slate-500">Selling price</p>
+                 <p className="text-sm text-slate-900">
+                   {selectedProduct.pricing_tiers && parsePricingTiersSafe(selectedProduct.pricing_tiers).length > 0
+                     ? `${parsePricingTiersSafe(selectedProduct.pricing_tiers).map(t => `${t.min_qty} @ ${formatMoney(t.price, 'KSh')}`).join(', ')}`
+                     : formatMoney(selectedProduct.price, 'KSh')}
+                 </p>
+               </div>
+               <div className="space-y-2">
+                 <p className="text-xs uppercase tracking-wider text-slate-500">Buying price</p>
+                 <p className="text-sm text-slate-900">{formatMoney(selectedProduct.cost_price ?? 0, 'KSh')}</p>
+               </div>
+               <div className="space-y-2">
+                 <p className="text-xs uppercase tracking-wider text-slate-500">Margin</p>
+                 <p className="text-sm text-slate-900">
+                   {selectedProduct.pricing_tiers && parsePricingTiersSafe(selectedProduct.pricing_tiers).length > 0
+                     ? formatMoney(parsePricingTiersSafe(selectedProduct.pricing_tiers)[0].price / parsePricingTiersSafe(selectedProduct.pricing_tiers)[0].min_qty - (selectedProduct.cost_price ?? 0), 'KSh')
+                     : formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), 'KSh')}
+                 </p>
+               </div>
+               <div className="space-y-2">
+                 <p className="text-xs uppercase tracking-wider text-slate-500">Tiers</p>
+                 <p className="text-sm text-slate-900">
+                   {selectedProduct.pricing_tiers && parsePricingTiersSafe(selectedProduct.pricing_tiers).length > 0
+                     ? `${parsePricingTiersSafe(selectedProduct.pricing_tiers).length} pricing tier${parsePricingTiersSafe(selectedProduct.pricing_tiers).length === 1 ? '' : 's'}`
+                     : 'None'}
+                 </p>
+               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Quantity</p>
                 <p className="text-sm text-slate-900">
@@ -1058,49 +1038,10 @@ export default function ProductsPage() {
                 className="input w-full"
               />
               {errors.stock_alert && <p className="text-xs text-red-600">{errors.stock_alert}</p>}
-            </label>
+             </label>
 
-            <label className="space-y-2 sm:col-span-2">
-              <span className="text-sm font-medium text-slate-700">Group / Bundle Pricing</span>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.group_size}
-                    onChange={e => setForm({ ...form, group_size: e.target.value })}
-                    className="input w-full"
-                    placeholder="Items per pack"
-                  />
-                  <p className="text-xs text-slate-400">
-                    {form.group_size && parseInt(form.group_size, 10) > 1
-                      ? `${parseInt(form.group_size, 10)} items sold together as a pack`
-                      : 'Sell individually (each item sold separately)'}
-                  </p>
-                  {errors.group_size && <p className="text-xs text-red-600">{errors.group_size}</p>}
-                </div>
-                <div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.group_price}
-                    onChange={e => setForm({ ...form, group_price: e.target.value })}
-                    className="input w-full"
-                    placeholder="Price per pack (optional)"
-                  />
-                  <p className="text-xs text-slate-400">
-                    {form.group_price && form.group_price.trim() !== '' && parseInt(form.group_size, 10) > 1
-                      ? `Per unit: ${formatMoney(parseFloat(form.group_price) / parseInt(form.group_size, 10), 'KSh')}`
-                      : 'If blank, uses selling price per unit'}
-                  </p>
-                  {errors.group_price && <p className="text-xs text-red-600">{errors.group_price}</p>}
-                </div>
-              </div>
-            </label>
-
-            <label className="space-y-2 sm:col-span-2">
-              <span className="text-sm font-medium text-slate-700">Group Pricing Tiers</span>
+              <label className="space-y-2 sm:col-span-2">
+                <span className="text-sm font-medium text-slate-700">Group Pricing Tiers</span>
               <div className="space-y-2">
                 <p className="text-xs text-slate-400">
                   Offer different prices for different quantities sold together (e.g., 1 @ KSh 5, 2 @ KSh 10).
@@ -1257,15 +1198,7 @@ export default function ProductsPage() {
                                 <span className="text-xs text-slate-500">Stock alert</span>
                                <input type="number" min="0" value={v.stock_alert} onChange={e => updateVariantDraft(i, 'stock_alert', e.target.value)} className="input w-full" />
                              </label>
-                             <label className="space-y-2">
-                               <span className="text-xs text-slate-500">Group size</span>
-                               <input type="number" min="1" value={v.group_size} onChange={e => updateVariantDraft(i, 'group_size', e.target.value)} className="input w-full" />
-                             </label>
-                             <label className="space-y-2">
-                               <span className="text-xs text-slate-500">Group price (pack)</span>
-                               <input type="number" step="0.01" min="0" value={v.group_price} onChange={e => updateVariantDraft(i, 'group_price', e.target.value)} className="input w-full" placeholder="Optional" />
-                             </label>
-                          </div>
+                           </div>
                         </div>
                       ))}
                     </div>

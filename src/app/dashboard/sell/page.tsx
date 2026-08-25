@@ -169,9 +169,7 @@ export default function SellPage() {
       return
     }
 
-    const tiers = parsePricingTiers(product)
-    const hasTiers = tiers.length > 0
-    const unitPrice = tier ? getTierUnitPrice(tier) : getEffectiveUnitPrice(product)
+    const unitPrice = tier ? Math.round((tier.price / tier.min_qty) * 100) / 100 : getEffectiveUnitPrice(product)
     const initialQty = tier ? tier.min_qty : getIncrementStep(product.unit, product)
     const step = tier ? tier.min_qty : getIncrementStep(product.unit, product)
 
@@ -227,19 +225,7 @@ export default function SellPage() {
     return decimalUnits.some(u => unit.toLowerCase().includes(u))
   }
 
-  function getGroupSize(product: Product): number {
-    const gs = product.group_size || 1
-    return gs > 0 ? gs : 1
-  }
-
-  function getEffectiveUnitPrice(product: Product): number {
-    if (product.group_price && product.group_price > 0 && getGroupSize(product) > 1) {
-      return Math.round((product.group_price / getGroupSize(product)) * 100) / 100
-    }
-    return Number(product.price) || 0
-  }
-
-  function parsePricingTiers(product: Product): PricingTier[] {
+  function getTiers(product: Product): PricingTier[] {
     if (!product.pricing_tiers) return []
     let tiers: PricingTier[] = []
     if (typeof product.pricing_tiers === 'string') {
@@ -254,21 +240,33 @@ export default function SellPage() {
     return Array.isArray(tiers) ? tiers.filter(t => t && t.min_qty > 0 && t.price > 0) : []
   }
 
-  function getProductPricingTier(product: Product, qty: number): PricingTier | null {
-    const tiers = parsePricingTiers(product)
+  function getSmallestTier(product: Product): PricingTier | null {
+    const tiers = getTiers(product)
+    if (tiers.length === 0) return null
+    return tiers.slice().sort((a, b) => a.min_qty - b.min_qty)[0]
+  }
+
+  function getEffectiveUnitPrice(product: Product, qty: number = 1): number {
+    const tier = getPricingTierForQty(product, qty)
+    if (tier) {
+      return Math.round((tier.price / tier.min_qty) * 100) / 100
+    }
+    return Number(product.price) || 0
+  }
+
+  function getPricingTierForQty(product: Product, qty: number): PricingTier | null {
+    const tiers = getTiers(product)
     if (tiers.length === 0) return null
     const applicable = tiers.filter(t => t.min_qty <= qty).sort((a, b) => b.min_qty - a.min_qty)
     return applicable.length > 0 ? applicable[0] : tiers[0]
   }
 
-  function getTierUnitPrice(tier: PricingTier): number {
-    return Math.round((tier.price / tier.min_qty) * 100) / 100
-  }
-
   function getIncrementStep(unit: string, product?: Product): number {
-    const baseStep = isDecimalUnit(unit) ? 0.5 : 1
-    const multiplier = product ? getGroupSize(product) : 1
-    return Math.round(baseStep * multiplier * 10) / 10
+    if (product) {
+      const smallest = getSmallestTier(product)
+      if (smallest) return smallest.min_qty
+    }
+    return isDecimalUnit(unit) ? 0.5 : 1
   }
 
   function formatQtyDisplay(qty: number, unit: string): string {
@@ -603,11 +601,11 @@ export default function SellPage() {
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1">
                           <p className="font-medium text-xs">{formatProductName(item.product)}</p>
-                           <p className="text-xs text-slate-500">
-                             {item.product.group_price && item.product.group_price > 0 && getGroupSize(item.product) > 1
-                               ? `${formatMoney(getEffectiveUnitPrice(item.product), settings.currency)}/unit (${formatMoney(item.product.group_price, settings.currency)} per pack of ${getGroupSize(item.product)}) · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · ${item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`
-                               : `${formatMoney(item.product.price, settings.currency)} each · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · ${item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`}
-                           </p>
+                            <p className="text-xs text-slate-500">
+                              {getTiers(item.product).length > 0
+                                ? `${getTiers(item.product).map(t => `${t.min_qty} @ ${formatMoney(t.price, settings.currency)}`).join(', ')} · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · ${item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`
+                                : `${formatMoney(item.product.price, settings.currency)} each · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · ${item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`}
+                            </p>
                         </div>
                         <button
                           type="button"
@@ -786,24 +784,25 @@ export default function SellPage() {
                   filteredParentProducts.map(product => {
                 const variants = getProductVariants(product.id)
                 const hasVariants = variants.length > 0
-                const isGrouped = product.group_price && product.group_price > 0 && getGroupSize(product) > 1
+                const hasTiers = getTiers(product).length > 0
+                const isGrouped = hasTiers
                 return (
                   <div key={product.id} className="card p-4 hover:shadow-lg transition-shadow">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="text-sm font-semibold text-slate-900">{formatProductName(product)}</span>
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${hasVariants ? 'bg-amber-100 text-amber-700' : isGrouped ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : isGrouped ? `Pack of ${getGroupSize(product)}` : 'Product'}
+                        {hasVariants ? `${variants.length} variant${variants.length === 1 ? '' : 's'}` : isGrouped ? 'Tiered' : 'Product'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mb-3">{(product.category as { name?: string })?.name || 'Uncategorized'}</p>
                      <div className="grid gap-2 text-sm text-slate-600 mb-3">
                        <div className="flex items-center justify-between">
                          <span>Price</span>
-                         <span className="font-semibold text-slate-900">
-                           {product.group_price && product.group_price > 0 && getGroupSize(product) > 1
-                             ? `${formatMoney(getEffectiveUnitPrice(product), settings.currency)}/unit (${formatMoney(product.group_price, settings.currency)} per pack of ${getGroupSize(product)})`
-                             : formatMoney(product.price, settings.currency)}
-                         </span>
+                          <span className="font-semibold text-slate-900">
+                            {hasTiers
+                              ? `${getTiers(product).map(t => `${t.min_qty} @ ${formatMoney(t.price, settings.currency)}`).join(', ')}`
+                              : formatMoney(product.price, settings.currency)}
+                          </span>
                        </div>
                        <div className="flex items-center justify-between">
                          <span>Cost</span>
@@ -826,7 +825,7 @@ export default function SellPage() {
                         <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Variants</p>
                         <div className="flex flex-wrap gap-2">
                           {variants.map(variant => {
-                            const variantTiers = parsePricingTiers(variant)
+                            const variantTiers = getTiers(variant)
                             if (variantTiers.length > 0) {
                               return (
                                 <div key={variant.id} className="flex flex-col gap-1">
@@ -863,13 +862,13 @@ export default function SellPage() {
 
                      {!hasVariants && (
                       (() => {
-                        const productTiers = parsePricingTiers(product)
+                        const productTiers = getTiers(product)
                         if (productTiers.length > 0) {
                           return (
                             <div className="space-y-2">
                               <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Group Pricing</p>
                               <div className="flex flex-wrap gap-2">
-                                {productTiers.map((tier, idx) => (
+                                {productTiers.map((tier: PricingTier, idx: number) => (
                                   <button
                                     key={idx}
                                     type="button"
@@ -882,7 +881,7 @@ export default function SellPage() {
                                 ))}
                               </div>
                               <p className="text-[10px] text-slate-400">
-                                Per unit: {formatMoney(getTierUnitPrice(productTiers[0]), settings.currency)} — {productTiers.length} pricing option{productTiers.length === 1 ? '' : 's'} available
+                                Per unit: {formatMoney(Math.round((productTiers[0].price / productTiers[0].min_qty) * 100) / 100, settings.currency)} — {productTiers.length} pricing option{productTiers.length === 1 ? '' : 's'} available
                               </p>
                             </div>
                           )
@@ -955,10 +954,10 @@ export default function SellPage() {
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex-1">
                         <p className="font-semibold text-sm text-slate-900">{formatProductName(item.product)}</p>
-                       <p className="text-xs text-slate-500">
-                         {item.product.group_price && item.product.group_price > 0 && getGroupSize(item.product) > 1
-                           ? `${formatMoney(getEffectiveUnitPrice(item.product), settings.currency)}/unit (${formatMoney(item.product.group_price, settings.currency)} per pack of ${getGroupSize(item.product)}) · ${formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · ${formatMoney(getItemProfitPerUnit(item), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} {item.product.unit} in stock`
-                           : `${formatMoney(item.product.price, settings.currency)} per unit · ${formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · ${formatMoney(item.product.price - (item.product.cost_price ?? 0), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`}
+                        <p className="text-xs text-slate-500">
+                          {getTiers(item.product).length > 0
+                            ? `${getTiers(item.product).map(t => `${t.min_qty} @ ${formatMoney(t.price, settings.currency)}`).join(', ')} · ${formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · ${formatMoney(item.product.price - (item.product.cost_price ?? 0), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`
+                            : `${formatMoney(item.product.price, settings.currency)} per unit · ${formatMoney(item.product.cost_price ?? 0, settings.currency)} cost · ${formatMoney(item.product.price - (item.product.cost_price ?? 0), settings.currency)} profit/unit · {item.product.stock_qty.toLocaleString()} ${item.product.unit} in stock`}
                        </p>
                       </div>
                       <button
