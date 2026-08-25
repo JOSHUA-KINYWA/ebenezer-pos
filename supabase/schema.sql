@@ -160,9 +160,11 @@ CREATE TABLE IF NOT EXISTS products (
   stock_qty numeric(12,1) NOT NULL DEFAULT 0,
   stock_alert numeric(12,1) NOT NULL DEFAULT 10,
   reorder_qty numeric(12,1) NOT NULL DEFAULT 0,
-  is_active boolean NOT NULL DEFAULT true,
-  pricing_tiers jsonb DEFAULT '[]'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now(),
+   is_active boolean NOT NULL DEFAULT true,
+   pricing_tiers jsonb DEFAULT '[]'::jsonb,
+   group_size integer NOT NULL DEFAULT 1,
+   group_price numeric(12,2),
+   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
