@@ -70,7 +70,15 @@ export default function DrawerPage() {
         const { data: prevData } = await withRetry(async () => await supabase.from('drawer_balances').select('cash, coin, till').eq('date', prevDateStr).is('shift_id', null).order('updated_at', { ascending: false }).limit(1))
         if (prevData && prevData.length > 0) {
           opening = prevData[0]
-          setOpeningBalance({ cash: Number(prevData[0].cash || 0), coin: Number(prevData[0].coin || 0), till: Number(prevData[0].till || 0) })
+          const carriedBalance = {
+            cash: Number(prevData[0].cash || 0),
+            coin: Number(prevData[0].coin || 0),
+            till: Number(prevData[0].till || 0),
+          }
+          setCash(carriedBalance.cash.toString())
+          setCoin(carriedBalance.coin.toString())
+          setTill(carriedBalance.till.toString())
+          setOpeningBalance(carriedBalance)
         } else {
           setOpeningBalance(null)
         }
