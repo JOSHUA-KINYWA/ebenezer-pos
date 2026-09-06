@@ -134,20 +134,12 @@ export default function ProductsPage() {
       const productsData = (data || []) as Product[]
       const activeProductIds = productsData.map(p => p.id)
 
-      const { data: saleIdsData, error: saleIdsError } = await supabase
-        .from('sales')
-        .select('id')
-        .eq('is_voided', false)
-
-      if (saleIdsError) throw saleIdsError
-
-      const saleIds = (saleIdsData || []).map(s => s.id)
-      const { data: saleItemsData, error: saleItemsError } = activeProductIds.length > 0 && saleIds.length > 0
+      const { data: saleItemsData, error: saleItemsError } = activeProductIds.length > 0
         ? await supabase
             .from('sale_items')
-            .select('product_id, quantity, subtotal')
+            .select('product_id, quantity, subtotal, sales!inner(is_voided)')
             .in('product_id', activeProductIds)
-            .in('sale_id', saleIds)
+            .eq('sales.is_voided', false)
         : { data: [], error: null }
 
       if (saleItemsError) throw saleItemsError
