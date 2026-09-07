@@ -89,6 +89,9 @@ CREATE TABLE IF NOT EXISTS expenses (
 
 ALTER TABLE expenses DROP COLUMN IF EXISTS payment_type;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method text NOT NULL CHECK (payment_method IN ('cash', 'till'));
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS cash_deducted numeric(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS coin_deducted numeric(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS till_deducted numeric(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_payment_method_check;
 ALTER TABLE expenses ADD CONSTRAINT expenses_payment_method_check CHECK (payment_method IN ('cash', 'coin', 'till'));
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;

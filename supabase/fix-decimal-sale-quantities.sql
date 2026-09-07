@@ -103,6 +103,9 @@ ALTER TABLE stock_log
   ALTER COLUMN change_qty TYPE numeric(12,1) USING change_qty::numeric(12,1);
 
 ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_payment_method_check;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS cash_deducted numeric(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS coin_deducted numeric(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS till_deducted numeric(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE expenses ADD CONSTRAINT expenses_payment_method_check CHECK (payment_method IN ('cash', 'coin', 'till'));
 
 CREATE OR REPLACE FUNCTION deduct_stock_on_sale()
