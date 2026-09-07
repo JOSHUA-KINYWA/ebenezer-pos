@@ -121,7 +121,7 @@ export default function StaffPage() {
       }
 
       if (editingStaff) {
-        const { error } = await supabase.from('users').update(payload).eq('id', editingStaff.id).single()
+        const { error } = await supabase.from('users').update(payload).eq('id', editingStaff.id)
         if (error) throw error
         toast.success('Staff updated successfully')
       } else {

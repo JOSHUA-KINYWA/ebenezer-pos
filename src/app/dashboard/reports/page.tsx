@@ -81,13 +81,13 @@ export default function ReportsPage() {
 
           const { data: itemsData } = await supabase
             .from('sale_items')
-            .select('id, product_name, quantity, unit_price, subtotal')
+              .select('id, sale_id, product_id, product_name, quantity, unit_price, subtotal, product:products(unit)')
             .eq('sale_id', sale.id)
 
           return {
             ...sale,
             user: (userData as SessionUser | undefined) || undefined,
-            sale_items: (itemsData as SaleItem[]) || [],
+            sale_items: (itemsData as unknown as SaleItem[]) || [],
           }
         })
       )
@@ -163,70 +163,11 @@ export default function ReportsPage() {
     if (!confirm(`Void receipt ${sale.receipt_no}? Stock will be restored.`)) return
 
     try {
-      const saleDate = sale.created_at.split('T')[0]
-      if (sale.sale_items) {
-        await Promise.all(
-          (sale.sale_items || [])
-            .filter((item): item is NonNullable<Sale['sale_items']>[0] & { product_id: string } => !!item.product_id)
-            .map(async item => {
-              const { data: product, error: productError } = await supabase.from('products').select('stock_qty').eq('id', item.product_id).single()
-              if (productError || !product) throw new Error(`Unable to restore stock for ${item.product_name || item.product_id}`)
-
-              const nextStock = Number(product.stock_qty) + Number(item.quantity)
-              const { error: updateError } = await supabase.from('products').update({ stock_qty: nextStock }).eq('id', item.product_id)
-              if (updateError) throw updateError
-
-              const { error: logError } = await supabase.from('stock_log').insert({
-                product_id: item.product_id,
-                user_id: user?.id ?? null,
-                change_qty: Number(item.quantity),
-                reason: 'adjustment',
-                note: `Void sale ${sale.receipt_no}`,
-              })
-              if (logError) throw logError
-            })
-        )
-      }
-
-      const query = supabase
-        .from('drawer_balances')
-        .select('id, cash, coin, till')
-        .eq('date', saleDate)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-
-      const drawerQuery = sale.shift_id
-        ? query.eq('shift_id', sale.shift_id)
-        : query.is('shift_id', null)
-
-      const { data: existing } = await drawerQuery.maybeSingle()
-      const curr = existing || { cash: 0, coin: 0, till: 0 }
-      const updated: any = {
-        cash: curr.cash,
-        coin: curr.coin,
-        till: curr.till,
-      }
-
-      if (sale.payment_method === 'cash') updated.cash -= sale.total_amount
-      else if (sale.payment_method === 'coin') updated.coin -= sale.total_amount
-      else updated.till -= sale.total_amount
-
-      let drawerError
-      if (existing?.id) {
-        const result = await supabase.from('drawer_balances').update(updated).eq('id', existing.id)
-        drawerError = result.error
-      } else {
-        const result = await supabase.from('drawer_balances').insert({
-          date: saleDate,
-          shift_id: sale.shift_id || null,
-          ...updated,
-        })
-        drawerError = result.error
-      }
-
-      if (drawerError) throw drawerError
-
-      const { error: saleError } = await supabase.from('sales').update({ is_voided: true, voided_by: user?.id, voided_at: new Date().toISOString() }).eq('id', sale.id)
+      const { error: saleError } = await supabase.rpc('void_sale', {
+        p_sale_id: sale.id,
+        p_user_id: user?.id || null,
+        p_reason: 'Voided from reports',
+      })
       if (saleError) throw saleError
 
       toast.success('Sale voided')

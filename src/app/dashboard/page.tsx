@@ -112,7 +112,7 @@ export default function DashboardPage() {
         }
       })
 
-      const lowStockItems = Array.from(stockMap.values()).filter(p => p.stock_qty > 0 && p.stock_qty <= p.stock_alert).length
+      const lowStockItems = Array.from(stockMap.values()).filter(p => p.stock_qty <= p.stock_alert).length
 
       const { data: staffData } = await supabase
         .from('users')
@@ -147,8 +147,10 @@ export default function DashboardPage() {
 
       const { data: drawerData } = await supabase
         .from('drawer_balances')
-        .select('cash, coin, till, date')
+        .select('cash, coin, till, date, updated_at')
         .is('shift_id', null)
+        .order('date', { ascending: false })
+        .order('updated_at', { ascending: false })
 
       let drawerRow = null
       if (drawerData && drawerData.length > 0) {

@@ -91,6 +91,11 @@ export default function CategoriesPage() {
   async function handleSaveCategory() {
 
     const trimmedName = form.name.trim()
+    const validation = validateCategoryForm({ ...form, name: trimmedName })
+    if (!validation.isValid) {
+      setErrors(Object.fromEntries(validation.errors.map(error => [error.field, error.message])))
+      return
+    }
     const duplicate = categories.find(c => c.name.toLowerCase() === trimmedName.toLowerCase() && c.id !== editingCategory?.id)
     if (duplicate) {
       toast.error(`❌ Category "${trimmedName}" already exists`)
