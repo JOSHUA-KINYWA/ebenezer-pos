@@ -9,6 +9,7 @@ import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { useToast } from '@/context/ToastContext'
+import { useShopSettings } from '@/hooks/useShopSettings'
 import { Product, Category, PricingTier } from '@/types'
 import { validateProductForm } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
@@ -77,6 +78,7 @@ export default function ProductsPage() {
   const [deactivateConfirm, setDeactivateConfirm] = useState<Product | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null)
   const toast = useToast()
+  const { settings } = useShopSettings()
   const supabase = createClient()
 
   function parsePricingTiersSafe(tiers: PricingTier[] | string | null | undefined): PricingTier[] {
@@ -126,7 +128,6 @@ export default function ProductsPage() {
       const { data, error } = await supabase
         .from('products')
         .select('*, category:categories(name)')
-        .eq('is_active', true)
         .order('name')
 
       if (error) throw error
@@ -169,13 +170,19 @@ export default function ProductsPage() {
           ? variants.reduce((sum, v) => sum + Number(salesByProduct.get(v.id)?.soldRevenue || 0), 0)
           : Number(salesByProduct.get(product.id)?.soldRevenue || 0)
 
-        const aggregateSoldCost = aggregateSoldUnits * costPerUnit
+        const aggregateSoldCost = isParent
+          ? variants.reduce((sum, v) => sum + Number(salesByProduct.get(v.id)?.soldUnits || 0) * (Number(v.cost_price) || 0), 0)
+          : aggregateSoldUnits * costPerUnit
         const aggregateProfit = aggregateSoldRevenue - aggregateSoldCost
         const aggregateStock = isParent ? variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0) : Number(product.stock_qty || 0)
         const aggregateInitialStock = isParent ? variants.reduce((sum, v) => sum + Number(v.initial_stock || 0), 0) : Number(product.initial_stock || 0)
 
-        const totalExpectedProfit = aggregateInitialStock * margin
-        const remainingPotentialProfit = aggregateStock * margin
+        const totalExpectedProfit = isParent
+          ? variants.reduce((sum, v) => sum + Number(v.initial_stock || 0) * ((Number(v.price) || 0) - (Number(v.cost_price) || 0)), 0)
+          : aggregateInitialStock * margin
+        const remainingPotentialProfit = isParent
+          ? variants.reduce((sum, v) => sum + Number(v.stock_qty || 0) * ((Number(v.price) || 0) - (Number(v.cost_price) || 0)), 0)
+          : aggregateStock * margin
 
         return {
           ...product,
@@ -230,7 +237,7 @@ export default function ProductsPage() {
     })
     setErrors({})
     setVariantsDraft([])
-    setPricingTiersDraft(parent?.pricing_tiers ? JSON.parse(typeof parent.pricing_tiers === 'string' ? parent.pricing_tiers : JSON.stringify(parent.pricing_tiers)).map((t: any) => ({ min_qty: String(t.min_qty || 1), price: String(t.price || 0) })) : [])
+    setPricingTiersDraft(parsePricingTiersSafe(parent?.pricing_tiers).map(t => ({ min_qty: String(t.min_qty), price: String(t.price) })))
     setEditingProduct(null)
     setModalOpen(true)
   }
@@ -403,7 +410,10 @@ export default function ProductsPage() {
             return vPayload
           })
           const { error: vErr } = await supabase.from('products').insert(variantPayloads)
-          if (vErr) throw vErr
+          if (vErr) {
+            await supabase.from('products').delete().eq('id', newProduct.id)
+            throw vErr
+          }
         }
         toast.success('Product added successfully')
       }
@@ -452,6 +462,11 @@ export default function ProductsPage() {
   async function confirmDeleteProduct() {
     if (!deleteConfirm) return
     try {
+      if (products.some(product => product.parent_product_id === deleteConfirm.id)) {
+        toast.error('Delete or reassign the variants before deleting this parent product.')
+        setDeleteConfirm(null)
+        return
+      }
       const { error } = await supabase.from('products').delete().eq('id', deleteConfirm.id)
       if (error) throw error
       toast.success('Product deleted successfully')
@@ -620,8 +635,8 @@ export default function ProductsPage() {
                       <td className="px-4 py-4 text-sm text-slate-600">{((product.category as { name?: string })?.name) || 'Uncategorized'}</td>
                       <td className="px-4 py-4 text-sm text-slate-600">
                         {product.pricing_tiers && parsePricingTiersSafe(product.pricing_tiers).length > 0
-                          ? `${parsePricingTiersSafe(product.pricing_tiers).map(t => `${t.min_qty} @ ${formatMoney(t.price, 'KSh')}`).join(', ')}`
-                          : formatMoney(product.price, 'KSh')}
+                          ? `${parsePricingTiersSafe(product.pricing_tiers).map(t => `${t.min_qty} @ ${formatMoney(t.price, settings.currency)}`).join(', ')}`
+                          : formatMoney(product.price, settings.currency)}
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">
                         {product.pricing_tiers && parsePricingTiersSafe(product.pricing_tiers).length > 0
@@ -706,20 +721,20 @@ export default function ProductsPage() {
                  <p className="text-xs uppercase tracking-wider text-slate-500">Selling price</p>
                  <p className="text-sm text-slate-900">
                    {selectedProduct.pricing_tiers && parsePricingTiersSafe(selectedProduct.pricing_tiers).length > 0
-                     ? `${parsePricingTiersSafe(selectedProduct.pricing_tiers).map(t => `${t.min_qty} @ ${formatMoney(t.price, 'KSh')}`).join(', ')}`
-                     : formatMoney(selectedProduct.price, 'KSh')}
+                     ? `${parsePricingTiersSafe(selectedProduct.pricing_tiers).map(t => `${t.min_qty} @ ${formatMoney(t.price, settings.currency)}`).join(', ')}`
+                     : formatMoney(selectedProduct.price, settings.currency)}
                  </p>
                </div>
                <div className="space-y-2">
                  <p className="text-xs uppercase tracking-wider text-slate-500">Buying price</p>
-                 <p className="text-sm text-slate-900">{formatMoney(selectedProduct.cost_price ?? 0, 'KSh')}</p>
+                 <p className="text-sm text-slate-900">{formatMoney(selectedProduct.cost_price ?? 0, settings.currency)}</p>
                </div>
                <div className="space-y-2">
                  <p className="text-xs uppercase tracking-wider text-slate-500">Margin</p>
                  <p className="text-sm text-slate-900">
                    {selectedProduct.pricing_tiers && parsePricingTiersSafe(selectedProduct.pricing_tiers).length > 0
-                     ? formatMoney(parsePricingTiersSafe(selectedProduct.pricing_tiers)[0].price / parsePricingTiersSafe(selectedProduct.pricing_tiers)[0].min_qty - (selectedProduct.cost_price ?? 0), 'KSh')
-                     : formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), 'KSh')}
+                     ? formatMoney(parsePricingTiersSafe(selectedProduct.pricing_tiers)[0].price / parsePricingTiersSafe(selectedProduct.pricing_tiers)[0].min_qty - (selectedProduct.cost_price ?? 0), settings.currency)
+                     : formatMoney((selectedProduct.price || 0) - (selectedProduct.cost_price ?? 0), settings.currency)}
                  </p>
                </div>
                <div className="space-y-2">
@@ -751,16 +766,16 @@ export default function ProductsPage() {
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Profit so far</p>
                 <p className={`text-sm font-semibold ${(selectedProduct.profit || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {formatMoney(selectedProduct.profit || 0, 'KSh')}
+                  {formatMoney(selectedProduct.profit || 0, settings.currency)}
                 </p>
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Expected profit</p>
-                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.totalExpectedProfit || 0, 'KSh')}</p>
+                <p className="text-sm text-slate-900">{formatMoney(selectedProduct.totalExpectedProfit || 0, settings.currency)}</p>
               </div>
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Remaining profit</p>
-                <p className="text-sm text-amber-600">{formatMoney(selectedProduct.remainingPotentialProfit || 0, 'KSh')}</p>
+                <p className="text-sm text-amber-600">{formatMoney(selectedProduct.remainingPotentialProfit || 0, settings.currency)}</p>
               </div>
               {selectedProduct.pricing_tiers && (
                 <div className="space-y-2 sm:col-span-2">
@@ -768,7 +783,7 @@ export default function ProductsPage() {
                   <div className="flex flex-wrap gap-2">
                     {parsePricingTiersSafe(selectedProduct.pricing_tiers).map((tier, idx) => (
                       <span key={idx} className="inline-flex items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2 py-1 text-xs text-purple-700">
-                        {tier.min_qty} @ {formatMoney(tier.price, 'KSh')}
+                        {tier.min_qty} @ {formatMoney(tier.price, settings.currency)}
                       </span>
                     ))}
                   </div>
@@ -813,13 +828,13 @@ export default function ProductsPage() {
                             <td className="table-cell">{variant.unit}</td>
                             <td className="table-cell">{variant.stock_qty}</td>
                             <td className="table-cell">{(variant.initial_stock || 0).toLocaleString()}</td>
-                            <td className="table-cell">{formatMoney(variant.price, 'KSh')}</td>
-                            <td className="table-cell">{formatMoney(variant.cost_price ?? 0, 'KSh')}</td>
+                            <td className="table-cell">{formatMoney(variant.price, settings.currency)}</td>
+                            <td className="table-cell">{formatMoney(variant.cost_price ?? 0, settings.currency)}</td>
                             <td className="table-cell">
                               <span className={margin >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                                {formatMoney(expectedProfit, 'KSh')}
+                                {formatMoney(expectedProfit, settings.currency)}
                               </span>
-                              <span className="text-slate-400 text-xs"> (rem: {formatMoney(remainingProfit, 'KSh')})</span>
+                              <span className="text-slate-400 text-xs"> (rem: {formatMoney(remainingProfit, settings.currency)})</span>
                             </td>
                             <td className="table-cell text-right">
                               <button onClick={() => openEditProduct(variant)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button>
@@ -1123,7 +1138,7 @@ export default function ProductsPage() {
                                 <td className="px-3 py-2 text-sm text-slate-900">{v.name}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600">{v.unit}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600">{v.stock_qty}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.price, 'KSh')}</td>
+                                <td className="px-3 py-2 text-sm text-slate-600">{formatMoney(v.price, settings.currency)}</td>
                                 <td className="px-3 py-2 text-right"><button onClick={() => openEditProduct(v)} className="text-slate-600 hover:text-brand-600"><Edit3 className="inline w-4 h-4" /></button></td>
                               </tr>
                             ))}
