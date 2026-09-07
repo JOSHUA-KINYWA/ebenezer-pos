@@ -14,7 +14,7 @@ import { Modal } from '@/components/Modal'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Search, Package, TrendingUp, TrendingDown, History, Save, Calendar } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { format, subDays, startOfMonth, endOfMonth } from 'date-fns'
+import { addDays, format, subDays, startOfMonth, endOfMonth } from 'date-fns'
 
 interface StockProduct extends Product {
   soldUnits: number
@@ -97,20 +97,12 @@ export default function StockPage() {
       const productsData = data || []
       const activeProductIds = productsData.map(product => product.id)
 
-      const { data: saleIdsData, error: saleIdsError } = await supabase
-        .from('sales')
-        .select('id')
-        .eq('is_voided', false)
-
-      if (saleIdsError) throw saleIdsError
-
-      const saleIds = (saleIdsData || []).map(sale => sale.id)
-      const { data: saleItemsData, error: saleItemsError } = activeProductIds.length > 0 && saleIds.length > 0
+      const { data: saleItemsData, error: saleItemsError } = activeProductIds.length > 0
         ? await supabase
             .from('sale_items')
-            .select('product_id, quantity, subtotal')
+            .select('product_id, quantity, subtotal, sales!inner(is_voided)')
             .in('product_id', activeProductIds)
-            .in('sale_id', saleIds)
+            .eq('sales.is_voided', false)
         : { data: [], error: null }
 
       if (saleItemsError) throw saleItemsError
@@ -139,14 +131,20 @@ export default function StockPage() {
           ? Number(salesByProduct.get(product.id)?.soldRevenue || 0)
           : variants.reduce((sum, v) => sum + Number(salesByProduct.get(v.id)?.soldRevenue || 0), 0)
 
-        const aggregateSoldCost = aggregateSoldUnits * costPerUnit
+        const aggregateSoldCost = variants.length === 0
+          ? aggregateSoldUnits * costPerUnit
+          : variants.reduce((sum, variant) => sum + Number(salesByProduct.get(variant.id)?.soldUnits || 0) * (Number(variant.cost_price) || 0), 0)
         const aggregateProfit = aggregateSoldRevenue - aggregateSoldCost
         const aggregateProfitMargin = aggregateSoldRevenue > 0 ? (aggregateProfit / aggregateSoldRevenue) * 100 : 0
         const aggregateStock = variants.length === 0 ? Number(product.stock_qty || 0) : variants.reduce((sum, v) => sum + Number(v.stock_qty || 0), 0)
         const aggregateInitialStock = variants.length === 0 ? Number(product.initial_stock || 0) : variants.reduce((sum, v) => sum + Number(v.initial_stock || 0), 0)
 
-        const totalExpectedProfit = aggregateInitialStock * margin
-        const remainingPotentialProfit = aggregateStock * margin
+        const totalExpectedProfit = variants.length === 0
+          ? aggregateInitialStock * margin
+          : variants.reduce((sum, variant) => sum + Number(variant.initial_stock || 0) * ((Number(variant.price) || 0) - (Number(variant.cost_price) || 0)), 0)
+        const remainingPotentialProfit = variants.length === 0
+          ? aggregateStock * margin
+          : variants.reduce((sum, variant) => sum + Number(variant.stock_qty || 0) * ((Number(variant.price) || 0) - (Number(variant.cost_price) || 0)), 0)
 
         return {
           ...product,
@@ -163,8 +161,12 @@ export default function StockPage() {
 
       setProducts(productsWithMetrics)
       if (productsWithMetrics.length > 0) {
-        const lowStockItems = productsWithMetrics.filter(p => p.stock_qty <= p.stock_alert && p.stock_qty > 0)
-        const outOfStock = productsWithMetrics.filter(p => p.stock_qty === 0)
+        const getStock = (product: typeof productsWithMetrics[number]) => {
+          const variants = productsWithMetrics.filter(item => item.parent_product_id === product.id)
+          return variants.length > 0 ? variants.reduce((sum, variant) => sum + Number(variant.stock_qty || 0), 0) : Number(product.stock_qty || 0)
+        }
+        const lowStockItems = productsWithMetrics.filter(p => getStock(p) <= p.stock_alert && getStock(p) > 0)
+        const outOfStock = productsWithMetrics.filter(p => getStock(p) === 0)
         if (lowStockItems.length > 0 || outOfStock.length > 0) {
           toast.warning(`⚠️ ${lowStockItems.length} low stock, ${outOfStock.length} out of stock`)
         }
@@ -181,21 +183,7 @@ export default function StockPage() {
 
   async function fetchTrendData() {
     try {
-      let startDate = trendStartDate
-      let endDate = trendEndDate
-
-      if (!startDate || !endDate) {
-        if (trendPeriod === 'daily') {
-          startDate = format(subDays(new Date(), 6), 'yyyy-MM-dd')
-          endDate = getLocalDateString()
-        } else if (trendPeriod === 'weekly') {
-          startDate = format(subDays(new Date(), 27), 'yyyy-MM-dd')
-          endDate = getLocalDateString()
-        } else {
-          startDate = format(startOfMonth(new Date()), 'yyyy-MM-dd')
-          endDate = format(endOfMonth(new Date()), 'yyyy-MM-dd')
-        }
-      }
+      const { startDate, endDate } = getTrendRange()
 
       const { data: logs } = await supabase
         .from('stock_log')
@@ -205,12 +193,7 @@ export default function StockPage() {
         .order('created_at', { ascending: true })
 
       const dateMap = new Map<string, number>()
-      const today = new Date()
-      const days = trendPeriod === 'daily' ? 7 : trendPeriod === 'weekly' ? 28 : 30
-      
-      for (let i = days - 1; i >= 0; i--) {
-        const d = new Date(today)
-        d.setDate(d.getDate() - i)
+      for (let d = new Date(`${startDate}T00:00:00`); d <= new Date(`${endDate}T00:00:00`); d = addDays(d, 1)) {
         const key = format(d, 'yyyy-MM-dd')
         dateMap.set(key, 0)
       }
@@ -233,20 +216,32 @@ export default function StockPage() {
     }
   }
 
+  function getTrendRange() {
+    if (trendStartDate && trendEndDate) {
+      return trendStartDate <= trendEndDate
+        ? { startDate: trendStartDate, endDate: trendEndDate }
+        : { startDate: trendEndDate, endDate: trendStartDate }
+    }
+
+    if (trendPeriod === 'daily') {
+      return { startDate: format(subDays(new Date(), 6), 'yyyy-MM-dd'), endDate: getLocalDateString() }
+    }
+    if (trendPeriod === 'weekly') {
+      return { startDate: format(subDays(new Date(), 27), 'yyyy-MM-dd'), endDate: getLocalDateString() }
+    }
+    return { startDate: format(startOfMonth(new Date()), 'yyyy-MM-dd'), endDate: format(endOfMonth(new Date()), 'yyyy-MM-dd') }
+  }
+
   async function fetchTopProducts() {
     try {
-      const { data: salesData } = await supabase
-        .from('sales')
-        .select('id, created_at, is_voided')
-        .eq('is_voided', false)
-
-      const saleIds = (salesData || []).map(s => s.id)
-      const { data: itemsData } = saleIds.length > 0
-        ? await supabase
-            .from('sale_items')
-            .select('product_id, product_name, quantity, subtotal')
-            .in('sale_id', saleIds)
-        : { data: [] }
+      const { startDate, endDate } = getTrendRange()
+      const nextDate = addDays(new Date(`${endDate}T00:00:00`), 1)
+      const { data: itemsData } = await supabase
+        .from('sale_items')
+        .select('product_id, product_name, quantity, subtotal, sales!inner(created_at, is_voided)')
+        .eq('sales.is_voided', false)
+        .gte('sales.created_at', `${startDate}T00:00:00`)
+        .lt('sales.created_at', `${format(nextDate, 'yyyy-MM-dd')}T00:00:00`)
 
       const productMap = new Map<string, { name: string; revenue: number; units: number }>()
       ;(itemsData || []).forEach((item: any) => {
@@ -269,9 +264,12 @@ export default function StockPage() {
 
   async function fetchPeriodProfit() {
     try {
+      const { startDate, endDate } = getTrendRange()
       const { data, error } = await supabase
         .from('expenses')
         .select('amount, payment_method')
+        .gte('expense_date', startDate)
+        .lte('expense_date', endDate)
       
       if (error) throw error
       
@@ -292,11 +290,24 @@ export default function StockPage() {
       }))
 
       for (const update of updates) {
+        const previous = products.find(product => product.id === update.id)
         const { error } = await supabase
           .from('products')
           .update({ initial_stock: update.initial_stock, stock_qty: update.stock_qty })
           .eq('id', update.id)
         if (error) throw error
+
+        const changeQty = update.stock_qty - Number(previous?.stock_qty || 0)
+        if (changeQty !== 0) {
+          const { error: logError } = await supabase.from('stock_log').insert({
+            product_id: update.id,
+            user_id: user?.id || null,
+            change_qty: changeQty,
+            reason: 'adjustment',
+            note: 'Bulk stock update',
+          })
+          if (logError) throw logError
+        }
       }
 
       toast.success('Bulk stock updated successfully')
@@ -499,10 +510,10 @@ export default function StockPage() {
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Initial Stock</p><p className="text-xl font-bold text-slate-900">{totalInitialStock.toLocaleString()}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Initial Stock Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalInitialStockValue)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Current Stock Value</p><p className="text-xl font-bold text-emerald-600">{formatMoney(totalValue)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Stock Sold Value</p><p className="text-xl font-bold text-amber-600">{formatMoney(totalSoldValue)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Initial Stock Value</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalInitialStockValue, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Current Stock Value</p><p className="text-xl font-bold text-emerald-600">{formatMoney(totalValue, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Stock Sold Value</p><p className="text-xl font-bold text-amber-600">{formatMoney(totalSoldValue, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
             </div>
 
             {/* Category Values */}
@@ -512,7 +523,7 @@ export default function StockPage() {
                 {Object.entries(categoryValues).map(([cat, data]) => (
                   <div key={cat} className="bg-slate-50 rounded-xl p-3 flex items-center justify-between">
                     <div><p className="text-sm font-medium text-slate-700">{cat}</p><p className="text-xs text-slate-400">{data.qty} units</p></div>
-                    <p className="text-sm font-bold text-slate-900">{formatMoney(data.value)}</p>
+                    <p className="text-sm font-bold text-slate-900">{formatMoney(data.value, settings.currency)}</p>
                   </div>
                 ))}
               </div>
@@ -572,7 +583,7 @@ export default function StockPage() {
                       </div>
                     )}
                     <p className="text-xs text-slate-400 mt-2">
-                      Initial: {(product.initial_stock || 0).toLocaleString()} {product.unit} • Value: {formatMoney(aggregateStock * product.price, settings.currency)}
+                      Initial: {(product.initial_stock || 0).toLocaleString()} {product.unit} • Value: {formatMoney(variants.length > 0 ? variants.reduce((sum, variant) => sum + Number(variant.stock_qty || 0) * Number(variant.price || 0), 0) : aggregateStock * product.price, settings.currency)}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
                       Sold: {product.soldUnits.toLocaleString()} • Profit: <span className={product.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatMoney(product.profit, settings.currency)}</span>
@@ -590,8 +601,8 @@ export default function StockPage() {
         ) : activeView === 'analysis' ? (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Revenue</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalSoldUnits > 0 ? totalProfit + products.reduce((sum, p) => sum + p.soldCost, 0) : 0)}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Revenue</p><p className="text-xl font-bold text-brand-600">{formatMoney(totalSoldUnits > 0 ? totalProfit + products.reduce((sum, p) => sum + p.soldCost, 0) : 0, settings.currency)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Profit</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatMoney(totalProfit, settings.currency)}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Profit Margin</p><p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{products.reduce((sum, p) => sum + p.soldRevenue, 0) > 0 ? `${((totalProfit / products.reduce((sum, p) => sum + p.soldRevenue, 0)) * 100).toFixed(1)}%` : '0.0%'}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Items Sold</p><p className="text-xl font-bold text-slate-900">{totalSoldUnits.toLocaleString()}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Loss Making</p><p className="text-xl font-bold text-red-600">{inventoryProducts.filter(p => p.profit < 0 && p.soldUnits > 0).length}</p></div>
@@ -641,9 +652,9 @@ export default function StockPage() {
                             <td className="py-3 px-4 text-right text-slate-600">{(product.initial_stock || 0).toLocaleString()} {product.unit}</td>
                             <td className="py-3 px-4 text-right font-semibold text-slate-900">{product.soldUnits.toLocaleString()}</td>
                             <td className="py-3 px-4 text-right text-slate-600">{product.stock_qty.toLocaleString()} {product.unit}</td>
-                            <td className="py-3 px-4 text-right text-amber-600">{formatMoney(product.remainingPotentialProfit)}</td>
-                            <td className="py-3 px-4 text-right text-slate-900">{formatMoney(product.totalExpectedProfit)}</td>
-                            <td className={`py-3 px-4 text-right ${isProfitable ? 'text-emerald-600' : isLoss ? 'text-red-600' : 'text-amber-600'}`}>{formatMoney(product.profit)}</td>
+                            <td className="py-3 px-4 text-right text-amber-600">{formatMoney(product.remainingPotentialProfit, settings.currency)}</td>
+                            <td className="py-3 px-4 text-right text-slate-900">{formatMoney(product.totalExpectedProfit, settings.currency)}</td>
+                            <td className={`py-3 px-4 text-right ${isProfitable ? 'text-emerald-600' : isLoss ? 'text-red-600' : 'text-amber-600'}`}>{formatMoney(product.profit, settings.currency)}</td>
                             <td className="py-3 px-4 text-right text-slate-900">{product.soldRevenue > 0 ? `${product.profitMargin.toFixed(1)}%` : '0.0%'}</td>
                           </tr>
                         )
@@ -708,10 +719,10 @@ export default function StockPage() {
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Chart Period Profit</p><p className="text-xl font-bold text-brand-600">{formatMoney(periodProfit)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Chart Period Profit</p><p className="text-xl font-bold text-brand-600">{formatMoney(periodProfit, settings.currency)}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Products</p><p className="text-xl font-bold text-slate-900">{products.length}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Top Performer</p><p className="text-sm font-bold text-slate-900 truncate">{topProducts[0]?.name || 'N/A'}</p></div>
-              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Top Revenue</p><p className="text-xl font-bold text-slate-900">{formatMoney(topProducts[0]?.revenue || 0)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Top Revenue</p><p className="text-xl font-bold text-slate-900">{formatMoney(topProducts[0]?.revenue || 0, settings.currency)}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500 mb-1">Total Units Sold</p><p className="text-xl font-bold text-slate-900">{topProducts.reduce((sum, p) => sum + p.units, 0).toLocaleString()}</p></div>
             </div>
 
@@ -740,7 +751,7 @@ export default function StockPage() {
                       <tr key={idx} className="hover:bg-slate-50/60">
                         <td className="py-2 px-3 text-slate-900 font-medium">{product.name}</td>
                         <td className="py-2 px-3 text-right text-slate-600">{product.units.toLocaleString()}</td>
-                        <td className="py-2 px-3 text-right font-semibold text-slate-900">{formatMoney(product.revenue)}</td>
+                        <td className="py-2 px-3 text-right font-semibold text-slate-900">{formatMoney(product.revenue, settings.currency)}</td>
                       </tr>
                     ))}
                   </tbody>
