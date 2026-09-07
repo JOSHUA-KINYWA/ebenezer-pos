@@ -107,8 +107,11 @@ RETURNS trigger AS $$
 BEGIN
   IF NEW.product_id IS NOT NULL THEN
     UPDATE products
-    SET stock_qty = GREATEST(0, stock_qty - NEW.quantity)
-    WHERE id = NEW.product_id;
+    SET stock_qty = stock_qty - NEW.quantity
+    WHERE id = NEW.product_id AND stock_qty >= NEW.quantity;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Insufficient stock for product %', NEW.product_id;
+    END IF;
 
     INSERT INTO stock_log (product_id, change_qty, reason, note)
     VALUES (NEW.product_id, -NEW.quantity, 'sale', 'Auto deduct from sale');

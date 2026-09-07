@@ -52,10 +52,14 @@ export default function DrawerPage() {
 
   async function fetchData(date = selectedDate) {
     try {
-      const { data, error } = await withRetry(async () => await supabase.from('drawer_balances').select('*').eq('date', date).order('updated_at', { ascending: false }))
+      const { data, error } = await withRetry(async () => await supabase.from('drawer_balances').select('*').eq('date', date).is('shift_id', null).order('updated_at', { ascending: false }))
       if (error) throw error
       let current = data && data.length > 0 ? data[0] : null
       let opening = null
+      const { data: prevData } = await withRetry(async () => await supabase.from('drawer_balances').select('cash, coin, till').lt('date', date).is('shift_id', null).order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(1))
+      if (prevData && prevData.length > 0) {
+        opening = prevData[0]
+      }
 
       if (!current) {
         setBalanceId(null)
@@ -64,12 +68,7 @@ export default function DrawerPage() {
         setTill('0')
         setNote('')
 
-        const prevDate = new Date(date + 'T00:00:00')
-        prevDate.setDate(prevDate.getDate() - 1)
-        const prevDateStr = getLocalDateString(prevDate)
-        const { data: prevData } = await withRetry(async () => await supabase.from('drawer_balances').select('cash, coin, till').eq('date', prevDateStr).is('shift_id', null).order('updated_at', { ascending: false }).limit(1))
         if (prevData && prevData.length > 0) {
-          opening = prevData[0]
           const carriedBalance = {
             cash: Number(prevData[0].cash || 0),
             coin: Number(prevData[0].coin || 0),
@@ -83,7 +82,11 @@ export default function DrawerPage() {
           setOpeningBalance(null)
         }
       } else {
-        setOpeningBalance(null)
+        setOpeningBalance(opening ? {
+          cash: Number(opening.cash || 0),
+          coin: Number(opening.coin || 0),
+          till: Number(opening.till || 0),
+        } : null)
         setBalanceId(current.id)
         setCash(Number(current.cash || 0).toString())
         setCoin(Number(current.coin || 0).toString())
@@ -99,13 +102,20 @@ export default function DrawerPage() {
         .limit(100)
       setHistory(logs && logs.length > 0 ? logs : data || [])
 
-      const tomorrow = getLocalDateString(new Date(Date.now() + 86400000))
+      const tomorrowDate = new Date(`${date}T00:00:00`)
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+      const tomorrow = getLocalDateString(tomorrowDate)
       const { data: salesData } = await supabase
         .from('sales')
         .select('payment_method, total_amount, amount_tendered, change_amount')
         .gte('created_at', `${date}T00:00:00`)
         .lt('created_at', `${tomorrow}T00:00:00`)
         .eq('is_voided', false)
+
+      const { data: expensesData } = await supabase
+        .from('expenses')
+        .select('cash_deducted, coin_deducted, till_deducted')
+        .eq('expense_date', date)
 
       const salesList = salesData || []
       setTodaySales(salesList.length)
@@ -119,9 +129,18 @@ export default function DrawerPage() {
         else if (sale.payment_method === 'cash') cash += amount
         else if (sale.payment_method === 'coin') coin += amount
       })
-      setExpectedTill(till)
-      setExpectedCash(cash)
-      setExpectedCoin(coin)
+      const expenses = expensesData || []
+      expenses.forEach(expense => {
+        cash -= Number(expense.cash_deducted || 0)
+        coin -= Number(expense.coin_deducted || 0)
+        till -= Number(expense.till_deducted || 0)
+      })
+      const carriedCash = Number(opening?.cash || 0)
+      const carriedCoin = Number(opening?.coin || 0)
+      const carriedTill = Number(opening?.till || 0)
+      setExpectedTill(carriedTill + till)
+      setExpectedCash(carriedCash + cash)
+      setExpectedCoin(carriedCoin + coin)
 
       setError(null)
     } catch (err) {

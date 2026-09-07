@@ -18,6 +18,7 @@ import {
 
 interface SaleItem {
   id: string
+  product_id?: string
   product_name: string
   quantity: number
   unit_price: number
@@ -145,7 +146,7 @@ export default function MySalesPage() {
             // Get sale items
             const { data: itemsData } = await supabase
               .from('sale_items')
-              .select('id, product_name, quantity, unit_price, subtotal')
+              .select('id, product_id, product_name, quantity, unit_price, subtotal')
               .eq('sale_id', sale.id)
 
             return {
@@ -208,20 +209,24 @@ export default function MySalesPage() {
 
       // Restore stock for each item
       for (const item of sale.items) {
-        const { data: product } = await supabase
+        if (!item.product_id) continue
+
+        const { data: product, error: productError } = await supabase
           .from('products')
           .select('id, stock_qty')
-          .eq('name', item.product_name)
+          .eq('id', item.product_id)
           .maybeSingle()
 
+        if (productError) throw productError
         if (product) {
-          await supabase
+          const { error: stockError } = await supabase
             .from('products')
             .update({ stock_qty: product.stock_qty + item.quantity })
             .eq('id', product.id)
+          if (stockError) throw stockError
 
           // Log stock adjustment
-          await supabase
+          const { error: logError } = await supabase
             .from('stock_log')
             .insert({
               product_id: product.id,
@@ -229,6 +234,7 @@ export default function MySalesPage() {
               reason: 'return',
               note: `Sale ${sale.receipt_no} canceled - ${voidReason}`,
             })
+          if (logError) throw logError
         }
       }
 

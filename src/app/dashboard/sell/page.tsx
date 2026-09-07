@@ -455,8 +455,8 @@ export default function SellPage() {
     }
 
     setSubmitting(true)
-
-       const stockChecks = await Promise.all(
+    try {
+      const stockChecks = await Promise.all(
         cart.map(async item => {
           const { data: product, error } = await supabase.from('products').select('id, stock_qty').eq('id', item.product.id).single()
           if (error || !product) throw new Error(`Unable to verify stock for ${formatProductName(item.product)}`)
@@ -467,13 +467,10 @@ export default function SellPage() {
         })
       )
 
-    if (!stockChecks.length) {
-      toast.error('❌ No items available for sale')
-      setSubmitting(false)
-      return
-    }
+      if (!stockChecks.length) {
+        throw new Error('No items available for sale')
+      }
 
-    try {
       const saleItems = cart.map(item => ({
         product_id: item.product.id,
         product_name: formatProductName(item.product),

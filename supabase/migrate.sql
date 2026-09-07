@@ -100,6 +100,7 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode text;
 
 -- Staff account support
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin text;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 
 -- Support decimal quantities for items sold by weight/volume
 ALTER TABLE products ALTER COLUMN stock_qty TYPE numeric(12,2) USING stock_qty::numeric(12,2);
