@@ -155,6 +155,14 @@ export default function StaffPage() {
 
   async function handleDeleteStaff(member: User) {
     if (!member.id) return
+    if (member.id === user?.id) {
+      toast.error('You cannot delete your own account.')
+      return
+    }
+    if (member.role === 'owner' && staff.filter(item => item.role === 'owner' && item.is_active).length <= 1) {
+      toast.error('The last active owner cannot be deleted.')
+      return
+    }
     const confirmed = window.confirm(`Delete staff ${member.full_name}? This cannot be undone.`)
     if (!confirmed) return
 

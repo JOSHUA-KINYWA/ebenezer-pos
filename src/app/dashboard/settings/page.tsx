@@ -269,7 +269,7 @@ export default function SettingsPage() {
 
     try {
       if (editingProduct) {
-        const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id).single()
+        const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id)
         if (error) throw error
         toast.success('Product updated successfully')
       } else {
@@ -287,7 +287,7 @@ export default function SettingsPage() {
 
   async function toggleProductStatus(product: Product) {
     try {
-      const { error } = await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id).single()
+      const { error } = await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id)
       if (error) throw error
       toast.success(`${product.is_active ? 'Deactivated' : 'Activated'} product`)
       fetchProducts()
@@ -325,7 +325,7 @@ export default function SettingsPage() {
 
     try {
       if (editingCategory) {
-        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id).single()
+        const { error } = await supabase.from('categories').update(payload).eq('id', editingCategory.id)
         if (error) throw error
         toast.success('Category updated successfully')
       } else {
