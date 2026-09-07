@@ -453,6 +453,40 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION edit_sale(p_sale_id uuid, p_discount numeric, p_payment_method text)
+RETURNS void AS $$
+DECLARE
+  v_sale sales%ROWTYPE;
+  v_total numeric;
+  v_drawer_id uuid;
+BEGIN
+  SELECT * INTO v_sale FROM sales WHERE id = p_sale_id FOR UPDATE;
+  IF NOT FOUND OR v_sale.is_voided THEN RAISE EXCEPTION 'Sale is unavailable'; END IF;
+  IF p_discount < 0 OR p_payment_method NOT IN ('cash', 'coin', 'till') THEN RAISE EXCEPTION 'Invalid sale update'; END IF;
+  v_total := v_sale.subtotal + v_sale.tax_amount - p_discount;
+  IF v_total < 0 THEN RAISE EXCEPTION 'Discount cannot exceed sale total'; END IF;
+
+  UPDATE drawer_balances
+  SET cash = cash - CASE WHEN v_sale.payment_method = 'cash' THEN v_sale.total_amount ELSE 0 END,
+      coin = coin - CASE WHEN v_sale.payment_method = 'coin' THEN v_sale.total_amount ELSE 0 END,
+      till = till - CASE WHEN v_sale.payment_method = 'till' THEN v_sale.total_amount ELSE 0 END,
+      updated_at = now()
+  WHERE date = v_sale.created_at::date AND shift_id IS NOT DISTINCT FROM v_sale.shift_id
+  RETURNING id INTO v_drawer_id;
+
+  UPDATE drawer_balances
+  SET cash = cash + CASE WHEN p_payment_method = 'cash' THEN v_total ELSE 0 END,
+      coin = coin + CASE WHEN p_payment_method = 'coin' THEN v_total ELSE 0 END,
+      till = till + CASE WHEN p_payment_method = 'till' THEN v_total ELSE 0 END,
+      updated_at = now()
+  WHERE date = v_sale.created_at::date AND shift_id IS NOT DISTINCT FROM v_sale.shift_id;
+
+  UPDATE sales
+  SET discount = p_discount, payment_method = p_payment_method, total_amount = v_total, updated_at = now()
+  WHERE id = p_sale_id;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Get current drawer balance for a date (sums all shifts when shift_id is null)
 CREATE OR REPLACE FUNCTION get_drawer_balance(p_date date, p_shift_id uuid DEFAULT NULL)
 RETURNS TABLE(cash numeric, coin numeric, till numeric) AS $$

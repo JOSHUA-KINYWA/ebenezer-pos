@@ -170,15 +170,11 @@ export default function MySalesPage() {
   async function handleEditSale(sale: Sale) {
     setSavingEdit(true)
     try {
-      const { error } = await supabase
-        .from('sales')
-        .update({
-          discount: editDiscount,
-          payment_method: editPaymentMethod,
-          total_amount: sale.subtotal + sale.tax_amount - editDiscount,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', sale.id)
+      const { error } = await supabase.rpc('edit_sale', {
+        p_sale_id: sale.id,
+        p_discount: editDiscount,
+        p_payment_method: editPaymentMethod,
+      })
 
       if (error) throw error
 
