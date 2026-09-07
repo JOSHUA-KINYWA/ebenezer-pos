@@ -254,8 +254,8 @@ BEGIN
   ELSE
     UPDATE drawer_balances SET cash = cash - p_cash_deducted, coin = coin - p_coin_deducted, till = till - p_till_deducted, updated_at = now() WHERE id = v_drawer.id;
   END IF;
-  INSERT INTO expenses(item_name, amount, payment_method, vendor, category, payment_note, expense_date, created_by)
-  VALUES (p_item_name, p_amount, p_payment_method, p_vendor, p_category, p_payment_note, p_expense_date, p_created_by)
+  INSERT INTO expenses(item_name, amount, payment_method, vendor, category, payment_note, expense_date, created_by, cash_deducted, coin_deducted, till_deducted)
+  VALUES (p_item_name, p_amount, p_payment_method, p_vendor, p_category, p_payment_note, p_expense_date, p_created_by, p_cash_deducted, p_coin_deducted, p_till_deducted)
   RETURNING id INTO v_id;
   RETURN v_id;
 END;
