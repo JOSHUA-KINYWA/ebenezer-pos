@@ -103,6 +103,7 @@ export default function SellPage() {
     }
 
     const mismatched = cart.filter(item => {
+      if (item.saleMode === 'amount') return false
       const price = getEffectiveUnitPrice(item.product, item.quantity)
       if (price <= 0) return false
       const expected = Math.round(item.quantity * price * 100) / 100
@@ -118,14 +119,23 @@ export default function SellPage() {
   }, [cart])
 
   async function fetchProducts() {
-    const [{ data: productData }, { data: customerData }] = await Promise.all([
-      supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name'),
-      supabase.from('customers').select('*').eq('is_active', true).order('name'),
-    ])
-
-    setProducts(productData ?? [])
-    setCustomers(customerData ?? [])
-    setLoading(false)
+    try {
+      const [{ data: productData, error: productError }, { data: customerData, error: customerError }] = await Promise.all([
+        supabase.from('products').select('*, category:categories(name)').eq('is_active', true).order('name'),
+        supabase.from('customers').select('*').eq('is_active', true).order('name'),
+      ])
+      if (productError) throw productError
+      if (customerError) throw customerError
+      setProducts(productData ?? [])
+      setCustomers(customerData ?? [])
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load products'
+      toast.error(`❌ ${message}`)
+      setProducts([])
+      setCustomers([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   const categories = useMemo(
@@ -165,12 +175,12 @@ export default function SellPage() {
 
   function addToCart(product: Product, tier?: PricingTier) {
     const stock = getAggregateStock(product)
-    if (stock === 0) {
+    const initialQty = tier ? tier.min_qty : getIncrementStep(product.unit, product)
+    if (stock < initialQty) {
       toast.error(`⚠️ ${formatProductName(product)} is out of stock!`)
       return
     }
 
-    const initialQty = tier ? tier.min_qty : getIncrementStep(product.unit, product)
     const step = tier ? tier.min_qty : getIncrementStep(product.unit, product)
 
     setCart(prev => {
@@ -183,11 +193,13 @@ export default function SellPage() {
               const newSubtotal = Math.round((item.subtotal + item.subtotal) * 100) / 100
               const newUnitPrice = getEffectiveUnitPrice(item.product, item.quantity + step)
               const newQty = Math.round((newSubtotal / newUnitPrice) * 10) / 10
+              if (newQty > stock) return item
               return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'amount' as const }
             }
             const newQty = Math.round((item.quantity + step) * 10) / 10
-            const newSubtotal = getCartItemSubtotal(item.product, newQty, item.tier || tier)
-            return { ...item, quantity: newQty, subtotal: newSubtotal, saleMode: 'quantity' as const }
+            if (newQty > stock) return item
+            const newSubtotal = getCartItemSubtotal(item.product, newQty)
+            return { ...item, quantity: newQty, subtotal: newSubtotal, tier: undefined, saleMode: 'quantity' as const }
           })
         : [
             ...prev,
@@ -288,10 +300,9 @@ export default function SellPage() {
 
     const isDecimal = isDecimalUnit(cartItem.product.unit)
     const validQty = Math.max(0.01, isNaN(qty) ? 0.01 : qty)
-    const finalQty = isDecimal ? Math.round(validQty * 10) / 10 : Math.round(validQty)
+    const finalQty = Math.min(stockForProduct(cartItem.product), isDecimal ? Math.round(validQty * 10) / 10 : Math.round(validQty))
 
-     const unitPrice = getEffectiveUnitPrice(cartItem.product, finalQty)
-     const finalSubtotal = getCartItemSubtotal(cartItem.product, finalQty, cartItem.tier)
+     const finalSubtotal = getCartItemSubtotal(cartItem.product, finalQty)
 
      setCart(prev =>
        prev.map(item =>
@@ -308,7 +319,8 @@ export default function SellPage() {
 
      const step = getIncrementStep(cartItem.product.unit, cartItem.product)
      const newQty = cartItem.quantity + step
-     const newSubtotal = getCartItemSubtotal(cartItem.product, newQty, cartItem.tier)
+    if (newQty > stockForProduct(cartItem.product)) return
+    const newSubtotal = getCartItemSubtotal(cartItem.product, newQty)
 
      setCart(prev =>
        prev.map(item =>
@@ -326,7 +338,7 @@ export default function SellPage() {
      const step = getIncrementStep(cartItem.product.unit, cartItem.product)
      const minQty = step
      const newQty = Math.max(minQty, cartItem.quantity - step)
-     const newSubtotal = getCartItemSubtotal(cartItem.product, newQty, cartItem.tier)
+    const newSubtotal = getCartItemSubtotal(cartItem.product, newQty)
 
      setCart(prev =>
        prev.map(item =>
@@ -346,17 +358,23 @@ export default function SellPage() {
 
         if (saleMode === 'quantity') {
           const quantity = Math.max(0.01, item.quantity || 1)
-          const subtotal = getCartItemSubtotal(item.product, quantity, item.tier)
+          const subtotal = getCartItemSubtotal(item.product, quantity)
           return {
             ...item,
             saleMode,
             quantity,
             subtotal,
+            tier: undefined,
           }
         }
 
         if (unitPrice <= 0) return item
         const amount = Math.max(0.01, item.subtotal || unitPrice)
+        const maxAmount = Math.round(stockForProduct(item.product) * unitPrice * 100) / 100
+        if (amount > maxAmount) {
+          toast.error(`⚠️ Amount exceeds available stock for ${formatProductName(item.product)}`)
+          return item
+        }
         const quantity = Math.round((amount / unitPrice) * 10) / 10
         const subtotal = Math.round(amount * 100) / 100
         return {
@@ -367,6 +385,10 @@ export default function SellPage() {
         }
       })
     )
+  }
+
+  function stockForProduct(product: Product): number {
+    return getAggregateStock(product)
   }
 
   function removeFromCart(productId: string) {
@@ -391,12 +413,20 @@ export default function SellPage() {
 
   function updateAmount(productId: string, amount: number) {
     if (amount < 0.01) return
+    const cartItem = cart.find(item => item.product.id === productId)
+    if (!cartItem) return
+    const unitPrice = getEffectiveUnitPrice(cartItem.product, cartItem.quantity)
+    const maxAmount = Math.round(stockForProduct(cartItem.product) * unitPrice * 100) / 100
+    if (amount > maxAmount) {
+      toast.error(`⚠️ Amount exceeds available stock for ${formatProductName(cartItem.product)}`)
+      return
+    }
     setCart(prev =>
       prev.map(item => {
         if (item.product.id !== productId) return item
-        const unitPrice = getEffectiveUnitPrice(item.product, item.quantity)
-        if (unitPrice <= 0) return item
-        const quantity = Math.round((amount / unitPrice) * 10) / 10
+        const itemUnitPrice = getEffectiveUnitPrice(item.product, item.quantity)
+        if (itemUnitPrice <= 0) return item
+        const quantity = Math.round((amount / itemUnitPrice) * 10) / 10
         const subtotal = Math.round(amount * 100) / 100
         return {
           ...item,

@@ -175,7 +175,49 @@ DECLARE
   v_sale_id uuid;
   v_item jsonb;
   v_drawer_id uuid;
+  v_items_subtotal numeric := 0;
+  v_product_price numeric;
+  v_product_stock numeric;
+  v_product_active boolean;
+  v_pricing_tiers jsonb;
+  v_quantity numeric;
+  v_unit_price numeric;
+  v_item_subtotal numeric;
 BEGIN
+  IF jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'At least one sale item is required';
+  END IF;
+  IF p_subtotal < 0 OR p_tax_amount < 0 OR p_discount < 0 OR p_total_amount < 0 OR p_amount_tendered < 0 OR p_change_amount < 0 THEN
+    RAISE EXCEPTION 'Sale amounts cannot be negative';
+  END IF;
+  IF p_payment_method NOT IN ('cash', 'coin', 'till') OR p_payment_type NOT IN ('cash', 'mpesa', 'card', 'credit') THEN
+    RAISE EXCEPTION 'Invalid payment method';
+  END IF;
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_quantity := (v_item->>'quantity')::numeric;
+    v_unit_price := (v_item->>'unit_price')::numeric;
+    v_item_subtotal := (v_item->>'subtotal')::numeric;
+    SELECT price, stock_qty, is_active, pricing_tiers INTO v_product_price, v_product_stock, v_product_active, v_pricing_tiers
+    FROM products WHERE id = (v_item->>'product_id')::uuid FOR UPDATE;
+    IF NOT FOUND OR NOT v_product_active THEN RAISE EXCEPTION 'Product is unavailable'; END IF;
+    IF v_quantity <= 0 OR v_unit_price < 0 OR v_item_subtotal < 0 OR v_quantity > v_product_stock THEN
+      RAISE EXCEPTION 'Invalid quantity, price, or stock for product %', v_item->>'product_id';
+    END IF;
+    IF abs(v_unit_price - v_product_price) > 0.01 AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(COALESCE(v_pricing_tiers, '[]'::jsonb)) tier
+      WHERE (tier->>'min_qty')::numeric > 0
+        AND abs(v_unit_price - (tier->>'price')::numeric / (tier->>'min_qty')::numeric) <= 0.01
+    ) THEN RAISE EXCEPTION 'Invalid price for product %', v_item->>'product_id'; END IF;
+    v_items_subtotal := v_items_subtotal + v_item_subtotal;
+  END LOOP;
+  IF abs(v_items_subtotal - p_subtotal) > 0.01 OR abs((p_subtotal + p_tax_amount - p_discount) - p_total_amount) > 0.01 THEN
+    RAISE EXCEPTION 'Sale totals do not match line items';
+  END IF;
+  IF p_amount_tendered < p_total_amount OR abs((p_amount_tendered - p_total_amount) - p_change_amount) > 0.01 THEN
+    RAISE EXCEPTION 'Invalid tendered amount or change';
+  END IF;
+
   INSERT INTO sales(
     user_id, shift_id, customer_id, subtotal, tax_amount, total_amount,
     payment_type, payment_method, discount, mpesa_ref, card_ref,
