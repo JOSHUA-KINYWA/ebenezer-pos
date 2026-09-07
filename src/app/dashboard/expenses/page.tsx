@@ -125,38 +125,7 @@ export default function ExpensesPage() {
 
     setDeletingExpenseId(expense.id)
     try {
-      const { data: existing } = await supabase
-        .from('drawer_balances')
-        .select('id, cash, coin, till')
-        .eq('date', expense.expense_date)
-        .is('shift_id', null)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      const current = existing || { cash: 0, coin: 0, till: 0 }
-      const nextBalance: any = { cash: current.cash, coin: current.coin, till: current.till, updated_at: new Date().toISOString() }
-
-      const totalDeducted = Number(expense.cash_deducted || 0) + Number(expense.coin_deducted || 0) + Number(expense.till_deducted || 0)
-      if (totalDeducted === 0) {
-        if (expense.payment_method === 'cash') {
-          nextBalance.cash = Number(current.cash || 0) + Number(expense.amount)
-        } else if (expense.payment_method === 'coin') {
-          nextBalance.coin = Number(current.coin || 0) + Number(expense.amount)
-        } else {
-          nextBalance.till = Number(current.till || 0) + Number(expense.amount)
-        }
-      } else {
-        nextBalance.cash = Number(current.cash || 0) + Number(expense.cash_deducted || 0)
-        nextBalance.coin = Number(current.coin || 0) + Number(expense.coin_deducted || 0)
-        nextBalance.till = Number(current.till || 0) + Number(expense.till_deducted || 0)
-      }
-
-      const drawerResult = existing?.id
-        ? await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
-        : await supabase.from('drawer_balances').insert({ date: expense.expense_date, shift_id: null, ...nextBalance })
-      if (drawerResult.error) throw drawerResult.error
-      const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
+      const { error } = await supabase.rpc('delete_expense', { p_expense_id: expense.id })
       if (error) throw error
 
       toast.success('Expense removed and drawer balance updated')
@@ -290,43 +259,20 @@ export default function ExpensesPage() {
   ) {
     const todayString = today.current
 
-    const { error: insertError } = await supabase.from('expenses').insert({
-      item_name,
-      amount,
-      payment_method: primaryMethod,
-      vendor: vendor || null,
-      category: category || 'Miscellaneous',
-      payment_note: payment_note || null,
-      expense_date: todayString,
-      created_by: user?.id,
-      cash_deducted: Number(deductions.cash || 0),
-      coin_deducted: Number(deductions.coin || 0),
-      till_deducted: Number(deductions.till || 0),
+    const { error } = await supabase.rpc('record_expense', {
+      p_item_name: item_name,
+      p_amount: amount,
+      p_payment_method: primaryMethod,
+      p_vendor: vendor || null,
+      p_category: category || 'Miscellaneous',
+      p_payment_note: payment_note || null,
+      p_expense_date: todayString,
+      p_created_by: user?.id || null,
+      p_cash_deducted: Number(deductions.cash || 0),
+      p_coin_deducted: Number(deductions.coin || 0),
+      p_till_deducted: Number(deductions.till || 0),
     })
-
-    if (insertError) throw insertError
-
-    const { data: existing } = await supabase
-      .from('drawer_balances')
-      .select('id, cash, coin, till')
-      .eq('date', todayString)
-      .is('shift_id', null)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const current = existing || { cash: 0, coin: 0, till: 0 }
-    const nextBalance: any = {
-      cash: Number(current.cash || 0) - Number(deductions.cash || 0),
-      coin: Number(current.coin || 0) - Number(deductions.coin || 0),
-      till: Number(current.till || 0) - Number(deductions.till || 0),
-      updated_at: new Date().toISOString(),
-    }
-
-    const drawerResult = existing?.id
-      ? await supabase.from('drawer_balances').update(nextBalance).eq('id', existing.id)
-      : await supabase.from('drawer_balances').insert({ date: todayString, shift_id: null, ...nextBalance })
-    if (drawerResult.error) throw drawerResult.error
+    if (error) throw error
 
     toast.success(`✓ Expense recorded: ${item_name} for ${formatMoney(amount, settings.currency)}`)
     setForm({ item_name: '', amount: '', payment_method: 'cash', vendor: '', category: '', payment_note: '' })

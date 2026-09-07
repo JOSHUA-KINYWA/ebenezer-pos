@@ -46,4 +46,4 @@ async function handler(request: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
-export const POST = withAuth(handler)
+export const POST = withAuth(handler, ['owner'])

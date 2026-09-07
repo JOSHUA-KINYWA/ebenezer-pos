@@ -207,48 +207,11 @@ export default function MySalesPage() {
         throw new Error('Sale not found')
       }
 
-      // Restore stock for each item
-      for (const item of sale.items) {
-        if (!item.product_id) continue
-
-        const { data: product, error: productError } = await supabase
-          .from('products')
-          .select('id, stock_qty')
-          .eq('id', item.product_id)
-          .maybeSingle()
-
-        if (productError) throw productError
-        if (product) {
-          const { error: stockError } = await supabase
-            .from('products')
-            .update({ stock_qty: product.stock_qty + item.quantity })
-            .eq('id', product.id)
-          if (stockError) throw stockError
-
-          // Log stock adjustment
-          const { error: logError } = await supabase
-            .from('stock_log')
-            .insert({
-              product_id: product.id,
-              change_qty: item.quantity,
-              reason: 'return',
-              note: `Sale ${sale.receipt_no} canceled - ${voidReason}`,
-            })
-          if (logError) throw logError
-        }
-      }
-
-      // Mark sale as voided
-      const { error } = await supabase
-        .from('sales')
-        .update({
-          is_voided: true,
-          voided_at: new Date().toISOString(),
-          voided_by: user?.id,
-          void_reason: voidReason,
-        })
-        .eq('id', saleId)
-
+      const { error } = await supabase.rpc('void_sale', {
+        p_sale_id: saleId,
+        p_user_id: user?.id || null,
+        p_reason: voidReason.trim(),
+      })
       if (error) throw error
 
       setVoidReason('')

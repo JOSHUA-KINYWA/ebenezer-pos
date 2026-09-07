@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
-export function withAuth(handler: (request: NextRequest, userId: string) => Promise<NextResponse>) {
+export function withAuth(handler: (request: NextRequest, userId: string) => Promise<NextResponse>, allowedRoles?: string[]) {
   return async (request: NextRequest) => {
     const userId = request.headers.get('x-user-id')
 
@@ -16,7 +16,7 @@ export function withAuth(handler: (request: NextRequest, userId: string) => Prom
       .eq('id', userId)
       .maybeSingle()
 
-    if (error || !user || !user.is_active) {
+    if (error || !user || !user.is_active || (allowedRoles && !allowedRoles.includes(user.role))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

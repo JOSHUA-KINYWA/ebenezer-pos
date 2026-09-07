@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withAuth } from '@/lib/api-auth'
 import { sendEmail } from '@/lib/email'
 
 function escapeHtml(value: string) {
@@ -10,7 +11,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#039;')
 }
 
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   try {
     const body = await request.json()
     const cashierName = String(body.cashierName || 'Unknown').trim()
@@ -52,3 +53,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to send notification' }, { status: 500 })
   }
 }
+
+export const POST = withAuth(handler)

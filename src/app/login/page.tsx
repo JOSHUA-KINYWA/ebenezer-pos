@@ -119,7 +119,7 @@ export default function LoginPage() {
           if (emails.length > 0) {
             await fetch('/api/device-approval/notify', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'x-user-id': data.id },
               body: JSON.stringify({
                 cashierName: data.full_name,
                 cashierEmail: data.email,

@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS expenses (
 
 ALTER TABLE expenses DROP COLUMN IF EXISTS payment_type;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method text NOT NULL CHECK (payment_method IN ('cash', 'till'));
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_payment_method_check;
+ALTER TABLE expenses ADD CONSTRAINT expenses_payment_method_check CHECK (payment_method IN ('cash', 'coin', 'till'));
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pos_public_expenses" ON expenses;
 CREATE POLICY "pos_public_expenses" ON expenses FOR ALL USING (true) WITH CHECK (true);
@@ -231,6 +233,44 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION record_expense(
+  p_item_name text, p_amount numeric, p_payment_method text, p_vendor text,
+  p_category text, p_payment_note text, p_expense_date date, p_created_by uuid,
+  p_cash_deducted numeric, p_coin_deducted numeric, p_till_deducted numeric
+) RETURNS uuid AS $$
+DECLARE
+  v_id uuid;
+  v_drawer drawer_balances%ROWTYPE;
+BEGIN
+  IF p_amount <= 0 OR p_payment_method NOT IN ('cash', 'coin', 'till') THEN RAISE EXCEPTION 'Invalid expense'; END IF;
+  SELECT * INTO v_drawer FROM drawer_balances WHERE date = p_expense_date AND shift_id IS NULL FOR UPDATE;
+  IF NOT FOUND THEN
+    SELECT * INTO v_drawer FROM drawer_balances WHERE date < p_expense_date AND shift_id IS NULL ORDER BY date DESC, updated_at DESC LIMIT 1;
+    INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
+    VALUES (p_expense_date, NULL, COALESCE(v_drawer.cash, 0) - p_cash_deducted, COALESCE(v_drawer.coin, 0) - p_coin_deducted, COALESCE(v_drawer.till, 0) - p_till_deducted);
+  ELSE
+    UPDATE drawer_balances SET cash = cash - p_cash_deducted, coin = coin - p_coin_deducted, till = till - p_till_deducted, updated_at = now() WHERE id = v_drawer.id;
+  END IF;
+  INSERT INTO expenses(item_name, amount, payment_method, vendor, category, payment_note, expense_date, created_by)
+  VALUES (p_item_name, p_amount, p_payment_method, p_vendor, p_category, p_payment_note, p_expense_date, p_created_by)
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION delete_expense(p_expense_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_expenses expenses%ROWTYPE;
+BEGIN
+  SELECT * INTO v_expenses FROM expenses WHERE id = p_expense_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Expense not found'; END IF;
+  UPDATE drawer_balances SET cash = cash + COALESCE(v_expenses.cash_deducted, 0), coin = coin + COALESCE(v_expenses.coin_deducted, 0), till = till + COALESCE(v_expenses.till_deducted, 0), updated_at = now()
+  WHERE date = v_expenses.expense_date AND shift_id IS NULL;
+  DELETE FROM expenses WHERE id = p_expense_id;
+END;
+$$ LANGUAGE plpgsql;
+
 ALTER TABLE drawer_balances ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pos_public_drawer_balances" ON drawer_balances;
 CREATE POLICY "pos_public_drawer_balances" ON drawer_balances FOR ALL USING (true) WITH CHECK (true);
@@ -364,6 +404,49 @@ BEGIN
   END IF;
 
   RETURN v_sale_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION void_sale(p_sale_id uuid, p_user_id uuid, p_reason text)
+RETURNS void AS $$
+DECLARE
+  v_sale sales%ROWTYPE;
+  v_item record;
+  v_drawer_id uuid;
+BEGIN
+  SELECT * INTO v_sale FROM sales WHERE id = p_sale_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Sale not found'; END IF;
+  IF v_sale.is_voided THEN RAISE EXCEPTION 'Sale is already voided'; END IF;
+
+  FOR v_item IN SELECT product_id, quantity FROM sale_items WHERE sale_id = p_sale_id LOOP
+    IF v_item.product_id IS NOT NULL THEN
+      UPDATE products SET stock_qty = stock_qty + v_item.quantity WHERE id = v_item.product_id;
+      IF FOUND THEN
+        INSERT INTO stock_log(product_id, user_id, change_qty, reason, note)
+        VALUES (v_item.product_id, p_user_id, v_item.quantity, 'return', 'Sale voided: ' || p_reason);
+      END IF;
+    END IF;
+  END LOOP;
+
+  UPDATE drawer_balances
+  SET cash = cash - CASE WHEN v_sale.payment_method = 'cash' THEN v_sale.total_amount ELSE 0 END,
+      coin = coin - CASE WHEN v_sale.payment_method = 'coin' THEN v_sale.total_amount ELSE 0 END,
+      till = till - CASE WHEN v_sale.payment_method = 'till' THEN v_sale.total_amount ELSE 0 END,
+      updated_at = now()
+  WHERE date = v_sale.created_at::date AND shift_id IS NOT DISTINCT FROM v_sale.shift_id
+  RETURNING id INTO v_drawer_id;
+
+  IF v_drawer_id IS NULL THEN
+    INSERT INTO drawer_balances(date, shift_id, cash, coin, till)
+    VALUES (v_sale.created_at::date, v_sale.shift_id,
+      CASE WHEN v_sale.payment_method = 'cash' THEN -v_sale.total_amount ELSE 0 END,
+      CASE WHEN v_sale.payment_method = 'coin' THEN -v_sale.total_amount ELSE 0 END,
+      CASE WHEN v_sale.payment_method = 'till' THEN -v_sale.total_amount ELSE 0 END);
+  END IF;
+
+  UPDATE sales
+  SET is_voided = true, voided_at = now(), voided_by = p_user_id, void_reason = p_reason, updated_at = now()
+  WHERE id = p_sale_id;
 END;
 $$ LANGUAGE plpgsql;
 
